@@ -38,7 +38,7 @@ class MinecraftBedrockApi:
         username: str,
         password: str,
         session: aiohttp.ClientSession,
-        base_path: str = "/api" # Assuming API routes are under /api
+        base_path: str = "/api"
     ):
         """Initialize the API client."""
         self._base_url = f"http://{host}:{port}{base_path}"
@@ -46,7 +46,6 @@ class MinecraftBedrockApi:
         self._password = password
         self._session = session
         self._jwt_token: Optional[str] = None
-        # Use application/json as default based on docs
         self._headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
     async def _request(
@@ -59,7 +58,7 @@ class MinecraftBedrockApi:
     ) -> Dict[str, Any]:
         """Internal method to make API requests."""
         url = f"{self._base_url}{path}"
-        headers = self._headers.copy() # Start with base headers
+        headers = self._headers.copy()
 
         if authenticated:
             if not self._jwt_token:
@@ -256,9 +255,6 @@ class MinecraftBedrockApi:
 
             if not server_list:
                 _LOGGER.warning("API returned an empty server list.")
-                # Decide if empty list is an error or valid state
-                # Let's treat it as potentially valid, config flow can decide if it's an error
-                # raise APIError("Manager reported no servers.")
                 return []
 
             _LOGGER.debug("Successfully fetched server list: %s", server_list)
@@ -366,5 +362,3 @@ class MinecraftBedrockApi:
             data=payload, # Pass the payload here
             authenticated=True
         )
-
-    # Add other methods as needed for Phase 2/3 (allowlist, properties, etc.)

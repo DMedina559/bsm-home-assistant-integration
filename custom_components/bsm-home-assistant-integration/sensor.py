@@ -10,20 +10,16 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
-# Import constants from HA if standard, otherwise from local const.py
-# CONF_HOST and CONF_PORT are standard
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Import CoordinatorEntity separately and the specific coordinator class
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .coordinator import MinecraftBedrockCoordinator # <-- Import specific coordinator
+from .coordinator import MinecraftBedrockCoordinator
 
-# Import constants and API definitions from this integration
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAME, # Local constant
+    CONF_SERVER_NAME,
     ATTR_CPU_PERCENT,
     ATTR_MEMORY_MB,
     ATTR_PID,
@@ -35,16 +31,16 @@ from .api import MinecraftBedrockApi, ServerNotRunningError, ServerNotFoundError
 
 _LOGGER = logging.getLogger(__name__)
 
-# Sensor Descriptions - RESTORED DEFINITION
+# Sensor Descriptions
 SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
-        key="status", # Internal key, derived from process_info presence/state
-        name="Status", # Base name, will be prefixed
+        key="status",
+        name="Status",
         icon="mdi:minecraft",
     ),
     SensorEntityDescription(
         key=ATTR_CPU_PERCENT,
-        name="CPU Usage", # Base name
+        name="CPU Usage",
         icon="mdi:cpu-64-bit",
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
@@ -52,21 +48,14 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     ),
     SensorEntityDescription(
         key=ATTR_MEMORY_MB,
-        name="Memory Usage", # Base name
+        name="Memory Usage",
         icon="mdi:memory",
-        native_unit_of_measurement="MiB", # Megabytes (MiB is more accurate technically)
+        native_unit_of_measurement="MiB",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        device_class=SensorDeviceClass.DATA_SIZE, # Using DATA_SIZE which expects MiB
-        suggested_unit_of_measurement="MiB", # Explicitly suggest MiB
+        device_class=SensorDeviceClass.DATA_SIZE,
+        suggested_unit_of_measurement="MiB",
     ),
-    # Add player count sensor here later if data becomes available
-    # SensorEntityDescription(
-    #     key="player_count",
-    #     name="Players Online",
-    #     icon="mdi:account-multiple",
-    #     state_class=SensorStateClass.MEASUREMENT,
-    # ),
 )
 
 
@@ -212,12 +201,6 @@ class MinecraftServerSensor(CoordinatorEntity[MinecraftBedrockCoordinator], Sens
                   uptime = process_info.get("uptime") # Already a string
                   if pid is not None: attrs[ATTR_PID] = pid
                   if uptime is not None: attrs[ATTR_UPTIME] = uptime
-
-             # Add player list here later if available from coordinator.data
-             # Example:
-             # player_list = self.coordinator.data.get("player_list")
-             # if player_list is not None:
-             #     attrs[ATTR_PLAYERS_ONLINE] = player_list
 
         # Return attributes dictionary, or None if empty
         return attrs if attrs else None

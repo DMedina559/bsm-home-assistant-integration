@@ -1,28 +1,22 @@
-"""The Minecraft Bedrock Server Manager integration."""
+"""The Bedrock Server Manager Home Assistant integration."""
 
 import asyncio
 import logging
 from datetime import timedelta
 
-import async_timeout # Required by coordinator logic, keep if coordinator uses it implicitly? No, likely not needed here anymore. Remove if coordinator handles its own.
-# import voluptuous as vol # No longer needed here if schema is in services.py
+import async_timeout
 import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform # Use Platform enum if HA >= 2024.7
-from homeassistant.core import HomeAssistant # ServiceCall no longer needed here
-# from homeassistant.helpers import entity_registry as er # No longer needed here
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 
-# Import API definitions used by coordinator/setup logic (AuthError etc)
 from .api import (
     MinecraftBedrockApi,
     AuthError,
     CannotConnectError,
-    # APIError, # Not directly handled here anymore
-    # ServerNotFoundError, # Handled by coordinator
-    # ServerNotRunningError, # Handled by coordinator
 )
 from .const import (
     DOMAIN,
@@ -33,15 +27,11 @@ from .const import (
     CONF_SERVER_NAME,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
-    # Constants related to services are no longer needed here
 )
 from .coordinator import MinecraftBedrockCoordinator
-# Import the new services module
 from . import services
 
 _LOGGER = logging.getLogger(__name__)
-
-# --- Service Schema and Handlers are REMOVED from here ---
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -50,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # --- Get configuration data ---
     host = entry.data[CONF_HOST]
-    port = int(entry.data[CONF_PORT]) # Keep int cast
+    port = int(entry.data[CONF_PORT])
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
     server_name = entry.data[CONF_SERVER_NAME]

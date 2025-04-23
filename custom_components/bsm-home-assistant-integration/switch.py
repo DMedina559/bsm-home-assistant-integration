@@ -8,9 +8,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Import CoordinatorEntity separately and the specific coordinator class
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .coordinator import MinecraftBedrockCoordinator # <-- Import specific coordinator
+from .coordinator import MinecraftBedrockCoordinator
 from homeassistant.exceptions import HomeAssistantError
 
 # Import constants and API
@@ -19,7 +18,6 @@ from .api import MinecraftBedrockApi, APIError, ServerNotRunningError, ServerNot
 
 _LOGGER = logging.getLogger(__name__)
 
-# SWITCH_DESCRIPTION remains the same
 SWITCH_DESCRIPTION = SwitchEntityDescription( key="server_control", name="Server", icon="mdi:minecraft", )
 
 async def async_setup_entry( hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback, ) -> None:
@@ -45,8 +43,6 @@ class MinecraftServerSwitch(CoordinatorEntity[MinecraftBedrockCoordinator], Swit
         self.entity_description = description
         self._entry = entry
         self._server_name = entry.data[CONF_SERVER_NAME]
-        # --- API Client is now accessed via self.coordinator.api ---
-        # REMOVE self._api = ... line if it was accidentally left
 
         self._attr_unique_id = f"{DOMAIN}_{self._server_name}_{description.key}"
         self._attr_device_info = DeviceInfo( identifiers={(DOMAIN, self._server_name, entry.entry_id)}, )
@@ -54,7 +50,6 @@ class MinecraftServerSwitch(CoordinatorEntity[MinecraftBedrockCoordinator], Swit
     # is_on property remains the same
     @property
     def is_on(self) -> Optional[bool]:
-        # ... (logic remains the same) ...
         if not self.coordinator.data or (isinstance(self.coordinator.data, dict) and self.coordinator.data.get("status") == "error"):
              if isinstance(self.coordinator.data, dict):
                   error_type_name = self.coordinator.data.get("error_type")
@@ -64,7 +59,6 @@ class MinecraftServerSwitch(CoordinatorEntity[MinecraftBedrockCoordinator], Swit
         process_info = self.coordinator.data.get("process_info")
         return isinstance(process_info, dict)
 
-    # available property remains the same
     @property
     def available(self) -> bool: return self.coordinator.last_update_success
 

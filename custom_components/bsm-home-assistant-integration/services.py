@@ -2,16 +2,15 @@
 
 import asyncio
 import logging
-from typing import cast # For type casting if needed
+from typing import cast
 
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
-# Import constants for targeting keys and standard attributes
 from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import device_registry as dr # Import device registry helper
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     DOMAIN,
@@ -27,16 +26,12 @@ from .api import (
 _LOGGER = logging.getLogger(__name__)
 
 # --- Service Schema Definition (Experimental) ---
-# Explicitly allow standard targeting keys as optional within the data schema
-# This is unusual but attempts to work around the persistent validation error.
 SEND_COMMAND_SERVICE_SCHEMA = vol.Schema(
     {
         # Keep the required command field
         vol.Required(FIELD_COMMAND): vol.All(vol.Coerce(str), vol.Length(min=1)),
 
         # --- Experiment: Explicitly allow targeting keys as Optional ---
-        # These keys are normally handled by the 'target:' structure, not 'data:'.
-        # We use 'object' as the type since we don't care about validating their content here.
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
@@ -45,7 +40,6 @@ SEND_COMMAND_SERVICE_SCHEMA = vol.Schema(
 )
 
 # --- Service Handler Helper Function ---
-# (This function remains unchanged)
 async def _async_handle_send_command(api: MinecraftBedrockApi, server: str, command: str):
     """Helper coroutine to call API and handle errors for send_command."""
     try:
@@ -66,16 +60,13 @@ async def _async_handle_send_command(api: MinecraftBedrockApi, server: str, comm
 # --- Main Service Handler Function (Using Revised Target Resolution) ---
 async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssistant):
     """Handle the send_command service call. Maps targets to config entries."""
-    # Extract the actual command data field
-    # Note: Even if target keys were allowed by schema, we only extract FIELD_COMMAND here.
     try:
          command_to_send = service.data[FIELD_COMMAND]
     except KeyError:
-         # This shouldn't happen if the schema requires FIELD_COMMAND, but handle defensively
          _LOGGER.error("Internal error: '%s' key missing from service data after validation.", FIELD_COMMAND)
          raise HomeAssistantError(f"Missing required field: {FIELD_COMMAND}")
 
-    tasks = {} # Stores tasks keyed by config_entry_id to avoid duplicates
+    tasks = {}
 
     # --- Resolve targets specified in service call ---
     entity_reg = er.async_get(hass)
@@ -84,7 +75,6 @@ async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssi
 
     # Get target IDs from the service call data (HA populates these based on target selector)
     # Use .get() with default empty list to handle cases where one type isn't targeted
-    # We still read these from service.data, even if schema allowed them, as HA puts them here.
     target_entity_ids = service.data.get(ATTR_ENTITY_ID, [])
     target_device_ids = service.data.get(ATTR_DEVICE_ID, [])
     # target_area_ids = service.data.get(ATTR_AREA_ID, []) # Add if needed
@@ -184,7 +174,6 @@ async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssi
 
 
 # --- Service Registration Function ---
-# (This function remains unchanged, but uses the modified schema)
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
 
@@ -204,7 +193,6 @@ async def async_register_services(hass: HomeAssistant):
         )
 
 # --- Service Removal Function ---
-# (This function remains unchanged)
 async def async_remove_services(hass: HomeAssistant):
     """Remove the custom services for the integration."""
     if not hass.data.get(DOMAIN):

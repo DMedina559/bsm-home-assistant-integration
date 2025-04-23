@@ -1,7 +1,7 @@
 """Button platform for Minecraft Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional # Add Optional if needed elsewhere
+from typing import Any, Optional
 
 from homeassistant.components.button import (
     ButtonEntity,
@@ -12,18 +12,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Import CoordinatorEntity separately and the specific coordinator class
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .coordinator import MinecraftBedrockCoordinator # <-- Import specific coordinator
+from .coordinator import MinecraftBedrockCoordinator
 from homeassistant.exceptions import HomeAssistantError
 
-# Import constants and API
 from .const import DOMAIN, CONF_SERVER_NAME
 from .api import MinecraftBedrockApi, APIError, ServerNotFoundError, ServerNotRunningError
 
 _LOGGER = logging.getLogger(__name__)
 
-# Button Descriptions - RESTORED DEFINITION
+# Button Descriptions
 BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
         key="restart_server",
@@ -41,15 +39,7 @@ BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
         key="trigger_backup",
         name="Backup", # Base name
         icon="mdi:backup-restore",
-        # No standard device class for backup, keep default
     ),
-    # Add other buttons here if needed (e.g., prune backups, delete server - use with caution!)
-    # ButtonEntityDescription(
-    #     key="delete_server",
-    #     name="Delete Server",
-    #     icon="mdi:delete-forever",
-    #     entity_category="config", # Mark as configuration/destructive
-    # ),
 )
 
 

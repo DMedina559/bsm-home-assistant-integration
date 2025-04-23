@@ -6,21 +6,17 @@ from typing import Any, Dict, Optional
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_SCAN_INTERVAL # Standard constant for scan interval
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
     DEFAULT_SCAN_INTERVAL_SECONDS,
-    CONF_SERVER_NAME, # Used for context/logging maybe
+    CONF_SERVER_NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Define options schema keys
-# Using CONF_SCAN_INTERVAL from HA const is standard practice
-# CONF_SCAN_INTERVAL = "scan_interval" # Defined in HA const
 
 
 class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
@@ -29,8 +25,6 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
-        # You can store options if needed across multiple option steps
-        # self.options = dict(config_entry.options)
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -43,7 +37,6 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
             scan_interval = user_input.get(CONF_SCAN_INTERVAL)
 
             # Perform validation (Voluptuous schema handles basic type check)
-            # Add custom validation logic here if needed
             if scan_interval is not None and scan_interval < 5:
                  # Example: Ensure minimum interval is respected
                  errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
@@ -81,8 +74,6 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
                     unit_of_measurement="seconds",
                 )
             ),
-            # Add other configurable options here in the future
-            # vol.Optional("another_option", default=self.config_entry.options.get("another_option", True)): selector.BooleanSelector(),
         })
 
         # Show the form to the user

@@ -7,7 +7,7 @@ import voluptuous as vol
 import aiohttp
 
 from homeassistant import config_entries, exceptions
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD # Import from const
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
@@ -79,7 +79,6 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
             raise AuthError("Authentication failed silently.") # Will be caught below
 
         # If authenticated, try fetching the server list
-        # Assumes GET /api/servers endpoint exists and returns {"servers": ["name1", ...]}
         discovered_servers = await api_client.async_get_server_list()
 
         # Return data needed for the next step or for creating the entry
@@ -110,7 +109,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Minecraft Bedrock Server Manager."""
 
     VERSION = 1
-    # CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLLING # Deprecated
 
     def __init__(self):
         """Initialize the config flow."""
@@ -199,9 +197,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             except ServerNotFoundError:
                  _LOGGER.warning("Selected server '%s' not found via validation API.", selected_server)
-                 errors["base"] = "server_validation_failed" # Generic error for now
-                 # Optionally pass server name to translation:
-                 # errors["base"] = self.hass.data["translations"][DOMAIN]["en"]["config"]["error"]["server_validation_failed"].format(server_name=selected_server) # Complex
+                 errors["base"] = "server_validation_failed"
             except APIError as err:
                 _LOGGER.error("API error during server selection validation: %s", err)
                 errors["base"] = "api_error" # Generic API error
@@ -253,7 +249,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host=self._user_input[CONF_HOST],
             port=int(self._user_input[CONF_PORT]),
             username=self._user_input[CONF_USERNAME],
-            password=self._user_input[CONF_PASSWORD], # Need password again
+            password=self._user_input[CONF_PASSWORD],
             session=session,
         )
         try:
