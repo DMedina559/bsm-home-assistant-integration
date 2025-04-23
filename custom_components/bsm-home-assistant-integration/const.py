@@ -1,7 +1,7 @@
 """Constants for the Minecraft Bedrock Server Manager integration."""
 
 # Domain slug for Home Assistant
-DOMAIN = "minecraft_bds_manager"
+DOMAIN = "bsm-home-assistant-integration"
 
 # Platforms supported by this integration
 PLATFORMS = ["sensor", "switch", "button"]
