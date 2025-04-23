@@ -130,8 +130,8 @@ class MinecraftServerSensor(CoordinatorEntity[MinecraftBedrockCoordinator], Sens
         # Set initial device info using the passed-in version
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._server_name, entry.entry_id)}, # Unique identifier for the device
-            name=f"Minecraft Server ({self._server_name})",
-            manufacturer="Minecraft Bedrock Manager", # Or your specific manager name
+            name=f"{self._server_name}",
+            manufacturer="Bedrock Server Manager",
             model=f"Managed Server ({self._server_name})",
             # Use the passed-in variable, fallback to "Unknown"
             sw_version=installed_version or "Unknown",
