@@ -1,0 +1,13 @@
+{
+  "domain": "minecraft_bds_manager",
+  "name": "Minecraft Bedrock Server Manager",
+  "version": "0.1.0",
+  "documentation": "https://github.com/YOUR_USERNAME/ha-minecraft-bds-manager",
+  "issue_tracker": "https://github.com/YOUR_USERNAME/ha-minecraft-bds-manager/issues",
+  "codeowners": ["@DMedina559"],
+  "requirements": [],
+  "dependencies": [],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "loggers": ["custom_components.minecraft_bds_manager"]
+}

@@ -1,0 +1,90 @@
+{
+  "title": "Minecraft Bedrock Server Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Minecraft Server Manager",
+        "description": "Enter the connection details for your Minecraft Bedrock Server Manager API.",
+        "data": {
+          "host": "Host / IP Address",
+          "port": "Port",
+          "username": "API Username",
+          "password": "API Password"
+        }
+      },
+      "select_server": {
+        "title": "Select Minecraft Server Instance",
+        "description": "Choose the specific Minecraft server managed by this API instance that you want to add to Home Assistant.",
+        "data": {
+          "server_name": "Server Name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
+      "invalid_auth": "Invalid username or password provided. Please check your credentials.",
+      "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances. Please ensure servers are configured in the Manager.",
+      "server_validation_failed": "Failed to validate the selected server '{server_name}' with the Manager API. It might not exist or there was an API error.",
+      "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
+      "api_error": "An API error occurred: {error_details}"
+    },
+    "abort": {
+      "already_configured": "This Minecraft Server instance ('{server_name}') is already configured in Home Assistant.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Minecraft Server Manager Options",
+        "data": {
+          "scan_interval": "Update frequency (seconds)"
+        }
+      }
+    },
+    "error": {
+       "invalid_scan_interval": "Update frequency must be at least 5 seconds."
+    }
+  },
+  "entity": {
+    "button": {
+      "restart_server": {
+        "name": "{server_name} Restart"
+      },
+      "update_server": {
+         "name": "{server_name} Update"
+      },
+      "trigger_backup": {
+         "name": "{server_name} Backup"
+      }
+    },
+    "switch": {
+      "server_control": {
+        "name": "{server_name}"
+      }
+    },
+    "sensor": {
+       "status": {
+          "name": "{server_name} Status"
+       },
+       "cpu_usage": {
+           "name": "{server_name} CPU Usage"
+       },
+       "memory_usage": {
+            "name": "{server_name} Memory Usage"
+       }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send command",
+      "description": "Sends a command to the specified Minecraft server's console.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "The command string to send to the server console (e.g., 'say Hello World')."
+        }
+      }
+    }
+  }
+}
