@@ -1,34 +1,36 @@
-"""The Bedrock Server Manager Home Assistant integration."""
+"""The Minecraft Bedrock Server Manager integration."""
 
 import asyncio
 import logging
 from datetime import timedelta
+import traceback # For more detailed error logging during setup loop
 
-import async_timeout
 import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import Platform, CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import device_registry as dr # Import device registry
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 
+# Import API definitions used by coordinator/setup logic
 from .api import (
     MinecraftBedrockApi,
     AuthError,
     CannotConnectError,
+    APIError, # Import other errors if needed
 )
+# Import local constants
 from .const import (
     DOMAIN,
-    CONF_HOST,
-    CONF_PORT,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_SERVER_NAME,
+    CONF_SERVER_NAMES, # Import the new constant for the list
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
 )
+# Import the specific Coordinator class
 from .coordinator import MinecraftBedrockCoordinator
+# Import the services module for registration/removal
 from . import services
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,77 +39,166 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Minecraft Bedrock Server Manager from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].setdefault(entry.entry_id, {}) # Prepare entry-specific data store
 
     # --- Get configuration data ---
     host = entry.data[CONF_HOST]
-    port = int(entry.data[CONF_PORT])
+    port = int(entry.data[CONF_PORT]) # Ensure int cast
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
-    server_name = entry.data[CONF_SERVER_NAME]
+
+    # --- Get options ---
+    # Server list comes from options now
+    selected_servers = entry.options.get(CONF_SERVER_NAMES, [])
+    # Polling interval also comes from options (or default)
     scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL_SECONDS)
 
-    # --- Initialize API Client and Coordinator ---
+    # --- Initialize Shared API Client ---
     session = async_get_clientsession(hass)
     api_client = MinecraftBedrockApi(host, port, username, password, session)
 
+    # --- Create the Central "Manager" Device ---
+    # This device represents the BSM API endpoint itself
+    manager_unique_id = f"{host}:{port}" # Use host:port as unique ID for the manager
+    device_registry = dr.async_get(hass)
+    manager_device = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, manager_unique_id)}, # Identifier for this manager instance
+        name=f"BSM @ {host}",
+        manufacturer="Minecraft Bedrock Manager", # Or your specific branding
+        model="Server Manager API",
+        configuration_url=f"http://{host}:{port}", # Link to the manager UI
+    )
+    _LOGGER.debug("Ensured manager device exists: %s", manager_device.id)
+
+    # --- Store API Client and Prepare Server Data Store ---
+    hass.data[DOMAIN][entry.entry_id] = {
+        "api": api_client,
+        "manager_device_id": manager_device.id, # Store manager device ID for linking
+        "servers": {}, # Dictionary to hold data for each server instance
+    }
+
+    # --- Create Coordinators for Selected Servers ---
+    if not selected_servers:
+        _LOGGER.warning("No servers selected for manager %s. Integration will load but monitor no servers.", manager_unique_id)
+    else:
+        _LOGGER.info("Setting up coordinators for servers: %s", selected_servers)
+        setup_tasks = []
+        for server_name in selected_servers:
+            # Create a separate setup task for each server's coordinator
+            setup_tasks.append(
+                _async_setup_server_coordinator(hass, entry, api_client, server_name, scan_interval)
+            )
+
+        # Run coordinator setups concurrently
+        results = await asyncio.gather(*setup_tasks, return_exceptions=True)
+
+        # Check for errors during individual coordinator setups
+        successful_setups = 0
+        for i, result in enumerate(results):
+            server_name = selected_servers[i]
+            if isinstance(result, Exception):
+                # Log the specific error for that server coordinator setup
+                # Use format_exc to get the full traceback for debugging
+                exc_info = (type(result), result, result.__traceback__)
+                log_msg = f"Failed to set up coordinator for server '{server_name}': {result}"
+                # Log full traceback for unexpected errors
+                if not isinstance(result, (ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError)):
+                     _LOGGER.error(log_msg + "\n%s", traceback.format_exc(), exc_info=False) # Log simple message + separate traceback
+                else:
+                     _LOGGER.error(log_msg, exc_info=False) # Log known HA exceptions more cleanly
+
+                # Optionally: Remove the failed server entry from hass.data if needed?
+                # Or just let it be empty, platforms should handle missing coordinator.
+                if server_name in hass.data[DOMAIN][entry.entry_id]["servers"]:
+                    del hass.data[DOMAIN][entry.entry_id]["servers"][server_name]
+
+            else:
+                 successful_setups += 1
+
+        # If ALL coordinator setups failed, raise ConfigEntryNotReady
+        if successful_setups == 0 and selected_servers:
+             _LOGGER.error("All server coordinator setups failed for manager %s.", manager_unique_id)
+             # Clean up hass.data entry before raising?
+             # hass.data[DOMAIN].pop(entry.entry_id) # Maybe not, allow retry?
+             raise ConfigEntryNotReady(f"Could not establish connection or initial update for any selected server on manager {manager_unique_id}")
+
+    # --- Forward Setup to Platforms ---
+    # Platforms will now look into hass.data[DOMAIN][entry.entry_id]["servers"]
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # --- Add listener for options flow updates ---
+    entry.async_on_unload(entry.add_update_listener(options_update_listener))
+
+    # --- Register Services (only once per domain) ---
+    await services.async_register_services(hass)
+
+    return True
+
+async def _async_setup_server_coordinator(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    api_client: MinecraftBedrockApi,
+    server_name: str,
+    scan_interval: int
+):
+    """Helper function to set up coordinator for a single server."""
+    _LOGGER.debug("Setting up coordinator for server: %s", server_name)
     coordinator = MinecraftBedrockCoordinator(
         hass=hass,
         api_client=api_client,
         server_name=server_name,
         scan_interval=scan_interval,
     )
-
-    # --- Perform Initial Coordinator Refresh ---
-    # This will raise ConfigEntryNotReady if it fails (e.g., cannot connect, initial auth fails)
+    # Perform initial refresh *for this specific coordinator*
+    # This might raise ConfigEntryAuthFailed or UpdateFailed (-> ConfigEntryNotReady)
     await coordinator.async_config_entry_first_refresh()
 
-    # --- Store coordinator and API client in hass.data ---
-    # API client is stored here mainly for easier access during service calls routed back here,
-    # or potentially other future logic. Platforms primarily use the coordinator.
-    hass.data[DOMAIN][entry.entry_id] = {
+    # Store the successful coordinator in hass.data
+    hass.data[DOMAIN][entry.entry_id]["servers"][server_name] = {
         "coordinator": coordinator,
-        "api": api_client,
-        "server_name": server_name,
+        # Add other server-specific static info here if needed later
     }
-
-    # --- Forward Setup to Platforms ---
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # --- Add listener for options flow updates ---
-    entry.async_on_unload(entry.add_update_listener(options_update_listener))
-
-    # --- Register Services via the services module ---
-    # This function handles checking if registration is needed
-    await services.async_register_services(hass)
-
-    return True
+    _LOGGER.debug("Successfully set up coordinator for server: %s", server_name)
 
 
 async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry):
     """Handle options update."""
-    _LOGGER.debug("Options updated for %s, reloading entry", entry.entry_id)
-    # Reload the integration entry to apply the new options (e.g., scan_interval)
+    _LOGGER.debug("Options updated for %s, reloading entry to apply changes.", entry.entry_id)
+    # Reload the integration entry. This will trigger async_unload_entry and then async_setup_entry again.
+    # async_setup_entry will read the updated server list from entry.options.
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    server_name = entry.data.get(CONF_SERVER_NAME, entry.entry_id)
-    _LOGGER.info("Unloading Minecraft Manager entry for server '%s'", server_name)
+    manager_host = entry.data.get(CONF_HOST, entry.entry_id)
+    _LOGGER.info("Unloading Minecraft Manager entry for manager '%s'", manager_host)
 
-    # Unload platforms (sensor, switch, button) linked to this entry
+    # Unload platforms first
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        # Remove this entry's data from hass.data
-        if entry.entry_id in hass.data.get(DOMAIN, {}): # Check domain exists before pop
-            hass.data[DOMAIN].pop(entry.entry_id)
-            _LOGGER.debug("Successfully removed data for entry %s (%s)", entry.entry_id, server_name)
+        # --- Clean up hass.data ---
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None) # Remove entry's data safely
 
-        # Check if the domain data dictionary is now empty to remove services
-        # This check must happen *after* popping the entry data
+        if entry_data:
+             # Optionally: Add code here to explicitly stop any running coordinators
+             # Although HA might handle this implicitly when the entry unloads.
+             # server_dict = entry_data.get("servers", {})
+             # for server_name, server_data in server_dict.items():
+             #     coordinator = server_data.get("coordinator")
+             #     if coordinator:
+             #         # How to properly stop/cancel a coordinator? Check HA dev docs.
+             #         # coordinator.async_shutdown() # Example - actual method might differ
+             #         _LOGGER.debug("Stopping coordinator for server %s", server_name)
+             _LOGGER.debug("Successfully removed data for entry %s (%s)", entry.entry_id, manager_host)
+        else:
+             _LOGGER.debug("No data found in hass.data for entry %s (%s) during unload.", entry.entry_id, manager_host)
+
+        # --- Remove services if this was the last entry ---
+        # Check if the domain key itself is now empty or gone
         if not hass.data.get(DOMAIN):
-             # Call the removal function from the services module
              await services.async_remove_services(hass)
         else:
              _LOGGER.debug("Other entries still loaded for domain %s, keeping services", DOMAIN)
