@@ -7,29 +7,36 @@ import voluptuous as vol
 import aiohttp
 
 from homeassistant import config_entries, exceptions
+# Import CONF constants from HA
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
-from homeassistant.core import HomeAssistant
+# Import callback decorator
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
-from homeassistant.core import callback
 
-from .options_flow import MinecraftBdsManagerOptionsFlowHandler
+# Import local constants
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAME,
+    # CONF_SERVER_NAME is no longer primary data, use a new const for the list
     DEFAULT_PORT,
 )
+# Define a new constant for the list of servers in options
+CONF_SERVER_NAMES = "servers" # Use plural
+
+# Import API definitions
 from .api import (
     MinecraftBedrockApi,
     APIError,
     AuthError,
     CannotConnectError,
-    ServerNotFoundError,
+    ServerNotFoundError, # Keep for API definition
 )
+# Import the Options Flow Handler - needed for linking
+from .options_flow import MinecraftBdsManagerOptionsFlowHandler
 
 _LOGGER = logging.getLogger(__name__)
 
-# Schema for user step (collecting connection details)
+# --- Schema for initial user step (connection details ONLY) ---
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
@@ -43,7 +50,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Define a custom exception subclass for Config Flow specific errors
+# --- Custom Exceptions ---
+# Define custom exceptions subclassing HomeAssistantError for flow control
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
     def __init__(self, error_key="cannot_connect", error_details=None):
@@ -56,219 +64,138 @@ class InvalidAuth(exceptions.HomeAssistantError):
     error_key = "invalid_auth"
 
 
+# --- Validation Function ---
 async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
-    """Validate the user input allows us to connect and authenticate.
+    """Validate the user input allows us to connect, authenticate and get server list.
 
     Data has the keys from STEP_USER_DATA_SCHEMA.
     Raises CannotConnect, InvalidAuth on failure.
+    Returns dict with list of discovered server names on success.
     """
     session = async_get_clientsession(hass)
     api_client = MinecraftBedrockApi(
         host=data[CONF_HOST],
-        port=int(data[CONF_PORT]),
+        port=int(data[CONF_PORT]), # Explicitly cast port to int
         username=data[CONF_USERNAME],
         password=data[CONF_PASSWORD],
         session=session,
     )
 
     try:
-        # Attempt authentication first
         authenticated = await api_client.authenticate()
-        if not authenticated:
-            # Should not happen if authenticate() doesn't raise, but double-check
-            raise AuthError("Authentication failed silently.") # Will be caught below
-
-        # If authenticated, try fetching the server list
+        if not authenticated: raise AuthError("Authentication failed silently.")
         discovered_servers = await api_client.async_get_server_list()
-
-        # Return data needed for the next step or for creating the entry
-        return {
-            "api_client": api_client, # Pass the authenticated client for potential reuse (though maybe not needed)
-            "discovered_servers": discovered_servers
-         }
+        return {"discovered_servers": discovered_servers}
 
     except CannotConnectError as err:
         _LOGGER.error("Connection error during validation: %s", err)
-        raise CannotConnect() from err # Reraise specific exception
+        raise CannotConnect() from err
     except AuthError as err:
         _LOGGER.error("Authentication error during validation: %s", err)
-        raise InvalidAuth() from err # Reraise specific exception
+        raise InvalidAuth() from err
     except APIError as err:
-        # Catch other API errors during server list fetch
         _LOGGER.error("API error during validation (fetching server list): %s", err)
-        # Use CannotConnect but provide details for the message
         raise CannotConnect("api_error", error_details=str(err)) from err
     except Exception as err:
-        # Handle unexpected errors during validation
         _LOGGER.exception("Unexpected error during validation: %s", err)
-        # Map to a generic ConfigFlowError or raise a custom one if needed
         raise exceptions.ConfigFlowError("unknown_validation_error") from err
 
 
+# --- Main Config Flow Class ---
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Minecraft Bedrock Server Manager."""
 
     VERSION = 1
+    # CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLLING # Deprecated
 
     def __init__(self):
         """Initialize the config flow."""
-        # Store data gathered across steps
-        self._user_input: Dict[str, Any] = {}
+        self._connection_data: Dict[str, Any] = {}
         self._discovered_servers: List[str] = []
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult: # Use FlowResult type hint
+    ) -> config_entries.FlowResult:
         """Handle the initial step (gathering connection info)."""
         errors: Dict[str, str] = {}
         if user_input is not None:
+            unique_manager_id = f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}"
+            await self.async_set_unique_id(unique_manager_id)
+            self._abort_if_unique_id_configured()
+
             try:
-                # Validate connection and auth, get server list
                 validation_result = await validate_input(self.hass, user_input)
                 self._discovered_servers = validation_result["discovered_servers"]
-                # Store the validated user input (host, port, user, pass)
-                self._user_input = user_input
+                self._connection_data = user_input
 
-                if not self._discovered_servers:
-                    # Connected fine, but no servers found on the manager
-                    errors["base"] = "no_servers_found"
-                    # Fall through to re-show form with error - *** NO! Need explicit return ***
-                else:
-                    # Validation successful and servers found, proceed to server selection
-                    _LOGGER.debug("Validation successful, proceeding to server selection.")
-                    # Pass discovered servers to the next step via instance variable
-                    return await self.async_step_select_server()
+                _LOGGER.debug("Validation successful, proceeding to server selection.")
+                return await self.async_step_select_servers()
 
             except CannotConnect as err:
-                _LOGGER.warning("Config flow connection error: %s", err.error_key)
                 errors["base"] = err.error_key
-                # If error_details exist, append them for more specific feedback if desired
-                if err.error_details:
-                     # NOTE: Translations might not support dynamic parts well in 'base' errors.
-                     # Consider logging details instead or using specific error keys.
-                     _LOGGER.warning("Connection error details: %s", err.error_details)
-            except InvalidAuth:
-                _LOGGER.warning("Config flow invalid auth")
-                errors["base"] = "invalid_auth"
-            except exceptions.ConfigFlowError as err: # Catch errors raised from validate_input
-                 _LOGGER.warning("Config flow validation error: %s", err)
-                 # Use the message key if available, otherwise a generic one
-                 errors["base"] = str(err) if str(err) else "unknown_error"
-            except Exception as err: # Catch unexpected errors during flow logic
-                _LOGGER.exception("Unexpected error in user step: %s", err)
-                errors["base"] = "unknown_error"
+                if err.error_details: _LOGGER.warning("Connection error details: %s", err.error_details)
+            except InvalidAuth: errors["base"] = "invalid_auth"
+            except exceptions.ConfigFlowError as err: errors["base"] = str(err) if str(err) else "unknown_error"
+            except Exception: errors["base"] = "unknown_error"
 
-            if errors:
-                return self.async_show_form(
-                    step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
-                )
-
-        # Show the form for the first time or if validation failed above
+        # Show form for the first time or if errors occurred
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(STEP_USER_DATA_SCHEMA, user_input),
+            errors=errors
         )
 
-    async def async_step_select_server(
+    async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
-        """Handle the server selection step."""
+        """Handle the server multi-selection step."""
         errors: Dict[str, str] = {}
+
         if user_input is not None:
-            selected_server = user_input[CONF_SERVER_NAME]
-            try:
-                # Validate the selected server exists using the specific API endpoint
-                await self._validate_server_selection(selected_server)
+            selected_servers = user_input.get(CONF_SERVER_NAMES, [])
 
-                # Set unique ID based on host/port/server_name to prevent duplicates
-                # Use a stable identifier if possible. Host+Port+ServerName is usually good.
-                unique_id = f"{self._user_input[CONF_HOST]}:{self._user_input[CONF_PORT]}-{selected_server}"
-                await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_configured()
+            _LOGGER.info(
+                "Creating config entry for manager %s, initially selected servers: %s",
+                f"{self._connection_data[CONF_HOST]}:{self._connection_data[CONF_PORT]}",
+                selected_servers
+            )
 
-                # Combine original user input with selected server name
-                final_data = self._user_input.copy()
-                final_data[CONF_SERVER_NAME] = selected_server
+            # Create the config entry
+            return self.async_create_entry(
+                title=f"BSM @ {self._connection_data[CONF_HOST]}",
+                data=self._connection_data.copy(),
+                options={CONF_SERVER_NAMES: selected_servers}
+            )
 
-                _LOGGER.info("Creating config entry for server: %s", selected_server)
-                # Data to store in the config entry
-                return self.async_create_entry(
-                    title=f"Minecraft Server ({selected_server})", data=final_data
-                )
-
-            except ServerNotFoundError:
-                 _LOGGER.warning("Selected server '%s' not found via validation API.", selected_server)
-                 errors["base"] = "server_validation_failed"
-            except APIError as err:
-                _LOGGER.error("API error during server selection validation: %s", err)
-                errors["base"] = "api_error" # Generic API error
-                # Consider logging str(err) for details
-            except Exception as err:  # Catch unexpected errors
-                _LOGGER.exception("Unexpected error during server selection: %s", err)
-                errors["base"] = "unknown_error"
-            if errors:
-                 # Need to reconstruct the schema with the available servers
-                 select_schema = vol.Schema({
-                     vol.Required(CONF_SERVER_NAME): selector.SelectSelector(
-                         selector.SelectSelectorConfig(
-                             options=self._discovered_servers,
-                             mode=selector.SelectSelectorMode.DROPDOWN,
-                         )
-                     ),
-                 })
-                 return self.async_show_form(
-                     step_id="select_server", data_schema=select_schema, errors=errors
-                 )
-
-
-        # Show the selection form (first time or if error occurred above)
+        # Show the selection form
         if not self._discovered_servers:
-             # Should not happen if we got here from step_user, but handle defensively
-             _LOGGER.error("Reached select_server step but no discovered servers list.")
-             return self.async_abort(reason="no_servers_found") # Abort if list is missing
+             description_placeholders = {"message": "No servers were found on this manager. You can still add the manager itself and select servers later via configuration."}
+        else:
+             description_placeholders = {"message": "Select the initial Minecraft server instances you want to monitor."}
 
-        # Define the schema for the dropdown dynamically
+
         select_schema = vol.Schema({
-            vol.Required(CONF_SERVER_NAME): selector.SelectSelector(
+            vol.Optional(CONF_SERVER_NAMES, default=[]): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=self._discovered_servers,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LISTBOX,
                  )
             ),
         })
 
         return self.async_show_form(
-            step_id="select_server", data_schema=select_schema, errors=errors
+            step_id="select_servers",
+            data_schema=select_schema,
+            errors=errors,
+            description_placeholders=description_placeholders
         )
 
-
-    async def _validate_server_selection(self, server_name: str) -> None:
-        """Validate the selected server exists using the API."""
-        # Recreate client briefly for this validation
-        session = async_get_clientsession(self.hass)
-        api_client = MinecraftBedrockApi(
-            host=self._user_input[CONF_HOST],
-            port=int(self._user_input[CONF_PORT]),
-            username=self._user_input[CONF_USERNAME],
-            password=self._user_input[CONF_PASSWORD],
-            session=session,
-        )
-        try:
-            # Authentication might be needed even for validate endpoint based on docs
-            await api_client.authenticate() # Ensure token is fresh
-            await api_client.async_validate_server_exists(server_name)
-        except AuthError as err:
-             # Should not happen if initial validation passed, but handle just in case
-             _LOGGER.error("Auth error during server selection validation: %s", err)
-             raise APIError(f"Authentication failed validating server {server_name}") from err
-        # Let ServerNotFoundError and other APIErrors propagate up
-        except Exception as err:
-             _LOGGER.exception("Unexpected error validating server selection: %s", err)
-             raise APIError(f"Unexpected error validating server {server_name}") from err
-
+    # --- Options Flow Link ---
     @staticmethod
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> MinecraftBdsManagerOptionsFlowHandler: # Return type is your options handler class
+    ) -> MinecraftBdsManagerOptionsFlowHandler:
         """Get the options flow for this handler."""
         return MinecraftBdsManagerOptionsFlowHandler(config_entry)
