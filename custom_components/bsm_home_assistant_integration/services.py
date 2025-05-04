@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import cast, Dict
+from typing import cast, Dict, Optional
 
 import voluptuous as vol
 
@@ -15,6 +15,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import (
     DOMAIN,
     SERVICE_SEND_COMMAND,
+    SERVICE_PRUNE_DOWNLOADS,
     FIELD_COMMAND,
     FIELD_DIRECTORY,
     FIELD_KEEP,
