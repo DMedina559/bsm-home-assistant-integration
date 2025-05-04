@@ -1,0 +1,132 @@
+{
+  "title": "Minecraft Bedrock Server Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Minecraft Server Manager",
+        "description": "Enter the API connection details for your Minecraft Bedrock Server Manager instance.",
+        "data": {
+          "host": "Host / IP Address",
+          "port": "Port",
+          "username": "API Username",
+          "password": "API Password"
+        }
+      },
+      "select_servers": {
+        "title": "Select Initial Servers",
+        "description": "{message}",
+        "data": {
+          "servers": "Servers to Monitor"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
+      "invalid_auth": "Invalid username or password provided. Please check your credentials.",
+      "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager.",
+      "server_validation_failed": "Failed to validate the selected server '{server_name}' with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
+      "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
+      "unknown_validation_error": "An unexpected error occurred during validation.",
+      "api_error": "An API error occurred while communicating with the manager: {error_details}"
+    },
+    "abort": {
+      "already_configured": "A Manager instance for {host}:{port} is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Minecraft Server Manager Options",
+        "description": "Choose which settings to modify for the manager at {host}.",
+        "menu": {
+          "options": {
+            "update_credentials": "Update API Credentials",
+            "select_servers": "Select Servers to Monitor",
+            "update_interval": "Update Polling Interval"
+          }
+        }
+      },
+      "update_credentials": {
+        "title": "Update API Credentials",
+        "description": "Enter the new API username and password for the manager at {host}.",
+        "data": {
+          "username": "New API Username",
+          "password": "New API Password"
+        }
+      },
+      "select_servers": {
+        "title": "Select Servers to Monitor",
+        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.",
+        "data": {
+          "servers": "Servers to Monitor"
+        }
+      },
+      "update_interval": {
+        "title": "Update Polling Interval",
+        "description": "Set how often Home Assistant should poll the manager API for status updates (for running servers). Lower values update faster but increase load.",
+        "data": {
+          "scan_interval": "Update frequency (seconds)"
+        }
+      }
+    },
+    "error": {
+       "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
+       "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
+       "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
+       "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
+       "unknown_error": "An unexpected error occurred."
+    },
+    "abort": {
+        "credentials_updated": "Credentials updated successfully. Reloading integration.",
+        "changes_successful": "Options updated successfully. Reloading integration."
+    }
+  },
+  "entity": {
+    "button": {
+      "restart_server": {
+        "name": "Restart"
+      },
+      "update_server": {
+         "name": "Update"
+      },
+      "trigger_backup": {
+         "name": "Backup"
+      },
+      "prune_downloads": {
+         "name": "Prune Download Cache"
+      },
+      "scan_players": {
+          "name": "Scan Player Logs"
+      }
+    },
+    "switch": {
+      "server_control": {
+        "name": "Server"
+      }
+    },
+    "sensor": {
+       "status": {
+          "name": "Status"
+       },
+       "cpu_usage": {
+           "name": "CPU Usage"
+       },
+       "memory_usage": {
+            "name": "Memory Usage"
+       }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send command",
+      "description": "Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "The command string to send to the server console (without the leading '/')."
+        }
+      }
+    }
+  }
+}

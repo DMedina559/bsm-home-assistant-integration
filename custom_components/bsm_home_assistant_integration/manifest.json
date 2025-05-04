@@ -1,7 +1,7 @@
 {
-  "domain": "bsm-home-assistant-integration",
+  "domain": "bsm_home_assistant_integration",
   "name": "Bedrock Server Manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "documentation": "https://github.com/dmedina559/bsm-home-assistant-integration",
   "issue_tracker": "https://github.com/dmedina559/bsm-home-assistant-integration",
   "codeowners": [ "@DMedina559" ],
@@ -9,5 +9,5 @@
   "dependencies": [],
   "config_flow": true,
   "iot_class": "local_polling",
-  "loggers": [ "custom_components.bsm-home-assistant-integration" ]
+  "loggers": [ "custom_components.bsm_home_assistant_integration" ]
 }
