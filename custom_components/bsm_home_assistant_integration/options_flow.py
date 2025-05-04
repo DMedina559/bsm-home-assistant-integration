@@ -24,7 +24,6 @@ from .api import (
     APIError,
     AuthError,
     CannotConnectError,
-    # ServerNotFoundError, # Not directly needed in options flow itself typically
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ STEP_CREDENTIALS_SCHEMA = vol.Schema({
     ),
 })
 
-# Schema for polling interval step (copied from previous version)
+# Schema for polling interval step
 STEP_POLLING_SCHEMA = vol.Schema({
     vol.Optional(CONF_SCAN_INTERVAL): selector.NumberSelector(
         selector.NumberSelectorConfig(
@@ -55,11 +54,15 @@ STEP_POLLING_SCHEMA = vol.Schema({
 class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle an options flow for Minecraft Bedrock Server Manager."""
 
+    # No __init__ needed anymore, self.config_entry is provided by base class
+
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # The base class constructor automatically stores config_entry as self.config_entry
+        # No need to do self.config_entry = config_entry anymore.
         # Store discovered servers list if fetched during flow
         self._discovered_servers: Optional[List[str]] = None
+
 
     async def _get_api_client(self, data_override: Optional[Dict[str, Any]] = None) -> MinecraftBedrockApi:
         """Get an API client instance using stored or overridden data."""
@@ -79,11 +82,12 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
         """Manage the options flow entry point -> Show menu."""
-        # Show menu doesn't typically use user_input
+        # --- Provide host for translation placeholder ---
+        manager_host = self.config_entry.data.get(CONF_HOST, "Unknown Host")
         return self.async_show_menu(
             step_id="init", # Important: Needs a step_id for the menu itself
             menu_options=["update_credentials", "select_servers", "update_interval"],
-            # Add description_placeholders if needed
+            description_placeholders={"host": manager_host} # Provide the host value
         )
 
     async def async_step_update_credentials(
@@ -98,14 +102,10 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
             validation_data.update(user_input) # Overwrite user/pass with new values
 
             try:
-                # Get API client with the NEW credentials
                 api_client = await self._get_api_client(data_override=validation_data)
-                # Attempt authentication with new credentials
                 await api_client.authenticate()
 
-                # If auth succeeds, update the stored config entry data
                 _LOGGER.info("Credentials validation successful for %s. Updating entry.", self.config_entry.entry_id)
-                # Update only the changed data fields
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data={
@@ -114,21 +114,20 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_PASSWORD: user_input[CONF_PASSWORD], # Update password
                     }
                 )
-                # Abort the flow, indicating success. The update listener in __init__ should trigger reload.
+                # Reloading is handled by the listener in __init__.py
                 return self.async_abort(reason="credentials_updated")
 
-            except (AuthError, InvalidAuth): # Catch specific auth errors
+            except (AuthError, InvalidAuth): # Defined in config_flow.py - maybe move exceptions? Keep for now.
                 _LOGGER.warning("Failed to authenticate with new credentials for %s.", self.config_entry.entry_id)
-                errors["base"] = "invalid_auth" # Use translation key
-            except (APIError, CannotConnectError) as err: # Catch other API/connection issues
+                errors["base"] = "invalid_auth"
+            except (APIError, CannotConnectError) as err: # Defined in config_flow.py
                 _LOGGER.error("API/Connection error validating new credentials: %s", err)
-                errors["base"] = "cannot_connect" # Or a more generic API error key
-            except Exception as err: # Catch unexpected errors
+                errors["base"] = "cannot_connect"
+            except Exception as err:
                 _LOGGER.exception("Unexpected error validating new credentials: %s", err)
                 errors["base"] = "unknown_error"
 
-        # Show form for the first time or if errors occurred
-        # Pre-fill username, leave password blank
+        # Show form
         current_data = self.config_entry.data
         schema = self.add_suggested_values_to_schema(
             STEP_CREDENTIALS_SCHEMA,
@@ -139,7 +138,7 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
             step_id="update_credentials",
             data_schema=schema,
             errors=errors,
-            description_placeholders={"host": current_data.get(CONF_HOST)}, # Example placeholder
+            description_placeholders={"host": current_data.get(CONF_HOST)},
         )
 
 
@@ -149,7 +148,8 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle the step for selecting which servers to monitor."""
         errors: Dict[str, str] = {}
 
-        # Fetch the latest list of available servers first (if not already fetched)
+        # Fetch the latest list of available servers first
+        # Use instance variable to avoid re-fetching if navigating back/forth
         if self._discovered_servers is None:
             try:
                 api_client = await self._get_api_client() # Use current credentials
@@ -157,24 +157,27 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
                 self._discovered_servers = await api_client.async_get_server_list()
             except (APIError, CannotConnectError, AuthError) as err:
                  _LOGGER.error("Failed to fetch server list for options flow: %s", err)
-                 # Abort this step if we cannot get the list
-                 # TODO: Add specific translation key for this abort reason
-                 return self.async_abort(reason="fetch_servers_failed")
+                 # Show an error on the form instead of aborting
+                 errors["base"] = "fetch_servers_failed"
+                 # Set discovered servers to empty list to show form gracefully
+                 self._discovered_servers = []
             except Exception as err:
                 _LOGGER.exception("Unexpected error fetching server list for options flow: %s", err)
-                return self.async_abort(reason="unknown_error")
+                errors["base"] = "unknown_error"
+                self._discovered_servers = []
 
 
-        if user_input is not None:
+        if user_input is not None and not errors: # Don't proceed if fetch failed
             # User submitted the form, update the options
             selected_servers = user_input.get(CONF_SERVER_NAMES, [])
             _LOGGER.debug(
                 "Updating server selection for entry %s to: %s",
                 self.config_entry.entry_id, selected_servers
             )
-            # Create entry updates options. Title="" ensures it updates current entry.
-            # Pass current options merged with new selection
+            # Update the options part of the config entry
+            # Merge with existing options to preserve other settings like scan_interval
             new_options = {**self.config_entry.options, CONF_SERVER_NAMES: selected_servers}
+            # Use self.async_update_reload_and_abort for options update standard practice
             return self.async_create_entry(title="", data=new_options)
 
 
@@ -184,11 +187,12 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Define the multi-select schema
         select_schema = vol.Schema({
+            # Use current selection as default
             vol.Optional(CONF_SERVER_NAMES, default=current_selection): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=self._discovered_servers or [], # Use fetched list or empty if fetch failed
+                    options=self._discovered_servers or [], # Use fetched list
                     multiple=True,
-                    mode=selector.SelectSelectorMode.LISTBOX,
+                    # mode=selector.SelectSelectorMode.LISTBOX, # REMOVE THIS LINE causing AttributeError
                     sort=True, # Sort the list for better UI
                 )
             ),
@@ -197,7 +201,7 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="select_servers",
             data_schema=select_schema,
-            errors=errors, # Errors typically not set here unless future validation added
+            errors=errors, # Show fetch errors if any
         )
 
     async def async_step_update_interval(
@@ -218,15 +222,14 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
                  )
                  # Merge with existing options and save
                  new_options = {**self.config_entry.options, CONF_SCAN_INTERVAL: scan_interval}
+                 # Use self.async_update_reload_and_abort for options update standard practice
                  return self.async_create_entry(title="", data=new_options)
 
-
         # Show the form
-        # Get current value to pre-fill
         current_scan_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
         )
-        # Use schema defined earlier, setting default
+        # Use schema defined earlier, adding default value
         schema = self.add_suggested_values_to_schema(
             STEP_POLLING_SCHEMA,
             suggested_values={CONF_SCAN_INTERVAL: current_scan_interval}

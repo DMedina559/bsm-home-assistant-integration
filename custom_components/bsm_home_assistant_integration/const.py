@@ -1,7 +1,7 @@
 """Constants for the Minecraft Bedrock Server Manager integration."""
 
 # Domain slug for Home Assistant
-DOMAIN = "bsm-home-assistant-integration"
+DOMAIN = "bsm_home_assistant_integration"
 
 # Platforms supported by this integration
 PLATFORMS = ["sensor", "switch", "button"]
@@ -12,6 +12,7 @@ CONF_PORT = "port"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_SERVER_NAME = "server_name"
+CONF_SERVER_NAMES = "servers"
 
 # Default values
 DEFAULT_PORT = 11325

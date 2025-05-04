@@ -9,7 +9,7 @@ from homeassistant.components.button import (
     ButtonDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT # Import if needed
+# from homeassistant.const import CONF_HOST, CONF_PORT # Not needed directly here
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory # Import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -27,42 +27,28 @@ _LOGGER = logging.getLogger(__name__)
 # --- Descriptions for Server-Specific Buttons ---
 SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
-        key="restart_server",
-        name="Restart",
-        icon="mdi:restart",
+        key="restart_server", name="Restart", icon="mdi:restart",
         device_class=ButtonDeviceClass.RESTART,
     ),
     ButtonEntityDescription(
-        key="update_server",
-        name="Update",
-        icon="mdi:update",
+        key="update_server", name="Update", icon="mdi:update",
         device_class=ButtonDeviceClass.UPDATE,
     ),
     ButtonEntityDescription(
-        key="trigger_backup",
-        name="Backup",
-        icon="mdi:backup-restore",
+        key="trigger_backup", name="Backup", icon="mdi:backup-restore",
     ),
-    # Add other server-specific buttons here (e.g., export_world)
-    # ButtonEntityDescription(
-    #     key="export_world",
-    #     name="Export World",
-    #     icon="mdi:package-variant-closed-up",
-    # ),
+    # Add other server-specific buttons like export_world if API method exists
+    # ButtonEntityDescription(key="export_world", name="Export World", icon="mdi:package-variant-closed-up"),
 )
 
 # --- Descriptions for Manager-Global Buttons ---
 MANAGER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
-        key="prune_downloads",
-        name="Prune Download Cache",
-        icon="mdi:delete-sweep",
+        key="prune_downloads", name="Prune Download Cache", icon="mdi:delete-sweep",
         entity_category=EntityCategory.CONFIG, # Config action
     ),
     ButtonEntityDescription(
-        key="scan_players",
-        name="Scan Player Logs",
-        icon="mdi:account-search",
+        key="scan_players", name="Scan Player Logs", icon="mdi:account-search",
         entity_category=EntityCategory.DIAGNOSTIC, # Diagnostic action
     ),
 )
@@ -78,8 +64,8 @@ async def async_setup_entry(
     # Retrieve the central data stored by __init__.py
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
-        servers_data: dict = entry_data["servers"] # Dict keyed by server_name
-        manager_device_id: str = entry_data["manager_device_id"]
+        servers_data: dict = entry_data.get("servers", {}) # Default to empty dict if missing
+        manager_identifier: tuple = entry_data["manager_identifier"]
         api_client: MinecraftBedrockApi = entry_data["api"] # Shared API client
     except KeyError as e:
         _LOGGER.error("Missing expected data for entry %s: %s. Cannot set up buttons.", entry.entry_id, e)
@@ -88,28 +74,29 @@ async def async_setup_entry(
     entities_to_add = []
 
     # --- Create Buttons for the Manager Device ---
+    _LOGGER.debug("Setting up manager-global buttons")
     for description in MANAGER_BUTTON_DESCRIPTIONS:
         entities_to_add.append(
             MinecraftManagerButton(
-                entry=entry,
+                entry=entry, # Pass entry for context
                 api_client=api_client, # Pass shared API client
                 description=description,
-                manager_device_id=manager_device_id, # Link to manager device
+                manager_identifier=manager_identifier, # Pass manager identifier tuple
             )
         )
 
     # --- Create Buttons for Each Server Device ---
     if not servers_data:
-        _LOGGER.info("No servers configured for this manager entry (%s). Skipping server button setup.", entry.entry_id)
+        _LOGGER.debug("No servers configured or initialized for manager entry %s. Skipping server button setup.", entry.entry_id)
     else:
         _LOGGER.debug("Setting up server buttons for: %s", list(servers_data.keys()))
         # Loop through each server managed by this entry
         for server_name, server_data in servers_data.items():
-            try:
-                coordinator: MinecraftBedrockCoordinator = server_data["coordinator"]
-            except KeyError:
-                _LOGGER.error("Coordinator missing for server '%s' in entry %s. Skipping buttons for this server.", server_name, entry.entry_id)
-                continue # Skip this server if coordinator setup failed
+            # Check if coordinator exists for this server
+            coordinator = server_data.get("coordinator")
+            if not coordinator:
+                _LOGGER.warning("Coordinator object missing for server '%s' in entry %s. Skipping server buttons.", server_name, entry.entry_id)
+                continue
 
             # Create server-specific buttons
             for description in SERVER_BUTTON_DESCRIPTIONS:
@@ -117,9 +104,9 @@ async def async_setup_entry(
                     MinecraftServerButton(
                         coordinator=coordinator, # Pass the correct coordinator
                         description=description,
-                        entry=entry,
+                        entry=entry, # Pass entry for context
                         server_name=server_name, # Pass the specific server name
-                        manager_device_id=manager_device_id # Pass manager device ID for linking
+                        manager_identifier=manager_identifier # Pass manager identifier tuple for linking
                     )
                 )
 
@@ -141,7 +128,7 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
         description: ButtonEntityDescription,
         entry: ConfigEntry,
         server_name: str, # Explicitly receive server_name
-        manager_device_id: str, # Receive manager device ID
+        manager_identifier: tuple, # Receive manager identifier tuple
     ) -> None:
         """Initialize the server button."""
         super().__init__(coordinator) # Pass the specific coordinator for this server
@@ -153,14 +140,13 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
         # Unique ID: domain_servername_buttonkey
         self._attr_unique_id = f"{DOMAIN}_{self._server_name}_{description.key}"
 
-        # --- Refactored Device Info ---
-        # Link to the specific server device, which links to the manager device
+        # --- Device Info links to the specific server device ---
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._server_name)}, # Use server name as identifier for THIS device
-            # Let HA merge name/model etc from sensor/switch device info
-            via_device=(DOMAIN, manager_device_id), # Link to the main manager device
+            # Let HA merge name/model etc from sensor/switch platform
+            via_device=manager_identifier, # Link to the main manager device
         )
-        # --- End Refactored Device Info ---
+        # --- End Device Info ---
 
     @property
     def available(self) -> bool:
@@ -182,17 +168,10 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
         failure_message = f"Failed to perform action '{action}' on server {server_name}"
 
         # Map button key to API method using the retrieved api_client
-        if action == "restart_server":
-            api_call = api_client.async_restart_server
-        elif action == "update_server":
-            api_call = api_client.async_update_server
-        elif action == "trigger_backup":
-            # Use default backup_type="all" defined in api.py
-            api_call = api_client.async_trigger_backup
-            success_message = f"Server {server_name} full backup initiated."
-        # Add elif for export_world etc. if implemented
-        # elif action == "export_world":
-        #    api_call = api_client.async_export_world
+        if action == "restart_server": api_call = api_client.async_restart_server
+        elif action == "update_server": api_call = api_client.async_update_server
+        elif action == "trigger_backup": api_call = api_client.async_trigger_backup; success_message = f"Server {server_name} full backup initiated."
+        # elif action == "export_world": api_call = api_client.async_export_world # Example
         else:
             _LOGGER.error("Unhandled server button action: %s for server %s", action, server_name)
             raise HomeAssistantError(f"Unknown server button action requested: {action}")
@@ -204,11 +183,8 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
                 response = await api_call(server_name)
                 _LOGGER.debug("API response for action '%s' on server '%s': %s", action, server_name, response)
                 _LOGGER.info(success_message)
-
                 # Optional refresh for actions that change state quickly
-                if action == "restart_server":
-                     await self.coordinator.async_request_refresh()
-
+                if action == "restart_server": await self.coordinator.async_request_refresh()
             except APIError as err:
                 _LOGGER.error("%s: %s", failure_message, err)
                 raise HomeAssistantError(f"{failure_message}: {getattr(err, 'message', err)}") from err
@@ -218,7 +194,7 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
 
 
 # --- Manager-Specific Button Entity ---
-# Does NOT inherit from CoordinatorEntity as it doesn't depend on a specific server's state
+# Does NOT inherit from CoordinatorEntity
 class MinecraftManagerButton(ButtonEntity):
     """Represents an action button for the overall Minecraft Server Manager."""
 
@@ -229,54 +205,45 @@ class MinecraftManagerButton(ButtonEntity):
         entry: ConfigEntry,
         api_client: MinecraftBedrockApi, # Receive shared API client directly
         description: ButtonEntityDescription,
-        manager_device_id: str, # Receive manager device ID
+        manager_identifier: tuple, # Receive manager identifier tuple
     ) -> None:
         """Initialize the manager button."""
-        # Don't call super().__init__(coordinator)
         self.entity_description = description
-        self._entry = entry
+        self._entry = entry # Store entry for context if needed
         self._api = api_client # Store the shared API client
-        self._manager_device_id = manager_device_id
+        self._manager_identifier = manager_identifier # Store identifier
 
         # Unique ID: domain_manager_host_port_buttonkey
-        manager_unique_id = f"{entry.data[CONF_HOST]}:{int(entry.data[CONF_PORT])}"
-        self._attr_unique_id = f"{DOMAIN}_{manager_unique_id}_{description.key}"
+        manager_host_port_id = manager_identifier[1] # Get the host:port part
+        self._attr_unique_id = f"{DOMAIN}_{manager_host_port_id}_{description.key}"
 
         # --- Device Info links directly to the Manager Device ---
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._manager_device_id)}, # Use manager device ID
-            # Let HA merge name/model etc. from the device created in __init__
+            identifiers={self._manager_identifier}, # Use the identifier tuple directly
+            # Let HA merge name/model etc from the device created in __init__
         )
         # --- End Device Info ---
 
         # Manager buttons are generally always available if the integration is loaded
-        self._attr_available = True
+        self._attr_available = True # Could add check here if manager API has a health status
 
     async def async_press(self) -> None:
         """Handle the button press for a manager-global action."""
         action = self.entity_description.key
         _LOGGER.info("Button pressed for global manager action '%s'", action)
 
+        # Use the stored self._api client
         api_call = None
         success_message = f"Global action '{action}' initiated."
         failure_message = f"Failed to perform global action '{action}'"
 
         # Map button key to GLOBAL API method
-        # These methods likely don't exist yet in api.py - need to be added!
         if action == "prune_downloads":
-            # Assume api_client has a method like async_prune_download_cache()
-            if hasattr(self._api, "async_prune_download_cache"):
-                 api_call = self._api.async_prune_download_cache
-            else:
-                 _LOGGER.error("API method async_prune_download_cache not implemented.")
-                 raise HomeAssistantError("Prune downloads action not implemented in API client.")
+            if hasattr(self._api, "async_prune_download_cache"): api_call = self._api.async_prune_download_cache
+            else: _LOGGER.error("API method async_prune_download_cache not implemented."); raise HomeAssistantError("Prune downloads action not implemented.")
         elif action == "scan_players":
-            # Assume api_client has a method like async_scan_player_logs()
-             if hasattr(self._api, "async_scan_player_logs"):
-                 api_call = self._api.async_scan_player_logs
-             else:
-                 _LOGGER.error("API method async_scan_player_logs not implemented.")
-                 raise HomeAssistantError("Scan player logs action not implemented in API client.")
+             if hasattr(self._api, "async_scan_player_logs"): api_call = self._api.async_scan_player_logs
+             else: _LOGGER.error("API method async_scan_player_logs not implemented."); raise HomeAssistantError("Scan player logs action not implemented.")
         else:
             _LOGGER.error("Unhandled manager button action: %s", action)
             raise HomeAssistantError(f"Unknown manager button action requested: {action}")
@@ -284,12 +251,10 @@ class MinecraftManagerButton(ButtonEntity):
         # Execute the mapped API call
         if api_call:
             try:
-                # Global calls might not need arguments, or might need specific ones
-                response = await api_call() # Call without server_name
+                # Global calls likely don't need arguments
+                response = await api_call()
                 _LOGGER.debug("API response for global action '%s': %s", action, response)
                 _LOGGER.info(success_message)
-                # No coordinator refresh needed for global actions usually
-
             except APIError as err:
                 _LOGGER.error("%s: %s", failure_message, err)
                 raise HomeAssistantError(f"{failure_message}: {getattr(err, 'message', err)}") from err

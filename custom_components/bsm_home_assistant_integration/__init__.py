@@ -14,17 +14,17 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import device_registry as dr # Import device registry
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 
-# Import API definitions used by coordinator/setup logic
+# Import API definitions used by coordinator/setup logic (AuthError etc)
 from .api import (
     MinecraftBedrockApi,
     AuthError,
     CannotConnectError,
-    APIError, # Import other errors if needed
+    APIError, # Import other errors if needed by helper
 )
 # Import local constants
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAMES, # Import the new constant for the list
+    CONF_SERVER_NAMES, # Import the constant for the list
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
 )
@@ -59,28 +59,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # --- Create the Central "Manager" Device ---
     # This device represents the BSM API endpoint itself
-    manager_unique_id = f"{host}:{port}" # Use host:port as unique ID for the manager
+    manager_host_port_id = f"{host}:{port}" # Logical identifier value (string)
+    # Create the identifier tuple using the domain and the logical ID string
+    manager_identifier = (DOMAIN, manager_host_port_id)
     device_registry = dr.async_get(hass)
     manager_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, manager_unique_id)}, # Identifier for this manager instance
+        identifiers={manager_identifier}, # Pass the identifier tuple in a set
         name=f"BSM @ {host}",
         manufacturer="Minecraft Bedrock Manager", # Or your specific branding
         model="Server Manager API",
+        # sw_version=? # Can add manager version if API provides it
         configuration_url=f"http://{host}:{port}", # Link to the manager UI
     )
-    _LOGGER.debug("Ensured manager device exists: %s", manager_device.id)
+    _LOGGER.debug("Ensured manager device exists: ID=%s, Identifier=%s", manager_device.id, manager_identifier)
 
-    # --- Store API Client and Prepare Server Data Store ---
+    # --- Store API Client and Manager Identifier ---
+    # Store the identifier tuple for platforms to use for linking (via_device)
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
-        "manager_device_id": manager_device.id, # Store manager device ID for linking
+        "manager_identifier": manager_identifier, # Store identifier tuple
         "servers": {}, # Dictionary to hold data for each server instance
     }
 
     # --- Create Coordinators for Selected Servers ---
     if not selected_servers:
-        _LOGGER.warning("No servers selected for manager %s. Integration will load but monitor no servers.", manager_unique_id)
+        _LOGGER.warning("No servers selected for manager %s. Integration will load but monitor no servers.", manager_host_port_id)
     else:
         _LOGGER.info("Setting up coordinators for servers: %s", selected_servers)
         setup_tasks = []
@@ -96,32 +100,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Check for errors during individual coordinator setups
         successful_setups = 0
         for i, result in enumerate(results):
+            # Use the original list order to match results to server names
             server_name = selected_servers[i]
             if isinstance(result, Exception):
-                # Log the specific error for that server coordinator setup
-                # Use format_exc to get the full traceback for debugging
-                exc_info = (type(result), result, result.__traceback__)
                 log_msg = f"Failed to set up coordinator for server '{server_name}': {result}"
-                # Log full traceback for unexpected errors
-                if not isinstance(result, (ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError)):
-                     _LOGGER.error(log_msg + "\n%s", traceback.format_exc(), exc_info=False) # Log simple message + separate traceback
+                # Log full traceback only for truly unexpected errors
+                if not isinstance(result, (ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError, APIError)):
+                     _LOGGER.error(log_msg + "\n%s", traceback.format_exc(), exc_info=False)
                 else:
-                     _LOGGER.error(log_msg, exc_info=False) # Log known HA exceptions more cleanly
-
-                # Optionally: Remove the failed server entry from hass.data if needed?
-                # Or just let it be empty, platforms should handle missing coordinator.
+                     _LOGGER.error(log_msg, exc_info=False)
+                # Remove failed server entry from hass.data so platforms don't try to use it
                 if server_name in hass.data[DOMAIN][entry.entry_id]["servers"]:
                     del hass.data[DOMAIN][entry.entry_id]["servers"][server_name]
-
             else:
                  successful_setups += 1
 
-        # If ALL coordinator setups failed, raise ConfigEntryNotReady
+        # If ALL coordinator setups failed (and servers were selected), raise ConfigEntryNotReady
         if successful_setups == 0 and selected_servers:
-             _LOGGER.error("All server coordinator setups failed for manager %s.", manager_unique_id)
-             # Clean up hass.data entry before raising?
-             # hass.data[DOMAIN].pop(entry.entry_id) # Maybe not, allow retry?
-             raise ConfigEntryNotReady(f"Could not establish connection or initial update for any selected server on manager {manager_unique_id}")
+             _LOGGER.error("All server coordinator setups failed for manager %s.", manager_host_port_id)
+             raise ConfigEntryNotReady(f"Could not establish connection or initial update for any selected server on manager {manager_host_port_id}")
 
     # --- Forward Setup to Platforms ---
     # Platforms will now look into hass.data[DOMAIN][entry.entry_id]["servers"]
@@ -152,12 +149,15 @@ async def _async_setup_server_coordinator(
     )
     # Perform initial refresh *for this specific coordinator*
     # This might raise ConfigEntryAuthFailed or UpdateFailed (-> ConfigEntryNotReady)
+    # Let the exception propagate up to the gather call in async_setup_entry
     await coordinator.async_config_entry_first_refresh()
 
     # Store the successful coordinator in hass.data
+    # Ensure the "servers" dict exists before trying to add to it
+    hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})
     hass.data[DOMAIN][entry.entry_id]["servers"][server_name] = {
         "coordinator": coordinator,
-        # Add other server-specific static info here if needed later
+        # Static info will be fetched by platforms now if needed
     }
     _LOGGER.debug("Successfully set up coordinator for server: %s", server_name)
 
@@ -183,15 +183,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id, None) # Remove entry's data safely
 
         if entry_data:
-             # Optionally: Add code here to explicitly stop any running coordinators
-             # Although HA might handle this implicitly when the entry unloads.
-             # server_dict = entry_data.get("servers", {})
-             # for server_name, server_data in server_dict.items():
-             #     coordinator = server_data.get("coordinator")
-             #     if coordinator:
-             #         # How to properly stop/cancel a coordinator? Check HA dev docs.
-             #         # coordinator.async_shutdown() # Example - actual method might differ
-             #         _LOGGER.debug("Stopping coordinator for server %s", server_name)
              _LOGGER.debug("Successfully removed data for entry %s (%s)", entry.entry_id, manager_host)
         else:
              _LOGGER.debug("No data found in hass.data for entry %s (%s) during unload.", entry.entry_id, manager_host)
