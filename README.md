@@ -20,7 +20,7 @@ Connect Home Assistant with your [Bedrock Server Manager](https://github.com/dme
 
 ### Recommended: HACS Installation
 
-* Adding Proxmox VE to HACS can be using this button:
+* Easily add the Bedrock Server Manager integration to HACS using this button:
 
     [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
 
