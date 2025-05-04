@@ -6,25 +6,35 @@ from typing import Any, Dict, Optional, List
 
 _LOGGER = logging.getLogger(__name__)
 
+
 # --- Custom Exceptions ---
 class APIError(Exception):
     """Generic API Error."""
+
     pass
+
 
 class AuthError(APIError):
     """Authentication Error (e.g., 401 Unauthorized, Bad Credentials)."""
+
     pass
+
 
 class ServerNotFoundError(APIError):
     """Server name not found (e.g., 404 on server-specific endpoint or validation)."""
+
     pass
+
 
 class ServerNotRunningError(APIError):
     """Operation requires server to be running, but it is not."""
+
     pass
+
 
 class CannotConnectError(APIError):
     """Error connecting to the API host."""
+
     pass
 
 
@@ -35,21 +45,24 @@ class MinecraftBedrockApi:
     def __init__(
         self,
         host: str,
-        port: int, # Should be passed as int
+        port: int,  # Should be passed as int
         username: str,
         password: str,
         session: aiohttp.ClientSession,
-        base_path: str = "/api"
+        base_path: str = "/api",
     ):
         """Initialize the API client."""
         # Ensure host doesn't accidentally include schema
         host = host.replace("http://", "").replace("https://", "")
-        self._base_url = f"http://{host}:{port}{base_path}" # Construct base URL
+        self._base_url = f"http://{host}:{port}{base_path}"  # Construct base URL
         self._username = username
         self._password = password
         self._session = session
         self._jwt_token: Optional[str] = None
-        self._headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        self._headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
     async def _request(
         self,
@@ -65,36 +78,54 @@ class MinecraftBedrockApi:
 
         if authenticated:
             if not self._jwt_token:
-                _LOGGER.debug("No token found for authenticated request %s, attempting login first.", path)
+                _LOGGER.debug(
+                    "No token found for authenticated request %s, attempting login first.",
+                    path,
+                )
                 try:
-                     await self.authenticate()
+                    await self.authenticate()
                 except AuthError:
-                     _LOGGER.error("Initial authentication failed for request %s", path)
-                     raise # Re-raise the AuthError
+                    _LOGGER.error("Initial authentication failed for request %s", path)
+                    raise  # Re-raise the AuthError
             if self._jwt_token:
-                 headers["Authorization"] = f"Bearer {self._jwt_token}"
-                 _LOGGER.debug("Added Bearer token to headers for %s", path)
+                headers["Authorization"] = f"Bearer {self._jwt_token}"
+                _LOGGER.debug("Added Bearer token to headers for %s", path)
             else:
-                 _LOGGER.error("Authentication required for %s but no token available after login attempt.", path)
-                 raise AuthError("Authentication required but no token available after login attempt.")
+                _LOGGER.error(
+                    "Authentication required for %s but no token available after login attempt.",
+                    path,
+                )
+                raise AuthError(
+                    "Authentication required but no token available after login attempt."
+                )
 
         _LOGGER.debug("Making API request: %s %s (Headers: %s)", method, url, headers)
         try:
             async with self._session.request(
                 method, url, json=data, headers=headers, raise_for_status=False
             ) as response:
-                _LOGGER.debug("API Raw Response Status for %s %s: %s", method, path, response.status)
+                _LOGGER.debug(
+                    "API Raw Response Status for %s %s: %s",
+                    method,
+                    path,
+                    response.status,
+                )
 
                 # Handle Unauthorized (Token Expired/Invalid) - Only retry once
                 if response.status == 401 and authenticated and not is_retry:
-                    _LOGGER.warning("Received 401 Unauthorized for %s, attempting token refresh and retry.", path)
-                    self._jwt_token = None # Invalidate the current token
+                    _LOGGER.warning(
+                        "Received 401 Unauthorized for %s, attempting token refresh and retry.",
+                        path,
+                    )
+                    self._jwt_token = None  # Invalidate the current token
                     try:
                         # Retry the request *once* after forcing re-authentication
-                        return await self._request(method, path, data=data, authenticated=True, is_retry=True)
+                        return await self._request(
+                            method, path, data=data, authenticated=True, is_retry=True
+                        )
                     except AuthError:
                         _LOGGER.error("Re-authentication failed after 401.")
-                        raise # Re-raise the AuthError from the failed authenticate() call
+                        raise  # Re-raise the AuthError from the failed authenticate() call
 
                 # Still 401 (initial login failed, retry failed, or non-authenticated route failed auth)
                 elif response.status == 401:
@@ -102,22 +133,31 @@ class MinecraftBedrockApi:
                     error_message = resp_text
                     try:
                         error_data = await response.json()
-                        error_message = error_data.get('message', error_data.get('error', resp_text))
-                    except (aiohttp.ContentTypeError, ValueError): pass
-                    if path == "/login" and "bad username or password" in error_message.lower():
-                         raise AuthError("Bad username or password")
+                        error_message = error_data.get(
+                            "message", error_data.get("error", resp_text)
+                        )
+                    except (aiohttp.ContentTypeError, ValueError):
+                        pass
+                    if (
+                        path == "/login"
+                        and "bad username or password" in error_message.lower()
+                    ):
+                        raise AuthError("Bad username or password")
                     else:
-                         raise AuthError(f"Authentication Failed (401): {error_message}")
+                        raise AuthError(f"Authentication Failed (401): {error_message}")
 
                 # Handle Server Not Found (based on pre-validation or specific endpoints)
                 if response.status == 404 and path.startswith("/server/"):
-                     resp_text = await response.text()
-                     error_message = resp_text
-                     try:
-                          error_data = await response.json()
-                          error_message = error_data.get('message', resp_text)
-                     except (aiohttp.ContentTypeError, ValueError): pass
-                     raise ServerNotFoundError(f"Server Not Found (404): {error_message}")
+                    resp_text = await response.text()
+                    error_message = resp_text
+                    try:
+                        error_data = await response.json()
+                        error_message = error_data.get("message", resp_text)
+                    except (aiohttp.ContentTypeError, ValueError):
+                        pass
+                    raise ServerNotFoundError(
+                        f"Server Not Found (404): {error_message}"
+                    )
 
                 # Handle 501 Not Implemented
                 if response.status == 501:
@@ -125,8 +165,9 @@ class MinecraftBedrockApi:
                     error_message = resp_text
                     try:
                         error_data = await response.json()
-                        error_message = error_data.get('message', resp_text)
-                    except (aiohttp.ContentTypeError, ValueError): pass
+                        error_message = error_data.get("message", resp_text)
+                    except (aiohttp.ContentTypeError, ValueError):
+                        pass
                     raise APIError(f"Feature Not Implemented (501): {error_message}")
 
                 # Handle other HTTP errors (4xx Client Errors, 5xx Server Errors)
@@ -135,29 +176,52 @@ class MinecraftBedrockApi:
                     error_message = resp_text
                     try:
                         error_data = await response.json()
-                        error_message = error_data.get('message', resp_text)
+                        error_message = error_data.get("message", resp_text)
                         # Check for specific error messages indicating server not running for an action
                         msg_lower = error_message.lower()
-                        if response.status == 500 and authenticated and (
-                             "is not running" in msg_lower
-                             or "screen session" in msg_lower and "not found" in msg_lower
-                             or "pipe does not exist" in msg_lower
-                             or "server likely not running" in msg_lower
+                        if (
+                            response.status == 500
+                            and authenticated
+                            and (
+                                "is not running" in msg_lower
+                                or "screen session" in msg_lower
+                                and "not found" in msg_lower
+                                or "pipe does not exist" in msg_lower
+                                or "server likely not running" in msg_lower
+                            )
                         ):
-                            raise ServerNotRunningError(f"Operation failed: {error_message}")
-                    except (aiohttp.ContentTypeError, ValueError): pass
+                            raise ServerNotRunningError(
+                                f"Operation failed: {error_message}"
+                            )
+                    except (aiohttp.ContentTypeError, ValueError):
+                        pass
                     raise APIError(f"API Error {response.status}: {error_message}")
 
                 # --- Handle Success ---
-                _LOGGER.debug("API request successful for %s [%s]", path, response.status)
+                _LOGGER.debug(
+                    "API request successful for %s [%s]", path, response.status
+                )
                 if response.status == 204:
-                    return {"status": "success", "message": "Operation successful (No Content)"}
+                    return {
+                        "status": "success",
+                        "message": "Operation successful (No Content)",
+                    }
                 try:
                     json_response = await response.json()
                     # Check if the response format indicates error despite 2xx status
-                    if isinstance(json_response, dict) and json_response.get("status") == "error":
-                        error_message = json_response.get("message", "Unknown error structure in success response.")
-                        _LOGGER.error("API returned success status (%s) but error in body for %s: %s", response.status, path, error_message)
+                    if (
+                        isinstance(json_response, dict)
+                        and json_response.get("status") == "error"
+                    ):
+                        error_message = json_response.get(
+                            "message", "Unknown error structure in success response."
+                        )
+                        _LOGGER.error(
+                            "API returned success status (%s) but error in body for %s: %s",
+                            response.status,
+                            path,
+                            error_message,
+                        )
                         if "is not running" in error_message.lower():
                             raise ServerNotRunningError(error_message)
                         else:
@@ -165,15 +229,30 @@ class MinecraftBedrockApi:
                     return json_response
                 except (aiohttp.ContentTypeError, ValueError):
                     resp_text = await response.text()
-                    _LOGGER.warning("Successful API response (%s) for %s was not JSON: %s", response.status, path, resp_text[:100])
-                    return {"status": "success", "message": "Operation successful (Non-JSON response)", "raw_response": resp_text}
+                    _LOGGER.warning(
+                        "Successful API response (%s) for %s was not JSON: %s",
+                        response.status,
+                        path,
+                        resp_text[:100],
+                    )
+                    return {
+                        "status": "success",
+                        "message": "Operation successful (Non-JSON response)",
+                        "raw_response": resp_text,
+                    }
 
         # Handle network/connection errors
         except aiohttp.ClientError as e:
             _LOGGER.error("API connection error for %s: %s", url, e)
             raise CannotConnectError(f"Connection Error: {e}") from e
         # Handle our own raised exceptions to ensure they propagate
-        except (AuthError, ServerNotFoundError, ServerNotRunningError, APIError, CannotConnectError) as e:
+        except (
+            AuthError,
+            ServerNotFoundError,
+            ServerNotRunningError,
+            APIError,
+            CannotConnectError,
+        ) as e:
             raise e
         # Catch any other unexpected errors during the request process
         except Exception as e:
@@ -185,23 +264,33 @@ class MinecraftBedrockApi:
         _LOGGER.info("Attempting API authentication for user %s", self._username)
         try:
             response_data = await self._request(
-                "POST", "/login",
+                "POST",
+                "/login",
                 data={"username": self._username, "password": self._password},
-                authenticated=False, # Login endpoint itself doesn't require prior auth
+                authenticated=False,  # Login endpoint itself doesn't require prior auth
             )
             token = response_data.get("access_token")
             if not token or not isinstance(token, str):
-                _LOGGER.error("Authentication successful but 'access_token' missing or invalid in response: %s", response_data)
+                _LOGGER.error(
+                    "Authentication successful but 'access_token' missing or invalid in response: %s",
+                    response_data,
+                )
                 raise AuthError("Login response missing or invalid access_token.")
             _LOGGER.info("Authentication successful, token received.")
             self._jwt_token = token
             return True
-        except AuthError as e: # Catch specific auth errors from _request (e.g. 401 on login)
+        except (
+            AuthError
+        ) as e:  # Catch specific auth errors from _request (e.g. 401 on login)
             _LOGGER.error("Authentication failed during login attempt: %s", e)
-            self._jwt_token = None; raise
-        except APIError as e: # Catch other errors during login attempt (e.g., connection refused)
+            self._jwt_token = None
+            raise
+        except (
+            APIError
+        ) as e:  # Catch other errors during login attempt (e.g., connection refused)
             _LOGGER.error("API error during authentication: %s", e)
-            self._jwt_token = None; raise AuthError(f"API error during login: {e}") from e
+            self._jwt_token = None
+            raise AuthError(f"API error during login: {e}") from e
 
     # --- Server List Method ---
     async def async_get_server_list(self) -> List[str]:
@@ -211,93 +300,161 @@ class MinecraftBedrockApi:
             response_data = await self._request("GET", "/servers", authenticated=True)
             servers_raw = response_data.get("servers")
             if not isinstance(servers_raw, list):
-                raise APIError(f"Invalid format for server list response: {response_data}")
+                raise APIError(
+                    f"Invalid format for server list response: {response_data}"
+                )
             server_list: List[str] = []
             for item in servers_raw:
-                if isinstance(item, dict) and "name" in item and isinstance(item["name"], str):
+                if (
+                    isinstance(item, dict)
+                    and "name" in item
+                    and isinstance(item["name"], str)
+                ):
                     server_list.append(item["name"])
-                elif isinstance(item, str): server_list.append(item)
-                else: _LOGGER.warning("Skipping invalid item in server list: %s", item)
-            if not server_list: _LOGGER.warning("API returned an empty server list.")
+                elif isinstance(item, str):
+                    server_list.append(item)
+                else:
+                    _LOGGER.warning("Skipping invalid item in server list: %s", item)
+            if not server_list:
+                _LOGGER.warning("API returned an empty server list.")
             return sorted(server_list)
-        except APIError as e: _LOGGER.error("API error fetching server list: %s", e); raise
+        except APIError as e:
+            _LOGGER.error("API error fetching server list: %s", e)
+            raise
 
     # --- Server Information Methods ---
     async def async_validate_server_exists(self, server_name: str) -> bool:
         """Checks if a server configuration exists via the validate endpoint."""
         _LOGGER.debug("Validating existence of server: %s", server_name)
         try:
-            await self._request("GET", f"/server/{server_name}/validate", authenticated=True)
+            await self._request(
+                "GET", f"/server/{server_name}/validate", authenticated=True
+            )
             return True
-        except ServerNotFoundError: _LOGGER.warning("Validation failed: Server %s not found via API.", server_name); raise
-        except APIError as e: _LOGGER.error("Error validating server %s: %s", server_name, e); raise
+        except ServerNotFoundError:
+            _LOGGER.warning(
+                "Validation failed: Server %s not found via API.", server_name
+            )
+            raise
+        except APIError as e:
+            _LOGGER.error("Error validating server %s: %s", server_name, e)
+            raise
 
     async def async_get_server_status_info(self, server_name: str) -> Dict[str, Any]:
         """Gets runtime status info (process details, etc.) for a specific server."""
-        return await self._request("GET", f"/server/{server_name}/status_info", authenticated=True)
+        return await self._request(
+            "GET", f"/server/{server_name}/status_info", authenticated=True
+        )
 
     async def async_get_version(self, server_name: str) -> Optional[str]:
         """Gets the configured installed version for a specific server."""
         try:
-            data = await self._request("GET", f"/server/{server_name}/version", authenticated=True)
-            version = data.get("installed_version"); return str(version) if version is not None else None
-        except APIError as e: _LOGGER.warning("Could not fetch version for %s: %s", server_name, e); return None
+            data = await self._request(
+                "GET", f"/server/{server_name}/version", authenticated=True
+            )
+            version = data.get("installed_version")
+            return str(version) if version is not None else None
+        except APIError as e:
+            _LOGGER.warning("Could not fetch version for %s: %s", server_name, e)
+            return None
 
     async def async_get_world_name(self, server_name: str) -> Optional[str]:
         """Gets the configured world name for a specific server."""
         try:
-            data = await self._request("GET", f"/server/{server_name}/world_name", authenticated=True)
-            world = data.get("world_name"); return str(world) if world is not None else None
-        except APIError as e: _LOGGER.warning("Could not fetch world name for %s: %s", server_name, e); return None
+            data = await self._request(
+                "GET", f"/server/{server_name}/world_name", authenticated=True
+            )
+            world = data.get("world_name")
+            return str(world) if world is not None else None
+        except APIError as e:
+            _LOGGER.warning("Could not fetch world name for %s: %s", server_name, e)
+            return None
 
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""
-        return await self._request("POST", f"/server/{server_name}/start", authenticated=True)
+        return await self._request(
+            "POST", f"/server/{server_name}/start", authenticated=True
+        )
 
     async def async_stop_server(self, server_name: str) -> Dict[str, Any]:
         """Stops the server."""
-        return await self._request("POST", f"/server/{server_name}/stop", authenticated=True)
+        return await self._request(
+            "POST", f"/server/{server_name}/stop", authenticated=True
+        )
 
     async def async_restart_server(self, server_name: str) -> Dict[str, Any]:
         """Restarts the server."""
-        return await self._request("POST", f"/server/{server_name}/restart", authenticated=True)
+        return await self._request(
+            "POST", f"/server/{server_name}/restart", authenticated=True
+        )
 
-    async def async_send_command(self, server_name: str, command: str) -> Dict[str, Any]:
+    async def async_send_command(
+        self, server_name: str, command: str
+    ) -> Dict[str, Any]:
         """Sends a command to the server. Raises ServerNotRunningError if applicable."""
         payload = {"command": command}
-        return await self._request("POST", f"/server/{server_name}/send_command", data=payload, authenticated=True)
+        return await self._request(
+            "POST",
+            f"/server/{server_name}/send_command",
+            data=payload,
+            authenticated=True,
+        )
 
     async def async_update_server(self, server_name: str) -> Dict[str, Any]:
         """Triggers the server update process."""
-        return await self._request("POST", f"/server/{server_name}/update", authenticated=True)
+        return await self._request(
+            "POST", f"/server/{server_name}/update", authenticated=True
+        )
 
     async def async_delete_server(self, server_name: str) -> Dict[str, Any]:
         """Deletes the server (Use with caution!)."""
-        return await self._request("DELETE", f"/server/{server_name}/delete", authenticated=True)
+        return await self._request(
+            "DELETE", f"/server/{server_name}/delete", authenticated=True
+        )
 
     async def async_trigger_backup(
-        self, server_name: str, backup_type: str = "all", file_to_backup: Optional[str] = None
+        self,
+        server_name: str,
+        backup_type: str = "all",
+        file_to_backup: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Triggers a backup operation (world, config, or all)."""
-        _LOGGER.debug("Triggering backup for server '%s', type: %s%s", server_name, backup_type, f", file: {file_to_backup}" if file_to_backup else "")
+        _LOGGER.debug(
+            "Triggering backup for server '%s', type: %s%s",
+            server_name,
+            backup_type,
+            f", file: {file_to_backup}" if file_to_backup else "",
+        )
         payload: Dict[str, str] = {"backup_type": backup_type}
         if backup_type.lower() == "config":
-            if not file_to_backup: raise ValueError("file_to_backup is required when backup_type is 'config'")
+            if not file_to_backup:
+                raise ValueError(
+                    "file_to_backup is required when backup_type is 'config'"
+                )
             payload["file_to_backup"] = file_to_backup
-        return await self._request("POST", f"/server/{server_name}/backup/action", data=payload, authenticated=True)
+        return await self._request(
+            "POST",
+            f"/server/{server_name}/backup/action",
+            data=payload,
+            authenticated=True,
+        )
 
     async def async_export_world(self, server_name: str) -> Dict[str, Any]:
-         """Triggers world export."""
-         # Assuming simple POST, check API docs if body is needed
-         _LOGGER.debug("Triggering world export for server '%s'", server_name)
-         return await self._request("POST", f"/server/{server_name}/export_world", authenticated=True)
+        """Triggers world export."""
+        # Assuming simple POST, check API docs if body is needed
+        _LOGGER.debug("Triggering world export for server '%s'", server_name)
+        return await self._request(
+            "POST", f"/server/{server_name}/export_world", authenticated=True
+        )
 
     async def async_prune_backups(self, server_name: str) -> Dict[str, Any]:
-         """Triggers backup pruning for a server."""
-         # Assuming simple POST, check API docs if body (e.g., keep count) is needed
-         _LOGGER.debug("Triggering backup pruning for server '%s'", server_name)
-         return await self._request("POST", f"/server/{server_name}/backups/prune", authenticated=True)
+        """Triggers backup pruning for a server."""
+        # Assuming simple POST, check API docs if body (e.g., keep count) is needed
+        _LOGGER.debug("Triggering backup pruning for server '%s'", server_name)
+        return await self._request(
+            "POST", f"/server/{server_name}/backups/prune", authenticated=True
+        )
 
     # --- Global Manager Action Methods ---
     async def async_scan_player_logs(self) -> Dict[str, Any]:
@@ -305,3 +462,31 @@ class MinecraftBedrockApi:
         # Calls POST /api/players/scan
         _LOGGER.debug("Triggering player log scan")
         return await self._request("POST", "/players/scan", authenticated=True)
+
+    async def async_prune_download_cache(
+        self, directory: str, keep: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Triggers pruning of the global download cache for a specific directory.
+        Calls POST /api/downloads/prune.
+        """
+        _LOGGER.debug(
+            "Triggering download cache prune via API for directory '%s'%s",
+            directory,
+            (
+                f" (keeping {keep})"
+                if keep is not None
+                else " (using manager default keep)"
+            ),
+        )
+
+        # Build payload - directory is required
+        payload: Dict[str, Any] = {"directory": directory}
+        if keep is not None:
+            payload["keep"] = keep  # Add keep only if provided
+
+        return await self._request(
+            method="POST",
+            path="/downloads/prune",
+            data=payload,  # Send the required payload
+            authenticated=True,
+        )

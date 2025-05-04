@@ -1,24 +1,32 @@
 # Defines the actions provided by the Minecraft Bedrock Server Manager integration.
 
 send_command:
-  # Description shown in the frontend UI (Developer Tools -> Actions)
   description: Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.
-
   target:
-  entity:
-    domain: bsm_home_assistant_integration
   device:
     integration: bsm_home_assistant_integration
-
-  # Defines the fields (data parameters) the service accepts.
   fields:
     command:
-      # Description of the field shown in the frontend.
       description: The command string to send to the server console (without the leading '/').
-      # Marks this field as mandatory for the service call validation.
       required: true
-      # Provides an example value shown in the frontend UI.
       example: "say Hello World from Home Assistant!"
-      # Defines the UI input element type. 'text' creates a simple text box.
       selector:
-        text: {} # Use empty object for default text input
+
+prune_download_cache:
+  description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files.
+  fields:
+    directory:
+      description: The absolute path on the manager host where download files (.zip) are stored.
+      required: true
+      example: "/opt/minecraft_manager/.downloads/stable"
+      selector:
+        text: {}
+    keep:
+      description: "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+      required: false
+      example: 3
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box

@@ -26,10 +26,13 @@ ATTR_CPU_PERCENT = "cpu_percent"
 ATTR_MEMORY_MB = "memory_mb"
 ATTR_UPTIME = "uptime"
 ATTR_PLAYERS_ONLINE = "players_online"
-ATTR_MAX_PLAYERS = "max_players" 
+ATTR_MAX_PLAYERS = "max_players"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
+SERVICE_PRUNE_DOWNLOADS = "prune_download_cache"
 
 # Service field names
 FIELD_COMMAND = "command"
+FIELD_DIRECTORY = "directory"
+FIELD_KEEP = "keep"
