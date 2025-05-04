@@ -1,4 +1,4 @@
-"""Switch platform for Minecraft Bedrock Server Manager."""
+"""Switch platform for Bedrock Server Manager."""
 
 import logging
 from typing import Any, Optional, Dict
@@ -16,7 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 # Import constants and API
 from .const import DOMAIN, CONF_SERVER_NAME
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     APIError,
     ServerNotRunningError,
     ServerNotFoundError,

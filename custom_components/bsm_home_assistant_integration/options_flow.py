@@ -1,4 +1,4 @@
-"""Options flow for Minecraft Bedrock Server Manager integration."""
+"""Options flow for Bedrock Server Manager integration."""
 
 import logging
 from typing import Any, Dict, Optional, List
@@ -26,7 +26,7 @@ from .const import (
 
 # Import API definitions and exceptions
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     APIError,
     AuthError,
     CannotConnectError,
@@ -61,8 +61,8 @@ STEP_POLLING_SCHEMA = vol.Schema(
 )
 
 
-class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle an options flow for Minecraft Bedrock Server Manager."""
+class BSMOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle an options flow for Bedrock Server Manager."""
 
     # No __init__ needed anymore, self.config_entry is provided by base class
 
@@ -75,7 +75,7 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def _get_api_client(
         self, data_override: Optional[Dict[str, Any]] = None
-    ) -> MinecraftBedrockApi:
+    ) -> BedrockServerManagerApi:
         """Get an API client instance using stored or overridden data."""
         # Use override data if provided (for testing new credentials)
         # Otherwise use data stored in the config entry
@@ -87,7 +87,7 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
         password = data_source[CONF_PASSWORD]
         session = async_get_clientsession(self.hass)
 
-        return MinecraftBedrockApi(host, port, username, password, session)
+        return BedrockServerManagerApi(host, port, username, password, session)
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -131,24 +131,17 @@ class MinecraftBdsManagerOptionsFlowHandler(config_entries.OptionsFlow):
                 # Reloading is handled by the listener in __init__.py
                 return self.async_abort(reason="credentials_updated")
 
-            except (
-                AuthError,
-                InvalidAuth,
-            ):  # Defined in config_flow.py - maybe move exceptions? Keep for now.
-                _LOGGER.warning(
-                    "Failed to authenticate with new credentials for %s.",
-                    self.config_entry.entry_id,
-                )
-                errors["base"] = "invalid_auth"
-            except (APIError, CannotConnectError) as err:  # Defined in config_flow.py
-                _LOGGER.error(
-                    "API/Connection error validating new credentials: %s", err
-                )
-                errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception(
-                    "Unexpected error validating new credentials: %s", err
-                )
+            except AuthError: # <-- Catch AuthError from api.py directly
+                _LOGGER.warning("Failed to authenticate with new credentials for %s.", self.config_entry.entry_id)
+                errors["base"] = "invalid_auth" # Keep using the translation key
+            except CannotConnectError as err: # Catch connection errors during validation
+                 _LOGGER.error("Connection error validating new credentials: %s", err)
+                 errors["base"] = "cannot_connect"
+            except APIError as err: # Catch other potential API errors
+                _LOGGER.error("API error validating new credentials: %s", err)
+                errors["base"] = "api_error" # Use generic API error key
+            except Exception as err: # Catch unexpected errors
+                _LOGGER.exception("Unexpected error validating new credentials: %s", err)
                 errors["base"] = "unknown_error"
 
         # Show form

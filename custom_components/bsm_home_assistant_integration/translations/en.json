@@ -1,10 +1,10 @@
 {
-  "title": "Minecraft Bedrock Server Manager",
+  "title": "Bedrock Server Manager",
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Minecraft Server Manager",
-        "description": "Enter the API connection details for your Minecraft Bedrock Server Manager instance.",
+        "title": "Connect to Bedrock Server Manager",
+        "description": "Enter the API connection details for your Bedrock Server Manager instance.",
         "data": {
           "host": "Host / IP Address",
           "port": "Port",

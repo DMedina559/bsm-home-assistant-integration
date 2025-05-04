@@ -1,4 +1,4 @@
-"""Button platform for Minecraft Bedrock Server Manager."""
+"""Button platform for Bedrock Server Manager."""
 
 import logging
 from typing import Any, Optional, Dict  # Import Dict
@@ -19,7 +19,7 @@ from homeassistant.exceptions import HomeAssistantError
 # Import constants and API
 from .const import DOMAIN, CONF_SERVER_NAME
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     APIError,
     ServerNotFoundError,
     ServerNotRunningError,
@@ -85,7 +85,7 @@ async def async_setup_entry(
             "servers", {}
         )  # Default to empty dict if missing
         manager_identifier: tuple = entry_data["manager_identifier"]
-        api_client: MinecraftBedrockApi = entry_data["api"]  # Shared API client
+        api_client: BedrockServerManagerApi = entry_data["api"]  # Shared API client
     except KeyError as e:
         _LOGGER.error(
             "Missing expected data for entry %s: %s. Cannot set up buttons.",
@@ -273,7 +273,7 @@ class MinecraftManagerButton(ButtonEntity):
     def __init__(
         self,
         entry: ConfigEntry,
-        api_client: MinecraftBedrockApi,  # Receive shared API client directly
+        api_client: BedrockServerManagerApi,  # Receive shared API client directly
         description: ButtonEntityDescription,
         manager_identifier: tuple,  # Receive manager identifier tuple
     ) -> None:

@@ -1,4 +1,4 @@
-"""Sensor platform for Minecraft Bedrock Server Manager."""
+"""Sensor platform for Bedrock Server Manager."""
 
 import logging
 from typing import Optional, Dict, Any
@@ -31,7 +31,7 @@ from .const import (
     ATTR_INSTALLED_VERSION,
 )
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     ServerNotRunningError,
     ServerNotFoundError,
 )  # Keep API import if needed
@@ -81,7 +81,7 @@ async def async_setup_entry(
         manager_identifier: tuple = entry_data[
             "manager_identifier"
         ]  # Get manager identifier tuple
-        api_client: MinecraftBedrockApi = entry_data["api"]  # Shared API client
+        api_client: BedrockServerManagerApi = entry_data["api"]  # Shared API client
     except KeyError as e:
         _LOGGER.error(
             "Missing expected data for entry %s: %s. Cannot set up sensors.",
@@ -194,9 +194,9 @@ class MinecraftServerSensor(
             identifiers={
                 (DOMAIN, self._server_name)
             },  # Unique identifier for THIS server instance
-            name=f"Minecraft Server ({self._server_name})",  # Name for this server device
-            manufacturer="Minecraft Bedrock Manager",  # Can be the same
-            model=f"Managed Server",  # Model indicating it's managed
+            name=f"{self._server_name}",  # Name for this server device
+            manufacturer="Bedrock Server Manager",  # Can be the same
+            model=f"Bedrock Server",  # Model indicating it's managed
             sw_version=self._installed_version or "Unknown",  # Use stored static info
             # Link this server device TO the manager device using the manager's identifier tuple
             via_device=manager_identifier,

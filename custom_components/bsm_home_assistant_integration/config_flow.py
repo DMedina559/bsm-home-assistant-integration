@@ -1,4 +1,4 @@
-"""Config flow for Minecraft Bedrock Server Manager integration."""
+"""Config flow for Bedrock Server Manager integration."""
 
 import logging
 from typing import Any, Dict, Optional, List
@@ -18,13 +18,13 @@ from .const import (
     CONF_SERVER_NAMES,
 )
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     APIError,
     AuthError,
     CannotConnectError,
     ServerNotFoundError,
 )
-from .options_flow import MinecraftBdsManagerOptionsFlowHandler
+from .options_flow import BSMOptionsFlowHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class InvalidAuth(exceptions.HomeAssistantError):
 async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
     """Validate input and fetch servers."""
     session = async_get_clientsession(hass)
-    api_client = MinecraftBedrockApi(
+    api_client = BedrockServerManagerApi(
         host=data[CONF_HOST],
         port=int(data[CONF_PORT]),
         username=data[CONF_USERNAME],
@@ -86,7 +86,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Minecraft Bedrock Server Manager."""
+    """Handle a config flow for Bedrock Server Manager."""
 
     VERSION = 1
 
@@ -189,5 +189,5 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> MinecraftBdsManagerOptionsFlowHandler:
-        return MinecraftBdsManagerOptionsFlowHandler(config_entry)
+    ) -> BSMOptionsFlowHandler:
+        return BSMOptionsFlowHandler(config_entry)

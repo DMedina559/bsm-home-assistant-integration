@@ -1,4 +1,4 @@
-"""API Client for the Minecraft Bedrock Server Manager."""
+"""API Client for the Bedrock Server Manager."""
 
 import aiohttp
 import logging
@@ -39,8 +39,8 @@ class CannotConnectError(APIError):
 
 
 # --- API Client Class ---
-class MinecraftBedrockApi:
-    """Class to communicate with the Minecraft Bedrock Server Manager API."""
+class BedrockServerManagerApi:
+    """Class to communicate with the Bedrock Server Manager API."""
 
     def __init__(
         self,
@@ -468,11 +468,42 @@ class MinecraftBedrockApi:
         if keep is not None:
             payload = {"keep": keep}
 
-        # API indicates body is optional, send None if keep isn't specified
         return await self._request(
             method="POST",
             path=f"/server/{server_name}/backups/prune",
             data=payload,  # Send None or {"keep": N}
+            authenticated=True,
+        )
+
+    async def async_restore_backup(
+        self, server_name: str, restore_type: str, backup_file: str
+    ) -> Dict[str, Any]:
+        """Restores a specific backup file. Calls POST /api/server/{server_name}/restore/action."""
+        _LOGGER.debug(
+            "Requesting restore for server '%s', type: %s, file: %s",
+            server_name,
+            restore_type,
+            backup_file,
+        )
+        payload = {
+            "restore_type": restore_type,
+            "backup_file": backup_file,
+        }
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/restore/action",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_restore_latest_all(self, server_name: str) -> Dict[str, Any]:
+        """Restores the latest 'all' backup. Calls POST /api/server/{server_name}/restore/all."""
+        _LOGGER.debug("Requesting restore latest all for server '%s'", server_name)
+        # Assumes no request body needed for this specific endpoint
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/restore/all",
+            data=None,  # No body needed
             authenticated=True,
         )
 

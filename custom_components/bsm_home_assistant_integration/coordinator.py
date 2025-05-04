@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for the Minecraft Bedrock Server Manager integration."""
+"""DataUpdateCoordinator for the Bedrock Server Manager integration."""
 
 import asyncio
 import logging
@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     APIError,
     AuthError,
     CannotConnectError,
@@ -28,7 +28,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
-        api_client: MinecraftBedrockApi,
+        api_client: BedrockServerManagerApi,
         server_name: str,
         scan_interval: int,
     ) -> None:

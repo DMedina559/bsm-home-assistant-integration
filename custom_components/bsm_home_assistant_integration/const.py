@@ -1,4 +1,4 @@
-"""Constants for the Minecraft Bedrock Server Manager integration."""
+"""Constants for the Bedrock Server Manager integration."""
 
 # Domain slug for Home Assistant
 DOMAIN = "bsm_home_assistant_integration"
@@ -31,8 +31,15 @@ ATTR_MAX_PLAYERS = "max_players"
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
 SERVICE_PRUNE_DOWNLOADS = "prune_download_cache"
+SERVICE_TRIGGER_BACKUP = "trigger_backup"
+SERVICE_RESTORE_BACKUP = "restore_backup"
+SERVICE_RESTORE_LATEST_ALL = "restore_latest_all"
 
 # Service field names
 FIELD_COMMAND = "command"
 FIELD_DIRECTORY = "directory"
 FIELD_KEEP = "keep"
+FIELD_BACKUP_TYPE = "backup_type"
+FIELD_FILE_TO_BACKUP = "file_to_backup"
+FIELD_RESTORE_TYPE = "restore_type"
+FIELD_BACKUP_FILE = "backup_file"

@@ -1,4 +1,4 @@
-"""The Minecraft Bedrock Server Manager integration."""
+"""The Bedrock Server Manager integration."""
 
 import asyncio
 import logging
@@ -26,7 +26,7 @@ from homeassistant.exceptions import (
 
 # Import API definitions used by coordinator/setup logic (AuthError etc)
 from .api import (
-    MinecraftBedrockApi,
+    BedrockServerManagerApi,
     AuthError,
     CannotConnectError,
     APIError,  # Import other errors if needed by helper
@@ -50,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Minecraft Bedrock Server Manager from a config entry."""
+    """Set up Bedrock Server Manager from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(
         entry.entry_id, {}
@@ -70,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # --- Initialize Shared API Client ---
     session = async_get_clientsession(hass)
-    api_client = MinecraftBedrockApi(host, port, username, password, session)
+    api_client = BedrockServerManagerApi(host, port, username, password, session)
 
     # --- Create the Central "Manager" Device ---
     # This device represents the BSM API endpoint itself
@@ -82,8 +82,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier},  # Pass the identifier tuple in a set
         name=f"BSM @ {host}",
-        manufacturer="Minecraft Bedrock Manager",  # Or your specific branding
-        model="Server Manager API",
+        manufacturer="Bedrock Server Manager",  # Or your specific branding
+        model="Bedrock Server Manager API",
         # sw_version=? # Can add manager version if API provides it
         configuration_url=f"http://{host}:{port}",  # Link to the manager UI
     )
@@ -177,7 +177,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_setup_server_coordinator(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    api_client: MinecraftBedrockApi,
+    api_client: BedrockServerManagerApi,
     server_name: str,
     scan_interval: int,
 ):
