@@ -5,9 +5,9 @@ send_command:
   target:
     entity:
       domain: sensor
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
     device:
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
   fields:
     command:
       description: The command string to send to the server console (without the leading '/').
@@ -40,9 +40,9 @@ trigger_backup:
   target:
     entity:
       domain: sensor
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
     device:
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
   fields:
     backup_type:
       description: Type of backup to perform.
@@ -67,9 +67,9 @@ restore_backup:
   target:
     entity:
       domain: sensor
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
     device:
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
   fields:
     restore_type:
       description: Type of restore to perform.
@@ -93,6 +93,6 @@ restore_latest_all:
   target:
     entity:
       domain: sensor
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager
     device:
-      integration: bsm_home_assistant_integration
+      integration: bedrock_server_manager

@@ -1,7 +1,7 @@
 """Constants for the Bedrock Server Manager integration."""
 
 # Domain slug for Home Assistant
-DOMAIN = "bsm_home_assistant_integration"
+DOMAIN = "bedrock_server_manager"
 
 # Platforms supported by this integration
 PLATFORMS = ["sensor", "switch", "button"]
