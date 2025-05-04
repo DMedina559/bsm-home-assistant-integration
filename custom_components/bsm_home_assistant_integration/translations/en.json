@@ -37,8 +37,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Minecraft Server Manager Options",
-        "description": "Choose which settings to modify for the manager at {host}.",
+        "title": "Bedrock Server Manager Options",
+        "description": "Choose which settings to modify for the BSM at {host}.",
         "menu": {
           "options": {
             "update_credentials": "Update API Credentials",
@@ -71,50 +71,34 @@
       }
     },
     "error": {
-       "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
-       "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
-       "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
-       "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
-       "unknown_error": "An unexpected error occurred."
+      "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
+      "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
+      "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
+      "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
+      "unknown_error": "An unexpected error occurred."
     },
     "abort": {
-        "credentials_updated": "Credentials updated successfully. Reloading integration.",
-        "changes_successful": "Options updated successfully. Reloading integration."
+      "credentials_updated": "Credentials updated successfully. Reloading integration.",
+      "changes_successful": "Options updated successfully. Reloading integration."
     }
   },
   "entity": {
     "button": {
-      "restart_server": {
-        "name": "Restart"
-      },
-      "update_server": {
-         "name": "Update"
-      },
-      "trigger_backup": {
-         "name": "Backup"
-      },
-      "prune_downloads": {
-         "name": "Prune Download Cache"
-      },
-      "scan_players": {
-          "name": "Scan Player Logs"
-      }
+      "restart_server": { "name": "Restart" },
+      "update_server": { "name": "Update" },
+      "trigger_backup": { "name": "Backup" },
+      "export_world": { "name": "Export World" },
+      "prune_backups": { "name": "Prune Backups" },
+      "prune_downloads": { "name": "Prune Download Cache" },
+      "scan_players": { "name": "Scan Player Logs" }
     },
     "switch": {
-      "server_control": {
-        "name": "Server"
-      }
+      "server_control": { "name": "Server" }
     },
     "sensor": {
-       "status": {
-          "name": "Status"
-       },
-       "cpu_usage": {
-           "name": "CPU Usage"
-       },
-       "memory_usage": {
-            "name": "Memory Usage"
-       }
+      "status": { "name": "Status" },
+      "cpu_usage": { "name": "CPU Usage" },
+      "memory_usage": { "name": "Memory Usage" }
     }
   },
   "services": {
@@ -127,6 +111,52 @@
           "description": "The command string to send to the server console (without the leading '/')."
         }
       }
+    },
+    "prune_download_cache": {
+      "name": "Prune download cache",
+      "description": "Deletes older downloaded server archives from a specified directory on the manager host.",
+      "fields": {
+        "directory": {
+          "name": "Directory Path",
+          "description": "The absolute path on the manager host where download files are stored."
+        },
+        "keep": {
+          "name": "Keep Count",
+          "description": "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+        }
+      }
+    },
+    "trigger_backup": {
+      "name": "Trigger specific backup",
+      "description": "Triggers a specific backup operation (world, config file, or all) for the target server(s).",
+      "fields": {
+        "backup_type": {
+          "name": "Backup Type",
+          "description": "Type of backup to perform ('all', 'world', or 'config')."
+        },
+        "file_to_backup": {
+          "name": "File to Backup",
+          "description": "(Optional) Required only if backup_type is 'config'. Relative path of the config file (e.g., 'server.properties')."
+        }
+      }
+    },
+    "restore_backup": {
+      "name": "Restore specific backup",
+      "description": "Restores a specific world or config file from a backup for the target server(s). Overwrites current files!",
+      "fields": {
+        "restore_type": {
+          "name": "Restore Type",
+          "description": "Type of restore to perform ('world' or 'config')."
+        },
+        "backup_file": {
+          "name": "Backup File Path",
+          "description": "The full path to the backup file on the manager host."
+        }
+      }
+    },
+    "restore_latest_all": {
+      "name": "Restore latest full backup",
+      "description": "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Overwrites current files!"
     }
   }
 }

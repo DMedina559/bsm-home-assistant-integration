@@ -14,6 +14,7 @@ send_command:
       required: true
       example: "say Hello World from Home Assistant!"
       selector:
+        text: {}
 
 prune_download_cache:
   description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files.

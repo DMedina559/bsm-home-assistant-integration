@@ -7,6 +7,7 @@
   "codeowners": [ "@DMedina559" ],
   "requirements": [],
   "dependencies": [],
+  "integration_type": "hub",
   "config_flow": true,
   "iot_class": "local_polling",
   "loggers": [ "custom_components.bsm_home_assistant_integration" ]

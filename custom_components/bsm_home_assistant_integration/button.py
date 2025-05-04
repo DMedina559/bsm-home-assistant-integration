@@ -49,7 +49,7 @@ SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
         key="export_world",
         name="Export World",
-        icon="mdi:package-variant-closed-up",
+        icon="mdi:file-export-outline",
         entity_category=EntityCategory.CONFIG,
     ),
     ButtonEntityDescription(

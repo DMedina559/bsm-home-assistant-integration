@@ -559,7 +559,9 @@ async def async_handle_trigger_backup_service(
         if config_entry_id not in hass.data.get(DOMAIN, {}):
             continue  # Skip unloaded
         try:
-            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id]["api"]
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
             _LOGGER.info(
                 "Queueing '%s' backup for server '%s'", backup_type, target_server_name
             )
@@ -592,7 +594,9 @@ async def async_handle_restore_backup_service(
         if config_entry_id not in hass.data.get(DOMAIN, {}):
             continue
         try:
-            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id]["api"]
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
             _LOGGER.info(
                 "Queueing '%s' restore from '%s' for server '%s'",
                 restore_type,
@@ -623,7 +627,9 @@ async def async_handle_restore_latest_all_service(
         if config_entry_id not in hass.data.get(DOMAIN, {}):
             continue
         try:
-            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id]["api"]
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
             _LOGGER.info(
                 "Queueing restore latest all for server '%s'", target_server_name
             )
