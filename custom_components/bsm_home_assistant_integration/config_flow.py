@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, List
 import voluptuous as vol
 import aiohttp
 
-from homeassistant import config_entries, exceptions # Keep exceptions for HomeAssistantError base
+from homeassistant import config_entries, exceptions
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -136,14 +136,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.SelectSelectorConfig(
                     options=self._discovered_servers,
                     multiple=True,
-                    # mode=selector.SelectSelectorMode.LISTBOX, # --- REMOVED THIS LINE ---
-                    sort=True # Optional: sort servers alphabetically
+                    sort=True # Sort servers alphabetically
                  )
             ),
         })
         return self.async_show_form(step_id="select_servers", data_schema=select_schema, errors=errors, description_placeholders=description_placeholders)
-
-    # --- REMOVED _validate_server_selection ---
 
     # Options Flow Link
     @staticmethod

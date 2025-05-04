@@ -6,16 +6,15 @@ from typing import Any, Dict, Optional, List
 import voluptuous as vol
 
 from homeassistant import config_entries, exceptions
-# Import CONF constants from HA
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD, CONF_SCAN_INTERVAL
-from homeassistant.core import callback # Ensure callback is imported
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
 
 # Import local constants
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAMES, # Import the constant for the server list
+    CONF_SERVER_NAMES,
     DEFAULT_SCAN_INTERVAL_SECONDS,
 )
 # Import API definitions and exceptions

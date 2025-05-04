@@ -1,26 +1,25 @@
 """Switch platform for Minecraft Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional, Dict # Import Dict
+from typing import Any, Optional, Dict
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT # Import if needed for URLs etc.
+from homeassistant.const import CONF_HOST, CONF_PORT 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Import CoordinatorEntity and the specific coordinator class
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import MinecraftBedrockCoordinator
 from homeassistant.exceptions import HomeAssistantError
 
 # Import constants and API
-from .const import DOMAIN, CONF_SERVER_NAME # Keep CONF_SERVER_NAME for identifying server
+from .const import DOMAIN, CONF_SERVER_NAME
 from .api import MinecraftBedrockApi, APIError, ServerNotRunningError, ServerNotFoundError
 
 _LOGGER = logging.getLogger(__name__)
 
-# Switch Description (remains the same, represents the concept)
+# Switch Description 
 SWITCH_DESCRIPTION = SwitchEntityDescription(
     key="server_control", # Unique key for this switch type within a server device
     name="Server",       # Base name, device name will prefix this ("Minecraft Server (commu) Server")

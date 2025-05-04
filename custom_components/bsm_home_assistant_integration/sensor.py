@@ -49,7 +49,6 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         suggested_display_precision=1, device_class=SensorDeviceClass.DATA_SIZE,
         suggested_unit_of_measurement="MiB",
     ),
-    # Add player count sensor description here later if implemented
 )
 
 
@@ -162,7 +161,6 @@ class MinecraftServerSensor(CoordinatorEntity[MinecraftBedrockCoordinator], Sens
     # --- Properties (available, native_value, extra_state_attributes) ---
     # These rely on self.coordinator (which is specific to this server)
     # and self._world_name / self._installed_version (stored during init)
-    # Their internal logic remains the same as the last fully working version.
 
     @property
     def available(self) -> bool:

@@ -39,7 +39,7 @@ class MinecraftBedrockApi:
         username: str,
         password: str,
         session: aiohttp.ClientSession,
-        base_path: str = "/api" # Assuming API routes are under /api
+        base_path: str = "/api"
     ):
         """Initialize the API client."""
         # Ensure host doesn't accidentally include schema
@@ -299,17 +299,9 @@ class MinecraftBedrockApi:
          _LOGGER.debug("Triggering backup pruning for server '%s'", server_name)
          return await self._request("POST", f"/server/{server_name}/backups/prune", authenticated=True)
 
-    # --- Global Manager Action Methods (Stubs/Placeholders) ---
-    async def async_prune_download_cache(self) -> Dict[str, Any]:
-        """Triggers pruning of the global download cache."""
-        # Calls POST /api/downloads/prune
-        _LOGGER.debug("Triggering global download cache prune")
-        # Assuming simple POST, no body required? Check API docs.
-        return await self._request("POST", "/downloads/prune", authenticated=True)
-
+    # --- Global Manager Action Methods ---
     async def async_scan_player_logs(self) -> Dict[str, Any]:
         """Triggers scanning of player logs."""
         # Calls POST /api/players/scan
         _LOGGER.debug("Triggering player log scan")
-        # Assuming simple POST, no body required? Check API docs.
         return await self._request("POST", "/players/scan", authenticated=True)

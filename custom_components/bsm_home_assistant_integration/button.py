@@ -9,17 +9,15 @@ from homeassistant.components.button import (
     ButtonDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
-# from homeassistant.const import CONF_HOST, CONF_PORT # Not needed directly here
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory # Import EntityCategory
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-# Import CoordinatorEntity and the specific coordinator class
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import MinecraftBedrockCoordinator
 from homeassistant.exceptions import HomeAssistantError
 
 # Import constants and API
-from .const import DOMAIN, CONF_SERVER_NAME # Keep CONF_SERVER_NAME for identifying server
+from .const import DOMAIN, CONF_SERVER_NAME
 from .api import MinecraftBedrockApi, APIError, ServerNotFoundError, ServerNotRunningError
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,16 +35,11 @@ SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
         key="trigger_backup", name="Backup", icon="mdi:backup-restore",
     ),
-    # Add other server-specific buttons like export_world if API method exists
-    # ButtonEntityDescription(key="export_world", name="Export World", icon="mdi:package-variant-closed-up"),
+    #ButtonEntityDescription(key="export_world", name="Export World", icon="mdi:package-variant-closed-up"),
 )
 
 # --- Descriptions for Manager-Global Buttons ---
 MANAGER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
-    ButtonEntityDescription(
-        key="prune_downloads", name="Prune Download Cache", icon="mdi:delete-sweep",
-        entity_category=EntityCategory.CONFIG, # Config action
-    ),
     ButtonEntityDescription(
         key="scan_players", name="Scan Player Logs", icon="mdi:account-search",
         entity_category=EntityCategory.DIAGNOSTIC, # Diagnostic action
@@ -171,7 +164,7 @@ class MinecraftServerButton(CoordinatorEntity[MinecraftBedrockCoordinator], Butt
         if action == "restart_server": api_call = api_client.async_restart_server
         elif action == "update_server": api_call = api_client.async_update_server
         elif action == "trigger_backup": api_call = api_client.async_trigger_backup; success_message = f"Server {server_name} full backup initiated."
-        # elif action == "export_world": api_call = api_client.async_export_world # Example
+        # elif action == "export_world": api_call = api_client.async_export_world
         else:
             _LOGGER.error("Unhandled server button action: %s for server %s", action, server_name)
             raise HomeAssistantError(f"Unknown server button action requested: {action}")
@@ -238,10 +231,7 @@ class MinecraftManagerButton(ButtonEntity):
         failure_message = f"Failed to perform global action '{action}'"
 
         # Map button key to GLOBAL API method
-        if action == "prune_downloads":
-            if hasattr(self._api, "async_prune_download_cache"): api_call = self._api.async_prune_download_cache
-            else: _LOGGER.error("API method async_prune_download_cache not implemented."); raise HomeAssistantError("Prune downloads action not implemented.")
-        elif action == "scan_players":
+        if action == "scan_players":
              if hasattr(self._api, "async_scan_player_logs"): api_call = self._api.async_scan_player_logs
              else: _LOGGER.error("API method async_scan_player_logs not implemented."); raise HomeAssistantError("Scan player logs action not implemented.")
         else:
@@ -251,7 +241,6 @@ class MinecraftManagerButton(ButtonEntity):
         # Execute the mapped API call
         if api_call:
             try:
-                # Global calls likely don't need arguments
                 response = await api_call()
                 _LOGGER.debug("API response for global action '%s': %s", action, response)
                 _LOGGER.info(success_message)

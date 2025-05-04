@@ -1,18 +1,17 @@
-# Defines the services provided by the Minecraft Bedrock Server Manager integration.
+# Defines the actions provided by the Minecraft Bedrock Server Manager integration.
 
 send_command:
-  # Description shown in the frontend UI (Developer Tools -> Services)
+  # Description shown in the frontend UI (Developer Tools -> Actions)
   description: Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.
 
   target:
   entity:
-    domain: bsm_home_assistant_integration # Use correct domain name
-  device: # Also include device selector for the same domain
-    integration: bsm_home_assistant_integration # Use correct domain name
+    domain: bsm_home_assistant_integration
+  device:
+    integration: bsm_home_assistant_integration
 
   # Defines the fields (data parameters) the service accepts.
   fields:
-    # Field named 'command' (must match FIELD_COMMAND in const.py and schema key)
     command:
       # Description of the field shown in the frontend.
       description: The command string to send to the server console (without the leading '/').
