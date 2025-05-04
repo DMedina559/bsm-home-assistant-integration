@@ -1,0 +1,98 @@
+# Defines the actions provided by the Bedrock Server Manager integration.
+
+send_command:
+  description: Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    command:
+      description: The command string to send to the server console (without the leading '/').
+      required: true
+      example: "say Hello World from Home Assistant!"
+      selector:
+        text: {}
+
+prune_download_cache:
+  description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files.
+  fields:
+    directory:
+      description: The absolute path on the manager host where download files (.zip) are stored.
+      required: true
+      example: "/opt/minecraft_manager/.downloads/stable"
+      selector:
+        text: {}
+    keep:
+      description: "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+      required: false
+      example: 3
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+
+trigger_backup:
+  description: Triggers a specific backup operation (world, config file, or all) for the target server(s).
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_type:
+      description: Type of backup to perform.
+      required: true
+      example: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "world"
+            - "config"
+          mode: dropdown
+    file_to_backup:
+      description: Required only if backup_type is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties').
+      required: false
+      example: "permissions.json"
+      selector:
+        text: {}
+
+restore_backup:
+  description: Restores a specific world or config file from a backup for the target server(s). Use with caution - overwrites current files!
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    restore_type:
+      description: Type of restore to perform.
+      required: true
+      example: "world"
+      selector:
+        select:
+          options:
+            - "world"
+            - "config"
+          mode: dropdown
+    backup_file:
+      description: The full path to the backup file on the manager host (e.g., '/path/to/backups/server/world_backup_xyz.mcworld' or '/path/to/backups/server/config_backup_xyz.zip'). Must exist within the manager's configured backup directory.
+      required: true
+      example: "/opt/bsm/backups/my_server/world_backup_20250101_120000.mcworld"
+      selector:
+        text: {}
+
+restore_latest_all:
+  description: Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Use with caution - overwrites current files!
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager

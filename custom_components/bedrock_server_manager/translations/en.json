@@ -1,0 +1,162 @@
+{
+  "title": "Bedrock Server Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Bedrock Server Manager",
+        "description": "Enter the API connection details for your Bedrock Server Manager instance.",
+        "data": {
+          "host": "Host / IP Address",
+          "port": "Port",
+          "username": "API Username",
+          "password": "API Password"
+        }
+      },
+      "select_servers": {
+        "title": "Select Initial Servers",
+        "description": "{message}",
+        "data": {
+          "servers": "Servers to Monitor"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
+      "invalid_auth": "Invalid username or password provided. Please check your credentials.",
+      "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager.",
+      "server_validation_failed": "Failed to validate the selected server '{server_name}' with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
+      "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
+      "unknown_validation_error": "An unexpected error occurred during validation.",
+      "api_error": "An API error occurred while communicating with the manager: {error_details}"
+    },
+    "abort": {
+      "already_configured": "A Manager instance for {host}:{port} is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Bedrock Server Manager Options",
+        "description": "Choose which settings to modify for the BSM at {host}.",
+        "menu": {
+          "options": {
+            "update_credentials": "Update API Credentials",
+            "select_servers": "Select Servers to Monitor",
+            "update_interval": "Update Polling Interval"
+          }
+        }
+      },
+      "update_credentials": {
+        "title": "Update API Credentials",
+        "description": "Enter the new API username and password for the manager at {host}.",
+        "data": {
+          "username": "New API Username",
+          "password": "New API Password"
+        }
+      },
+      "select_servers": {
+        "title": "Select Servers to Monitor",
+        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.",
+        "data": {
+          "servers": "Servers to Monitor"
+        }
+      },
+      "update_interval": {
+        "title": "Update Polling Interval",
+        "description": "Set how often Home Assistant should poll the manager API for status updates (for running servers). Lower values update faster but increase load.",
+        "data": {
+          "scan_interval": "Update frequency (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
+      "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
+      "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
+      "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
+      "unknown_error": "An unexpected error occurred."
+    },
+    "abort": {
+      "credentials_updated": "Credentials updated successfully. Reloading integration.",
+      "changes_successful": "Options updated successfully. Reloading integration."
+    }
+  },
+  "entity": {
+    "button": {
+      "restart_server": { "name": "Restart" },
+      "update_server": { "name": "Update" },
+      "trigger_backup": { "name": "Backup" },
+      "export_world": { "name": "Export World" },
+      "prune_backups": { "name": "Prune Backups" },
+      "prune_downloads": { "name": "Prune Download Cache" },
+      "scan_players": { "name": "Scan Player Logs" }
+    },
+    "switch": {
+      "server_control": { "name": "Server" }
+    },
+    "sensor": {
+      "status": { "name": "Status" },
+      "cpu_usage": { "name": "CPU Usage" },
+      "memory_usage": { "name": "Memory Usage" }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send command",
+      "description": "Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "The command string to send to the server console (without the leading '/')."
+        }
+      }
+    },
+    "prune_download_cache": {
+      "name": "Prune download cache",
+      "description": "Deletes older downloaded server archives from a specified directory on the manager host.",
+      "fields": {
+        "directory": {
+          "name": "Directory Path",
+          "description": "The absolute path on the manager host where download files are stored."
+        },
+        "keep": {
+          "name": "Keep Count",
+          "description": "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+        }
+      }
+    },
+    "trigger_backup": {
+      "name": "Trigger specific backup",
+      "description": "Triggers a specific backup operation (world, config file, or all) for the target server(s).",
+      "fields": {
+        "backup_type": {
+          "name": "Backup Type",
+          "description": "Type of backup to perform ('all', 'world', or 'config')."
+        },
+        "file_to_backup": {
+          "name": "File to Backup",
+          "description": "(Optional) Required only if backup_type is 'config'. Relative path of the config file (e.g., 'server.properties')."
+        }
+      }
+    },
+    "restore_backup": {
+      "name": "Restore specific backup",
+      "description": "Restores a specific world or config file from a backup for the target server(s). Overwrites current files!",
+      "fields": {
+        "restore_type": {
+          "name": "Restore Type",
+          "description": "Type of restore to perform ('world' or 'config')."
+        },
+        "backup_file": {
+          "name": "Backup File Path",
+          "description": "The full path to the backup file on the manager host."
+        }
+      }
+    },
+    "restore_latest_all": {
+      "name": "Restore latest full backup",
+      "description": "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Overwrites current files!"
+    }
+  }
+}
