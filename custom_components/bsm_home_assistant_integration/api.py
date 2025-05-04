@@ -441,19 +441,39 @@ class MinecraftBedrockApi:
         )
 
     async def async_export_world(self, server_name: str) -> Dict[str, Any]:
-        """Triggers world export."""
-        # Assuming simple POST, check API docs if body is needed
+        """Triggers world export for a server. Calls POST /api/server/{server_name}/world/export."""
         _LOGGER.debug("Triggering world export for server '%s'", server_name)
         return await self._request(
-            "POST", f"/server/{server_name}/export_world", authenticated=True
+            method="POST",
+            path=f"/server/{server_name}/world/export",
+            data=None,  # No body needed
+            authenticated=True,
         )
 
-    async def async_prune_backups(self, server_name: str) -> Dict[str, Any]:
-        """Triggers backup pruning for a server."""
-        # Assuming simple POST, check API docs if body (e.g., keep count) is needed
-        _LOGGER.debug("Triggering backup pruning for server '%s'", server_name)
+    async def async_prune_backups(
+        self, server_name: str, keep: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Triggers backup pruning for a server. Calls POST /api/server/{server_name}/backups/prune."""
+        _LOGGER.debug(
+            "Triggering backup pruning for server '%s'%s",
+            server_name,
+            (
+                f" (keeping {keep})"
+                if keep is not None
+                else " (using manager default keep)"
+            ),
+        )
+        # Build payload ONLY if keep is specified
+        payload: Optional[Dict[str, Any]] = None
+        if keep is not None:
+            payload = {"keep": keep}
+
+        # API indicates body is optional, send None if keep isn't specified
         return await self._request(
-            "POST", f"/server/{server_name}/backups/prune", authenticated=True
+            method="POST",
+            path=f"/server/{server_name}/backups/prune",
+            data=payload,  # Send None or {"keep": N}
+            authenticated=True,
         )
 
     # --- Global Manager Action Methods ---

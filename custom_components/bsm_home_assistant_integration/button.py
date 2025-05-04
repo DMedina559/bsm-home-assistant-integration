@@ -46,7 +46,18 @@ SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
         name="Backup",
         icon="mdi:backup-restore",
     ),
-    # ButtonEntityDescription(key="export_world", name="Export World", icon="mdi:package-variant-closed-up"),
+    ButtonEntityDescription(
+        key="export_world",
+        name="Export World",
+        icon="mdi:package-variant-closed-up",
+        entity_category=EntityCategory.CONFIG,
+    ),
+    ButtonEntityDescription(
+        key="prune_backups",
+        name="Prune Backups",
+        icon="mdi:delete-sweep",
+        entity_category=EntityCategory.CONFIG,
+    ),
 )
 
 # --- Descriptions for Manager-Global Buttons ---
@@ -206,7 +217,12 @@ class MinecraftServerButton(
         elif action == "trigger_backup":
             api_call = api_client.async_trigger_backup
             success_message = f"Server {server_name} full backup initiated."
-        # elif action == "export_world": api_call = api_client.async_export_world
+        elif action == "export_world":
+            api_call = api_client.async_export_world
+        elif action == "prune_backups":
+            # Call prune without 'keep' to use manager default
+            api_call = api_client.async_prune_backups
+            success_message = f"Backup pruning initiated for server {server_name}."
         else:
             _LOGGER.error(
                 "Unhandled server button action: %s for server %s", action, server_name
