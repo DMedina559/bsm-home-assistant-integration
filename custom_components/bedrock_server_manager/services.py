@@ -19,6 +19,8 @@ from .const import (
     SERVICE_RESTORE_BACKUP,
     SERVICE_TRIGGER_BACKUP,
     SERVICE_RESTORE_LATEST_ALL,
+    SERVICE_INSTALL_SERVER,
+    SERVICE_DELETE_SERVER,
     FIELD_BACKUP_TYPE,
     FIELD_RESTORE_TYPE,
     FIELD_FILE_TO_BACKUP,
@@ -26,6 +28,10 @@ from .const import (
     FIELD_COMMAND,
     FIELD_DIRECTORY,
     FIELD_KEEP,
+    FIELD_OVERWRITE,
+    FIELD_SERVER_NAME,
+    FIELD_SERVER_VERSION,
+    FIELD_CONFIRM_DELETE,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -79,6 +85,23 @@ RESTORE_BACKUP_SERVICE_SCHEMA = vol.Schema(
 
 RESTORE_LATEST_ALL_SERVICE_SCHEMA = vol.Schema(
     {
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+INSTALL_SERVER_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_SERVER_NAME): str,
+        vol.Required(FIELD_SERVER_VERSION): str,
+        vol.Optional(FIELD_OVERWRITE, default=False): bool,
+    }
+)
+
+DELETE_SERVER_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_CONFIRM_DELETE): True,
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
@@ -204,6 +227,60 @@ async def _async_handle_restore_latest_all(api: BedrockServerManagerApi, server:
         raise HomeAssistantError(
             f"Unexpected error restoring latest backup: {err}"
         ) from err
+
+
+async def _async_handle_install_server(
+    api: BedrockServerManagerApi, server_name: str, server_version: str, overwrite: bool
+):
+    """Helper coroutine to call API for install_server."""
+    try:
+        # Call the API method
+        response = await api.async_install_server(
+            server_name=server_name, server_version=server_version, overwrite=overwrite
+        )
+
+        # --- Handle specific API responses ---
+        # Check if the API returned the confirmation status (which we treat as user error)
+        if response.get("status") == "confirm_needed":
+            _LOGGER.warning(
+                "Server '%s' already exists and overwrite was false. Installation aborted by API.",
+                server_name,
+            )
+            raise HomeAssistantError(
+                f"Server '{server_name}' already exists. Set 'overwrite: true' to replace it."
+            )
+
+        _LOGGER.info(
+            "Successfully requested install for server '%s' (Version: %s, Overwrite: %s). API Message: %s",
+            server_name,
+            server_version,
+            overwrite,
+            response.get("message", "N/A"),
+        )
+
+    except APIError as err:
+        _LOGGER.error("API Error installing server '%s': %s", server_name, err)
+        raise HomeAssistantError(f"API Error installing server: {err}") from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error installing server '%s': %s", server_name, err
+        )
+        raise HomeAssistantError(f"Unexpected error installing server: {err}") from err
+
+
+async def _async_handle_delete_server(api: BedrockServerManagerApi, server: str):
+    """Helper coroutine to call API for delete_server."""
+    # Add an extra log warning here because this is dangerous
+    _LOGGER.critical("EXECUTING IRREVERSIBLE DELETE for server '%s'", server)
+    try:
+        await api.async_delete_server(server_name=server)
+        _LOGGER.info("Successfully requested deletion of server '%s'", server)
+    except APIError as err:
+        _LOGGER.error("API Error deleting server '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error deleting server: {err}") from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error deleting server '%s': %s", server, err)
+        raise HomeAssistantError(f"Unexpected error deleting server: {err}") from err
 
 
 # --- Main Service Handlers ---
@@ -645,6 +722,163 @@ async def async_handle_restore_latest_all_service(
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def async_handle_install_server_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle the install_server service call."""
+    server_name = service.data[FIELD_SERVER_NAME]
+    server_version = service.data[FIELD_SERVER_VERSION]
+    overwrite = service.data[
+        FIELD_OVERWRITE
+    ]  # Uses default=False from schema if not provided
+
+    _LOGGER.info(
+        "Executing install_server service for: %s, Version: %s, Overwrite: %s",
+        server_name,
+        server_version,
+        overwrite,
+    )
+
+    # Find an API client instance (assuming one manager for now)
+    api_client: Optional[BedrockServerManagerApi] = None
+    if hass.data.get(DOMAIN):
+        first_entry_id = next(iter(hass.data[DOMAIN]))
+        if first_entry_id and hass.data[DOMAIN][first_entry_id].get("api"):
+            api_client = hass.data[DOMAIN][first_entry_id]["api"]
+        else:
+            _LOGGER.error(
+                "Could not find a valid API client instance to execute install_server."
+            )
+            raise HomeAssistantError(
+                "BSM integration not fully loaded or API client missing."
+            )
+    else:
+        _LOGGER.error("BSM integration data not found.")
+        raise HomeAssistantError("BSM integration not loaded.")
+
+    # Call the helper
+    await _async_handle_install_server(
+        api=api_client,
+        server_name=server_name,
+        server_version=server_version,
+        overwrite=overwrite,
+    )
+
+
+async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
+    """Handle the delete_server service call."""
+
+    _LOGGER.warning(
+        "Executing delete_server service for target(s) specified in call %s. "
+        "Confirmation provided. THIS IS DESTRUCTIVE!",
+        service.context.id,  # Log context ID for tracing
+    )
+
+    # Resolve which server(s) were targeted
+    try:
+        resolved_targets = await _resolve_server_targets(
+            service, hass
+        )  # Reuse resolver
+    except HomeAssistantError as e:
+        # If target resolution fails (e.g., no valid targets found), log and stop
+        _LOGGER.error("Cannot execute delete_server: Failed to resolve targets - %s", e)
+        # Raising here prevents further execution
+        raise
+    except Exception as e:
+        _LOGGER.exception(
+            "Unexpected error resolving targets for delete_server service."
+        )
+        raise HomeAssistantError("Unexpected error resolving service targets.") from e
+
+    tasks = []
+    servers_to_delete = []  # Keep track of names for logging/notification
+
+    # Queue deletion tasks for valid targets
+    for config_entry_id, target_server_name in resolved_targets.items():
+        # Double-check hass data integrity
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            _LOGGER.warning(
+                "Config entry %s (resolved target for delete) is not loaded or has no data. Skipping.",
+                config_entry_id,
+            )
+            continue
+        try:
+            entry_data = hass.data[DOMAIN][config_entry_id]
+            target_api: BedrockServerManagerApi = entry_data["api"]
+            # Log prominently that deletion is being queued
+            _LOGGER.critical(
+                "Queueing IRREVERSIBLE delete for server '%s' (config entry %s)",
+                target_server_name,
+                config_entry_id,
+            )
+            tasks.append(_async_handle_delete_server(target_api, target_server_name))
+            servers_to_delete.append(
+                target_server_name
+            )  # Add to list for potential summary
+        except KeyError as e:
+            _LOGGER.error(
+                "Missing expected data ('%s') for config entry %s when queueing delete_server.",
+                e,
+                config_entry_id,
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Unexpected error queueing delete_server for %s: %s",
+                target_server_name,
+                e,
+            )
+
+    # Execute deletion tasks if any were successfully queued
+    if tasks:
+        _LOGGER.warning(
+            "Proceeding with delete API calls for %d server(s).", len(tasks)
+        )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Log any errors that occurred during the API calls
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                # Try to get the server name corresponding to the failed task
+                failed_entry_id = list(resolved_targets.keys())[
+                    i
+                ]  # Assumes gather preserves order
+                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                _LOGGER.error(
+                    "Error executing delete_server for server '%s' (entry %s): %s",
+                    failed_server_name,
+                    failed_entry_id,
+                    result,
+                )
+                # Note: The HomeAssistantError raised by the helper will be caught by HA service layer
+
+        # Optionally: Create a persistent notification summarizing the action
+        if servers_to_delete:
+            message = (
+                f"Deletion process executed for server(s): {', '.join(servers_to_delete)}. "
+                f"{processed_errors} error(s) occurred during the API calls (check logs). "
+                "Associated Home Assistant devices/entities will become unavailable "
+                "after restart or next update if deletion was successful on the manager."
+            )
+            hass.components.persistent_notification.async_create(
+                message,
+                title="Minecraft Server Deletion Attempted",
+                notification_id=f"bsm_delete_{service.context.id}",  # Unique ID for notification
+            )
+
+    elif not resolved_targets:
+        # This case should have been caught by the _resolve_server_targets check, but double-check
+        _LOGGER.error(
+            "Delete server handler reached but no valid targets were resolved."
+        )
+    else:
+        # No tasks were queued, likely due to errors finding API client etc.
+        _LOGGER.error(
+            "Delete server handler did not queue any tasks despite resolved targets. Check previous logs."
+        )
+
+
 # --- Service Registration Function ---
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
@@ -719,6 +953,34 @@ async def async_register_services(hass: HomeAssistant):
             schema=RESTORE_LATEST_ALL_SERVICE_SCHEMA,
         )
 
+    # Install Server
+    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL_SERVER):
+
+        async def install_server_wrapper(call: ServiceCall):
+            await async_handle_install_server_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_INSTALL_SERVER)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_INSTALL_SERVER,
+            install_server_wrapper,
+            schema=INSTALL_SERVER_SERVICE_SCHEMA,
+        )
+
+    # Delete Server
+    if not hass.services.has_service(DOMAIN, SERVICE_DELETE_SERVER):
+
+        async def delete_server_wrapper(call: ServiceCall):
+            await async_handle_delete_server_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_DELETE_SERVER)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DELETE_SERVER,
+            delete_server_wrapper,
+            schema=DELETE_SERVER_SERVICE_SCHEMA,
+        )
+
 
 # --- Service Removal Function ---
 async def async_remove_services(hass: HomeAssistant):
@@ -730,6 +992,8 @@ async def async_remove_services(hass: HomeAssistant):
             SERVICE_TRIGGER_BACKUP,
             SERVICE_RESTORE_BACKUP,
             SERVICE_RESTORE_LATEST_ALL,
+            SERVICE_INSTALL_SERVER,
+            SERVICE_DELETE_SERVER,
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):

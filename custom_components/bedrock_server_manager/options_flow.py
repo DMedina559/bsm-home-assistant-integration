@@ -73,7 +73,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def _get_api_client(
         self, data_override: Optional[Dict[str, Any]] = None
-    ) -> BedrockServerManagerApi: 
+    ) -> BedrockServerManagerApi:
         """Get an API client instance using stored or overridden data."""
         data_source = data_override if data_override else self.config_entry.data
         host = data_source[CONF_HOST]

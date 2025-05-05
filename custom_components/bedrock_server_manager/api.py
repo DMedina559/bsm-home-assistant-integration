@@ -499,7 +499,6 @@ class BedrockServerManagerApi:
     async def async_restore_latest_all(self, server_name: str) -> Dict[str, Any]:
         """Restores the latest 'all' backup. Calls POST /api/server/{server_name}/restore/all."""
         _LOGGER.debug("Requesting restore latest all for server '%s'", server_name)
-        # Assumes no request body needed for this specific endpoint
         return await self._request(
             method="POST",
             path=f"/server/{server_name}/restore/all",
@@ -539,5 +538,40 @@ class BedrockServerManagerApi:
             method="POST",
             path="/downloads/prune",
             data=payload,  # Send the required payload
+            authenticated=True,
+        )
+
+    async def async_install_server(
+        self, server_name: str, server_version: str, overwrite: bool = False
+    ) -> Dict[str, Any]:
+        """Requests installation of a new server instance. Calls POST /api/server/install."""
+        _LOGGER.info(
+            "Requesting install for server '%s', version: %s, overwrite: %s",
+            server_name,
+            server_version,
+            overwrite,
+        )
+        payload = {
+            "server_name": server_name,
+            "server_version": server_version,
+            "overwrite": overwrite,  # Pass the overwrite flag
+        }
+        return await self._request(
+            method="POST",
+            path="/server/install",  # Global endpoint
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_delete_server(self, server_name: str) -> Dict[str, Any]:
+        """Deletes the server. Calls DELETE /api/server/{server_name}/delete. USE WITH CAUTION!"""
+        _LOGGER.warning(
+            "Requesting deletion of server '%s'. This is irreversible.", server_name
+        )
+        # DELETE request, no body needed
+        return await self._request(
+            method="DELETE",
+            path=f"/server/{server_name}/delete",
+            data=None,  # No body
             authenticated=True,
         )

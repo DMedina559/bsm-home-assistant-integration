@@ -96,3 +96,41 @@ restore_latest_all:
       integration: bedrock_server_manager
     device:
       integration: bedrock_server_manager
+
+install_server:
+  description: "Installs a new Minecraft Bedrock server instance via the manager. Does NOT prompt for overwrite confirmation - set 'overwrite: true' explicitly if needed."
+  fields:
+    server_name:
+      description: Desired unique name for the new server (valid directory name characters only).
+      required: true
+      example: "my_new_survival"
+      selector:
+        text: {}
+    server_version:
+      description: Version to install ('LATEST', 'PREVIEW', or specific version like '1.20.81.01').
+      required: true
+      example: "LATEST"
+      selector:
+        text: {}
+    overwrite:
+      description: "(Optional) If true, deletes any existing server data with the same name before installing. Defaults to false."
+      required: false
+      example: false
+      selector:
+        boolean: {}
+
+delete_server:
+  description: Permanently deletes ALL data for the target server instance(s), including installation, configuration, and backups. THIS ACTION IS IRREVERSIBLE AND CANNOT BE UNDONE. USE WITH EXTREME CAUTION!
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    confirm_deletion:
+      description: MUST be set to 'true' to confirm you understand this action is irreversible and will delete all server data.
+      required: true
+      example: false
+      selector:
+        boolean: {}
