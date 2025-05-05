@@ -298,19 +298,68 @@ async def _async_handle_install_server(
         raise HomeAssistantError(f"Unexpected error installing server: {err}") from err
 
 
-async def _async_handle_delete_server(api: BedrockServerManagerApi, server: str):
-    """Helper coroutine to call API for delete_server."""
-    # Add an extra log warning here because this is dangerous
+async def _async_handle_delete_server(
+    hass: HomeAssistant, api: BedrockServerManagerApi, server: str, config_entry_id: str
+):
+    """Helper coroutine to call API and remove device for delete_server."""
     _LOGGER.critical("EXECUTING IRREVERSIBLE DELETE for server '%s'", server)
+    device_removed = False
     try:
-        await api.async_delete_server(server_name=server)
-        _LOGGER.info("Successfully requested deletion of server '%s'", server)
+        # Call the API to delete on the manager side
+        response = await api.async_delete_server(server_name=server)
+
+        # Check if API reported success before removing from HA
+        if response and response.get("status") == "success":
+            _LOGGER.info(
+                "Manager API confirmed successful deletion of server '%s'. Removing from Home Assistant.",
+                server,
+            )
+
+            # --- Remove Device from HA Registry ---
+            device_registry = dr.async_get(hass)
+            # Find the device using its unique identifier for THIS server
+            device_identifier = (DOMAIN, server)
+            device_to_remove = device_registry.async_get_device(
+                identifiers={device_identifier}
+            )
+
+            if device_to_remove:
+                _LOGGER.debug(
+                    "Removing device %s (%s) from registry.",
+                    device_to_remove.name_by_user or device_to_remove.name,
+                    device_to_remove.id,
+                )
+                # This removes the device and implicitly its entities from this config entry
+                # Note: If device shared by other entries (shouldn't happen here), it only removes association
+                device_registry.async_remove_device(device_to_remove.id)
+                device_removed = True  # Mark as removed for logging/notification
+            else:
+                _LOGGER.warning(
+                    "Could not find device with identifier %s in registry to remove after successful API deletion.",
+                    device_identifier,
+                )
+            # --- End Remove Device ---
+
+        else:
+            # API did not confirm success (might have returned 200 OK but status!=success, or non-2xx)
+            _LOGGER.error(
+                "Manager API did not confirm successful deletion for server '%s'. Response: %s. Device not removed from HA.",
+                server,
+                response,
+            )
+            # Re-raise as an error so the gather call logs it
+            raise HomeAssistantError(
+                f"Manager API did not confirm successful deletion for {server}. Check manager logs."
+            )
+
     except APIError as err:
         _LOGGER.error("API Error deleting server '%s': %s", server, err)
         raise HomeAssistantError(f"API Error deleting server: {err}") from err
     except Exception as err:
         _LOGGER.exception("Unexpected error deleting server '%s': %s", server, err)
         raise HomeAssistantError(f"Unexpected error deleting server: {err}") from err
+
+    return device_removed  # Return status
 
 
 async def _async_handle_add_to_allowlist(
@@ -847,104 +896,102 @@ async def async_handle_install_server_service(
 
 async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
     """Handle the delete_server service call."""
+    # Schema validation already confirmed FIELD_CONFIRM_DELETE is True
 
     _LOGGER.warning(
         "Executing delete_server service for target(s) specified in call %s. "
         "Confirmation provided. THIS IS DESTRUCTIVE!",
-        service.context.id,  # Log context ID for tracing
+        service.context.id,
     )
 
-    # Resolve which server(s) were targeted
     try:
-        resolved_targets = await _resolve_server_targets(
-            service, hass
-        )  # Reuse resolver
+        resolved_targets = await _resolve_server_targets(service, hass)
     except HomeAssistantError as e:
-        # If target resolution fails (e.g., no valid targets found), log and stop
         _LOGGER.error("Cannot execute delete_server: Failed to resolve targets - %s", e)
-        # Raising here prevents further execution
         raise
     except Exception as e:
-        _LOGGER.exception(
-            "Unexpected error resolving targets for delete_server service."
-        )
+        _LOGGER.exception("Unexpected error resolving targets for delete_server.")
         raise HomeAssistantError("Unexpected error resolving service targets.") from e
 
     tasks = []
-    servers_to_delete = []  # Keep track of names for logging/notification
+    servers_attempted = {}  # Store {config_entry_id: server_name} for notification
 
-    # Queue deletion tasks for valid targets
     for config_entry_id, target_server_name in resolved_targets.items():
-        # Double-check hass data integrity
         if config_entry_id not in hass.data.get(DOMAIN, {}):
-            _LOGGER.warning(
-                "Config entry %s (resolved target for delete) is not loaded or has no data. Skipping.",
-                config_entry_id,
-            )
             continue
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             target_api: BedrockServerManagerApi = entry_data["api"]
-            # Log prominently that deletion is being queued
-            _LOGGER.critical(
+            _LOGGER.warning(
                 "Queueing IRREVERSIBLE delete for server '%s' (config entry %s)",
                 target_server_name,
                 config_entry_id,
             )
-            tasks.append(_async_handle_delete_server(target_api, target_server_name))
-            servers_to_delete.append(
-                target_server_name
-            )  # Add to list for potential summary
-        except KeyError as e:
-            _LOGGER.error(
-                "Missing expected data ('%s') for config entry %s when queueing delete_server.",
-                e,
-                config_entry_id,
+            # Pass hass and config_entry_id to the helper now
+            tasks.append(
+                _async_handle_delete_server(
+                    hass, target_api, target_server_name, config_entry_id
+                )
             )
+            servers_attempted[config_entry_id] = target_server_name  # Track attempt
         except Exception as e:
             _LOGGER.exception(
-                "Unexpected error queueing delete_server for %s: %s",
-                target_server_name,
-                e,
+                "Error queueing delete_server for %s: %s", target_server_name, e
             )
 
-    # Execute deletion tasks if any were successfully queued
     if tasks:
         _LOGGER.warning(
             "Proceeding with delete API calls for %d server(s).", len(tasks)
         )
+        # Results now contain True (if device removed) or an Exception
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Log any errors that occurred during the API calls
         processed_errors = 0
+        servers_removed_from_ha = []
+        servers_failed_api = []
+
         for i, result in enumerate(results):
+            # Map result back to entry ID and resolved server name
+            entry_id_processed = list(resolved_targets.keys())[
+                i
+            ]  # Assumes gather preserves order
+            server_name_processed = resolved_targets.get(entry_id_processed, "unknown")
+
             if isinstance(result, Exception):
                 processed_errors += 1
-                # Try to get the server name corresponding to the failed task
-                failed_entry_id = list(resolved_targets.keys())[
-                    i
-                ]  # Assumes gather preserves order
-                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                servers_failed_api.append(server_name_processed)
                 _LOGGER.error(
                     "Error executing delete_server for server '%s' (entry %s): %s",
-                    failed_server_name,
-                    failed_entry_id,
+                    server_name_processed,
+                    entry_id_processed,
                     result,
                 )
-                # Note: The HomeAssistantError raised by the helper will be caught by HA service layer
+            elif (
+                result is True
+            ):  # Helper returned True indicating HA device removal success
+                servers_removed_from_ha.append(server_name_processed)
+            # else: result is False or None (shouldn't happen with current helper logic)
 
-        # Optionally: Create a persistent notification summarizing the action
-        if servers_to_delete:
-            message = (
-                f"Deletion process executed for server(s): {', '.join(servers_to_delete)}. "
-                f"{processed_errors} error(s) occurred during the API calls (check logs). "
-                "Associated Home Assistant devices/entities will become unavailable "
-                "after restart or next update if deletion was successful on the manager."
-            )
+        # Create persistent notification
+        if servers_attempted:
+            message_parts = []
+            if servers_removed_from_ha:
+                message_parts.append(
+                    f"Successfully deleted and removed from HA: {', '.join(servers_removed_from_ha)}."
+                )
+            if servers_failed_api:
+                message_parts.append(
+                    f"Failed API deletion (check logs): {', '.join(servers_failed_api)}."
+                )
+            if not message_parts:
+                message_parts.append(
+                    "Deletion attempted but status unclear (check logs)."
+                )
+
             hass.components.persistent_notification.async_create(
-                message,
-                title="Minecraft Server Deletion Attempted",
-                notification_id=f"bsm_delete_{service.context.id}",  # Unique ID for notification
+                " ".join(message_parts),
+                title="Minecraft Server Deletion Results",
+                notification_id=f"bsm_delete_{service.context.id}",
             )
 
     elif not resolved_targets:
