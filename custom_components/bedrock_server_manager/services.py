@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import cast, Dict, Optional, List
+from typing import cast, Dict, Optional, List, Any
 
 import voluptuous as vol
 
@@ -24,6 +24,8 @@ from .const import (
     SERVICE_DELETE_SERVER,
     SERVICE_ADD_TO_ALLOWLIST,
     SERVICE_REMOVE_FROM_ALLOWLIST,
+    SERVICE_SET_PERMISSIONS,
+    SERVICE_UPDATE_PROPERTIES,
     FIELD_BACKUP_TYPE,
     FIELD_RESTORE_TYPE,
     FIELD_FILE_TO_BACKUP,
@@ -38,6 +40,8 @@ from .const import (
     FIELD_PLAYERS,
     FIELD_PLAYER_NAME,
     FIELD_IGNORE_PLAYER_LIMIT,
+    FIELD_PERMISSIONS,
+    FIELD_PROPERTIES,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -117,11 +121,8 @@ DELETE_SERVER_SERVICE_SCHEMA = vol.Schema(
 ADD_TO_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
     {
         # Players field: Expect a list of strings
-        vol.Required(FIELD_PLAYERS): vol.All(
-            cv.ensure_list, [cv.string]
-        ),  # Use HA helpers for list of strings
+        vol.Required(FIELD_PLAYERS): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional(FIELD_IGNORE_PLAYER_LIMIT, default=False): bool,
-        # Add target keys workaround if needed
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
@@ -131,6 +132,27 @@ ADD_TO_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
 REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_PLAYER_NAME): str,
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+SET_PERMISSIONS_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PERMISSIONS): vol.Schema({cv.string: cv.string}),
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+UPDATE_PROPERTIES_SERVICE_SCHEMA = vol.Schema(
+    {
+        # Allow any string key, value can be string, int, or bool (API handles specific validation)
+        vol.Required(FIELD_PROPERTIES): vol.Schema(
+            {cv.string: vol.Any(cv.string, cv.positive_int, cv.boolean)}
+        ),
         # Add target keys workaround if needed
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
@@ -409,6 +431,71 @@ async def _async_handle_remove_from_allowlist(
         )
         raise HomeAssistantError(
             f"Unexpected error removing from allowlist: {err}"
+        ) from err
+
+
+async def _async_handle_set_permissions(
+    api: BedrockServerManagerApi, server: str, permissions_dict: Dict[str, str]
+):
+    """Helper coroutine to call API for set_permissions."""
+    try:
+        await api.async_set_permissions(
+            server_name=server, permissions_dict=permissions_dict
+        )
+        _LOGGER.info("Successfully requested set permissions for server '%s'", server)
+    except APIError as err:
+        # Check if the error response contains detailed validation errors
+        error_details = ""
+        if isinstance(getattr(err, "message", None), dict) and "errors" in err.message:
+            error_details = f" Details: {err.message['errors']}"
+        elif isinstance(getattr(err, "message", None), str):
+            error_details = f" Message: {err.message}"
+
+        _LOGGER.error(
+            "API Error setting permissions for '%s': %s%s", server, err, error_details
+        )
+        # Include details in the HA error if possible
+        raise HomeAssistantError(
+            f"API Error setting permissions: {err}{error_details}"
+        ) from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error setting permissions for '%s': %s", server, err
+        )
+        raise HomeAssistantError(
+            f"Unexpected error setting permissions: {err}"
+        ) from err
+
+
+async def _async_handle_update_properties(
+    api: BedrockServerManagerApi, server: str, properties_dict: Dict[str, Any]
+):
+    """Helper coroutine to call API for update_properties."""
+    try:
+        await api.async_update_properties(
+            server_name=server, properties_dict=properties_dict
+        )
+        _LOGGER.info("Successfully requested property updates for server '%s'", server)
+    except APIError as err:
+        # Check for detailed validation errors from API
+        error_details = ""
+        if isinstance(getattr(err, "message", None), dict) and "errors" in err.message:
+            error_details = f" Details: {err.message['errors']}"
+        elif isinstance(getattr(err, "message", None), str):
+            error_details = f" Message: {err.message}"
+
+        _LOGGER.error(
+            "API Error updating properties for '%s': %s%s", server, err, error_details
+        )
+        raise HomeAssistantError(
+            f"API Error updating properties: {err}{error_details}"
+        ) from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error updating properties for '%s': %s", server, err
+        )
+        raise HomeAssistantError(
+            f"Unexpected error updating properties: {err}"
         ) from err
 
 
@@ -1079,6 +1166,111 @@ async def async_handle_remove_from_allowlist_service(
         )  # Log errors within gather if needed
 
 
+async def async_handle_set_permissions_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle the set_permissions service call."""
+    # Schema ensures 'permissions' is a dict[str, str]
+    permissions_dict = service.data[FIELD_PERMISSIONS]
+
+    _LOGGER.info("Executing set_permissions service for target(s)")
+
+    resolved_targets = await _resolve_server_targets(service, hass)  # Reuse resolver
+    tasks = []
+    servers_processed = []
+
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
+            _LOGGER.info(
+                "Queueing set_permissions for server '%s' (config entry %s)",
+                target_server_name,
+                config_entry_id,
+            )
+            tasks.append(
+                _async_handle_set_permissions(
+                    target_api, target_server_name, permissions_dict
+                )
+            )
+            servers_processed.append(target_server_name)
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing set_permissions for %s: %s", target_server_name, e
+            )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Log errors (already handled by helper raising HomeAssistantError)
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                failed_entry_id = list(resolved_targets.keys())[i]
+                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                _LOGGER.error(
+                    "Error executing set_permissions for server '%s' (entry %s): %s",
+                    failed_server_name,
+                    failed_entry_id,
+                    result,
+                )
+
+
+async def async_handle_update_properties_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle the update_properties service call."""
+    # Schema ensures 'properties' exists and is a dict[str, Any]
+    properties_dict = service.data[FIELD_PROPERTIES]
+
+    _LOGGER.info("Executing update_properties service for target(s)")
+
+    resolved_targets = await _resolve_server_targets(service, hass)  # Reuse resolver
+    tasks = []
+
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
+            _LOGGER.info(
+                "Queueing property updates for server '%s' (config entry %s): %s",
+                target_server_name,
+                config_entry_id,
+                properties_dict,
+            )
+            tasks.append(
+                _async_handle_update_properties(
+                    target_api, target_server_name, properties_dict
+                )
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing update_properties for %s: %s", target_server_name, e
+            )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Log errors (already handled by helper raising HomeAssistantError)
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                failed_entry_id = list(resolved_targets.keys())[i]
+                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                _LOGGER.error(
+                    "Error executing update_properties for server '%s' (entry %s): %s",
+                    failed_server_name,
+                    failed_entry_id,
+                    result,
+                )
+
+
 # --- Service Registration Function ---
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
@@ -1211,6 +1403,34 @@ async def async_register_services(hass: HomeAssistant):
             schema=REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA,
         )
 
+    # Set Permissions
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_PERMISSIONS):
+
+        async def set_permissions_wrapper(call: ServiceCall):
+            await async_handle_set_permissions_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_SET_PERMISSIONS)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_PERMISSIONS,
+            set_permissions_wrapper,
+            schema=SET_PERMISSIONS_SERVICE_SCHEMA,
+        )
+
+    # Update Properties
+    if not hass.services.has_service(DOMAIN, SERVICE_UPDATE_PROPERTIES):
+
+        async def update_properties_wrapper(call: ServiceCall):
+            await async_handle_update_properties_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_UPDATE_PROPERTIES)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_UPDATE_PROPERTIES,
+            update_properties_wrapper,
+            schema=UPDATE_PROPERTIES_SERVICE_SCHEMA,
+        )
+
 
 # --- Service Removal Function ---
 async def async_remove_services(hass: HomeAssistant):
@@ -1226,6 +1446,8 @@ async def async_remove_services(hass: HomeAssistant):
             SERVICE_DELETE_SERVER,
             SERVICE_ADD_TO_ALLOWLIST,
             SERVICE_REMOVE_FROM_ALLOWLIST,
+            SERVICE_SET_PERMISSIONS,
+            SERVICE_UPDATE_PROPERTIES,
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):

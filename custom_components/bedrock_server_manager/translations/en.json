@@ -209,6 +209,26 @@
           "description": "The Gamertag of the player to remove."
         }
       }
+    },
+    "set_permissions": {
+      "name": "Set player permissions",
+      "description": "Sets permission levels ('visitor', 'member', 'operator') for players using their XUIDs on the target server(s).",
+      "fields": {
+        "permissions": {
+          "name": "Permissions Map",
+          "description": "Dictionary mapping Player XUIDs (strings) to permission levels (strings: 'visitor', 'member', 'operator'). Input as YAML or JSON."
+        }
+      }
+    },
+    "update_properties": {
+      "name": "Update server properties",
+      "description": "Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.",
+      "fields": {
+        "properties": {
+          "name": "Properties Map",
+          "description": "Dictionary mapping allowed server property keys (strings) to their new values (strings, numbers, booleans). Input as YAML or JSON."
+        }
+      }
     }
   }
 }

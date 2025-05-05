@@ -506,7 +506,6 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
-    # --- Add Allowlist Methods ---
     async def async_get_allowlist(self, server_name: str) -> Dict[str, Any]:
         """Gets the current allowlist for a server. Calls GET /api/server/{server_name}/allowlist."""
         _LOGGER.debug("Fetching allowlist for server '%s'", server_name)
@@ -546,6 +545,40 @@ class BedrockServerManagerApi:
             method="DELETE",
             path=f"/server/{server_name}/allowlist/player/{player_name}",
             data=None,  # No body
+            authenticated=True,
+        )
+
+    async def async_set_permissions(
+        self, server_name: str, permissions_dict: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Sets permissions for multiple players. Calls PUT /api/server/{server_name}/permissions."""
+        _LOGGER.info(
+            "Setting permissions for server '%s': %s", server_name, permissions_dict
+        )
+        # The payload is the dictionary itself, wrapped under a "permissions" key
+        payload = {"permissions": permissions_dict}
+        return await self._request(
+            method="PUT",  # Use PUT method
+            path=f"/server/{server_name}/permissions",
+            data=payload,  # Send the structured payload
+            authenticated=True,
+        )
+
+    async def async_update_properties(
+        self,
+        server_name: str,
+        properties_dict: Dict[str, Any],  # Allow Any for values (str/int/bool)
+    ) -> Dict[str, Any]:
+        """Updates server.properties with provided key-value pairs. Calls POST /api/server/{server_name}/properties."""
+        _LOGGER.info(
+            "Updating properties for server '%s': %s", server_name, properties_dict
+        )
+        # The API expects the dictionary directly as the JSON body
+        payload = properties_dict
+        return await self._request(
+            method="POST",  # Use POST method
+            path=f"/server/{server_name}/properties",
+            data=payload,  # Send the dictionary as the body
             authenticated=True,
         )
 

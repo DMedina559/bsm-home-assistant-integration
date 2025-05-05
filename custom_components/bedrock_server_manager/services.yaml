@@ -172,3 +172,35 @@ remove_from_allowlist:
       example: "PlayerToRemove"
       selector:
         text: {}
+
+set_permissions:
+  description: Sets permission levels ('visitor', 'member', 'operator') for players using their XUID on the target server(s). Replaces existing levels for specified players.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    permissions:
+      description: A dictionary mapping Player XUIDs (as strings) to permission levels (as strings 'visitor', 'member', or 'operator').
+      required: true
+      example: '{"2535416409681153": "operator", "2535457894355891": "member"}'
+      selector:
+        object: {}
+
+update_properties:
+  description: Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    properties:
+      description: A dictionary mapping server property keys (strings) to their new desired values (strings or numbers). See integration docs for allowed keys.
+      required: true
+      example: '{"max-players": "15", "difficulty": "normal", "allow-list": true}'
+      selector:
+        object: {} # Use the object selector, users will input YAML/JSON mapping
