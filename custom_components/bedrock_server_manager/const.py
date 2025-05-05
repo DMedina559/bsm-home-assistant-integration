@@ -27,6 +27,7 @@ ATTR_MEMORY_MB = "memory_mb"
 ATTR_UPTIME = "uptime"
 ATTR_PLAYERS_ONLINE = "players_online"
 ATTR_MAX_PLAYERS = "max_players"
+ATTR_ALLOWLISTED_PLAYERS = "allowlisted_players"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
@@ -36,6 +37,8 @@ SERVICE_RESTORE_BACKUP = "restore_backup"
 SERVICE_RESTORE_LATEST_ALL = "restore_latest_all"
 SERVICE_INSTALL_SERVER = "install_server"
 SERVICE_DELETE_SERVER = "delete_server"
+SERVICE_ADD_TO_ALLOWLIST = "add_to_allowlist"
+SERVICE_REMOVE_FROM_ALLOWLIST = "remove_from_allowlist"
 
 # Service field names
 FIELD_COMMAND = "command"
@@ -49,3 +52,6 @@ FIELD_SERVER_NAME = "server_name"
 FIELD_SERVER_VERSION = "server_version"
 FIELD_OVERWRITE = "overwrite"
 FIELD_CONFIRM_DELETE = "confirm_deletion"
+FIELD_PLAYERS = "players"
+FIELD_PLAYER_NAME = "player_name"
+FIELD_IGNORE_PLAYER_LIMIT = "ignores_player_limit"

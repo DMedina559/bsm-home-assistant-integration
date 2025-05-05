@@ -29,6 +29,7 @@ from .const import (
     ATTR_UPTIME,
     ATTR_WORLD_NAME,
     ATTR_INSTALLED_VERSION,
+    ATTR_ALLOWLISTED_PLAYERS,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -300,6 +301,14 @@ class MinecraftServerSensor(
                     attrs[ATTR_PID] = pid
                 if uptime is not None:
                     attrs[ATTR_UPTIME] = uptime
-            # Add player list here later if/when available
+            allowlist = self.coordinator.data.get("allowlist")
+            # Check if allowlist is not None (could be empty list or None on error)
+            if allowlist is not None and isinstance(allowlist, list):
+                # Store the raw list of player objects, or just names? Let's do names.
+                attrs[ATTR_ALLOWLISTED_PLAYERS] = [
+                    p.get("name")
+                    for p in allowlist
+                    if isinstance(p, dict) and p.get("name")
+                ]
 
         return attrs if attrs else None

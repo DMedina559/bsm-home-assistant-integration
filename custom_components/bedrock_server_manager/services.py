@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import cast, Dict, Optional
+from typing import cast, Dict, Optional, List
 
 import voluptuous as vol
 
@@ -11,6 +11,7 @@ from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
@@ -21,6 +22,8 @@ from .const import (
     SERVICE_RESTORE_LATEST_ALL,
     SERVICE_INSTALL_SERVER,
     SERVICE_DELETE_SERVER,
+    SERVICE_ADD_TO_ALLOWLIST,
+    SERVICE_REMOVE_FROM_ALLOWLIST,
     FIELD_BACKUP_TYPE,
     FIELD_RESTORE_TYPE,
     FIELD_FILE_TO_BACKUP,
@@ -32,6 +35,9 @@ from .const import (
     FIELD_SERVER_NAME,
     FIELD_SERVER_VERSION,
     FIELD_CONFIRM_DELETE,
+    FIELD_PLAYERS,
+    FIELD_PLAYER_NAME,
+    FIELD_IGNORE_PLAYER_LIMIT,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -102,6 +108,30 @@ INSTALL_SERVER_SERVICE_SCHEMA = vol.Schema(
 DELETE_SERVER_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_CONFIRM_DELETE): True,
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+ADD_TO_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
+    {
+        # Players field: Expect a list of strings
+        vol.Required(FIELD_PLAYERS): vol.All(
+            cv.ensure_list, [cv.string]
+        ),  # Use HA helpers for list of strings
+        vol.Optional(FIELD_IGNORE_PLAYER_LIMIT, default=False): bool,
+        # Add target keys workaround if needed
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PLAYER_NAME): str,
+        # Add target keys workaround if needed
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
@@ -281,6 +311,56 @@ async def _async_handle_delete_server(api: BedrockServerManagerApi, server: str)
     except Exception as err:
         _LOGGER.exception("Unexpected error deleting server '%s': %s", server, err)
         raise HomeAssistantError(f"Unexpected error deleting server: {err}") from err
+
+
+async def _async_handle_add_to_allowlist(
+    api: BedrockServerManagerApi, server: str, players: List[str], ignore_limit: bool
+):
+    """Helper for add_to_allowlist service."""
+    try:
+        await api.async_add_to_allowlist(
+            server_name=server, players=players, ignores_player_limit=ignore_limit
+        )
+        _LOGGER.info(
+            "Successfully requested add players %s to allowlist for server '%s'",
+            players,
+            server,
+        )
+    except APIError as err:
+        _LOGGER.error("API Error adding to allowlist for '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error adding to allowlist: {err}") from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error adding to allowlist for '%s': %s", server, err
+        )
+        raise HomeAssistantError(
+            f"Unexpected error adding to allowlist: {err}"
+        ) from err
+
+
+async def _async_handle_remove_from_allowlist(
+    api: BedrockServerManagerApi, server: str, player_name: str
+):
+    """Helper for remove_from_allowlist service."""
+    try:
+        await api.async_remove_from_allowlist(
+            server_name=server, player_name=player_name
+        )
+        _LOGGER.info(
+            "Successfully requested remove player '%s' from allowlist for server '%s'",
+            player_name,
+            server,
+        )
+    except APIError as err:
+        _LOGGER.error("API Error removing from allowlist for '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error removing from allowlist: {err}") from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error removing from allowlist for '%s': %s", server, err
+        )
+        raise HomeAssistantError(
+            f"Unexpected error removing from allowlist: {err}"
+        ) from err
 
 
 # --- Main Service Handlers ---
@@ -879,6 +959,79 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
         )
 
 
+async def async_handle_add_to_allowlist_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle add_to_allowlist service call."""
+    players = service.data[FIELD_PLAYERS]
+    ignore_limit = service.data[
+        FIELD_IGNORE_PLAYER_LIMIT
+    ]  # Uses default=False from schema
+
+    resolved_targets = await _resolve_server_targets(service, hass)
+    tasks = []
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
+            _LOGGER.info(
+                "Queueing add players %s to allowlist for server '%s'",
+                players,
+                target_server_name,
+            )
+            tasks.append(
+                _async_handle_add_to_allowlist(
+                    target_api, target_server_name, players, ignore_limit
+                )
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing add_to_allowlist for %s: %s", target_server_name, e
+            )
+    if tasks:
+        await asyncio.gather(
+            *tasks, return_exceptions=True
+        )  # Log errors within gather if needed
+
+
+async def async_handle_remove_from_allowlist_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle remove_from_allowlist service call."""
+    player_name = service.data[FIELD_PLAYER_NAME]
+
+    resolved_targets = await _resolve_server_targets(service, hass)
+    tasks = []
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
+            _LOGGER.info(
+                "Queueing remove player '%s' from allowlist for server '%s'",
+                player_name,
+                target_server_name,
+            )
+            tasks.append(
+                _async_handle_remove_from_allowlist(
+                    target_api, target_server_name, player_name
+                )
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing remove_from_allowlist for %s: %s", target_server_name, e
+            )
+    if tasks:
+        await asyncio.gather(
+            *tasks, return_exceptions=True
+        )  # Log errors within gather if needed
+
+
 # --- Service Registration Function ---
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
@@ -981,6 +1134,36 @@ async def async_register_services(hass: HomeAssistant):
             schema=DELETE_SERVER_SERVICE_SCHEMA,
         )
 
+    # Add to Allowlist
+    if not hass.services.has_service(DOMAIN, SERVICE_ADD_TO_ALLOWLIST):
+
+        async def add_allowlist_wrapper(call: ServiceCall):
+            await async_handle_add_to_allowlist_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_ADD_TO_ALLOWLIST)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_ADD_TO_ALLOWLIST,
+            add_allowlist_wrapper,
+            schema=ADD_TO_ALLOWLIST_SERVICE_SCHEMA,
+        )
+
+    # Remove from Allowlist
+    if not hass.services.has_service(DOMAIN, SERVICE_REMOVE_FROM_ALLOWLIST):
+
+        async def remove_allowlist_wrapper(call: ServiceCall):
+            await async_handle_remove_from_allowlist_service(call, hass)
+
+        _LOGGER.debug(
+            "Registering service: %s.%s", DOMAIN, SERVICE_REMOVE_FROM_ALLOWLIST
+        )
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REMOVE_FROM_ALLOWLIST,
+            remove_allowlist_wrapper,
+            schema=REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA,
+        )
+
 
 # --- Service Removal Function ---
 async def async_remove_services(hass: HomeAssistant):
@@ -994,6 +1177,8 @@ async def async_remove_services(hass: HomeAssistant):
             SERVICE_RESTORE_LATEST_ALL,
             SERVICE_INSTALL_SERVER,
             SERVICE_DELETE_SERVER,
+            SERVICE_ADD_TO_ALLOWLIST,
+            SERVICE_REMOVE_FROM_ALLOWLIST,
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):

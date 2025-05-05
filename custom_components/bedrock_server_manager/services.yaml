@@ -134,3 +134,41 @@ delete_server:
       example: false
       selector:
         boolean: {}
+
+add_to_allowlist:
+  description: Adds one or more players to the target server's allowlist. Does not remove existing players.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    players:
+      description: A list of player Gamertags to add.
+      required: true
+      example: ["Player1", "AnotherGamer"]
+      selector:
+        object: {}
+    ignores_player_limit:
+      description: "(Optional) Set the 'ignoresPlayerLimit' flag for these players."
+      required: false
+      example: false
+      selector:
+        boolean: {}
+
+remove_from_allowlist:
+  description: Removes a specific player from the target server's allowlist (case-insensitive).
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    player_name:
+      description: The Gamertag of the player to remove.
+      required: true
+      example: "PlayerToRemove"
+      selector:
+        text: {}

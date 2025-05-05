@@ -506,6 +506,49 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    # --- Add Allowlist Methods ---
+    async def async_get_allowlist(self, server_name: str) -> Dict[str, Any]:
+        """Gets the current allowlist for a server. Calls GET /api/server/{server_name}/allowlist."""
+        _LOGGER.debug("Fetching allowlist for server '%s'", server_name)
+        return await self._request(
+            method="GET", path=f"/server/{server_name}/allowlist", authenticated=True
+        )
+
+    async def async_add_to_allowlist(
+        self, server_name: str, players: List[str], ignores_player_limit: bool = False
+    ) -> Dict[str, Any]:
+        """Adds players to the allowlist. Calls POST /api/server/{server_name}/allowlist/add."""
+        _LOGGER.debug(
+            "Adding players %s to allowlist for server '%s'", players, server_name
+        )
+        payload = {
+            "players": players,
+            "ignoresPlayerLimit": ignores_player_limit,
+        }
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/allowlist/add",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_remove_from_allowlist(
+        self, server_name: str, player_name: str
+    ) -> Dict[str, Any]:
+        """Removes a player from the allowlist. Calls DELETE /api/server/{server_name}/allowlist/player/{player_name}."""
+        _LOGGER.debug(
+            "Removing player '%s' from allowlist for server '%s'",
+            player_name,
+            server_name,
+        )
+        # Player name goes in the path, needs URL encoding if it contains special chars (aiohttp usually handles this)
+        return await self._request(
+            method="DELETE",
+            path=f"/server/{server_name}/allowlist/player/{player_name}",
+            data=None,  # No body
+            authenticated=True,
+        )
+
     # --- Global Manager Action Methods ---
     async def async_scan_player_logs(self) -> Dict[str, Any]:
         """Triggers scanning of player logs."""

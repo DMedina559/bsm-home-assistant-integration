@@ -45,50 +45,133 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self) -> dict:
-        """Fetch data from API endpoint.
-
-        This is the place to fetch data from your device API to update Home Assistant entities.
-        """
+        """Fetch data from API endpoints for the coordinator."""
         _LOGGER.debug("Coordinator requesting update for server '%s'", self.server_name)
-        try:
-            # The api._request method handles token presence and 401 retry internally
-            # Timeout slightly less than interval to prevent overlap
-            async with async_timeout.timeout(self._scan_interval - 5):
-                # Use self.api and self.server_name stored during __init__
-                status_info = await self.api.async_get_server_status_info(
-                    self.server_name
-                )
-                # Expects {"status": "success", "process_info": {...} or null} on success
-                return status_info
+        # Define default/error structure
+        coordinator_data = {
+            "status": "error",
+            "message": "Update failed",
+            "process_info": None,
+            "allowlist": None,
+        }
 
-        except AuthError as err:
-            # Raising ConfigEntryAuthFailed will prompt user for re-authentication
-            _LOGGER.error(
-                "Authentication error fetching data for %s: %s", self.server_name, err
-            )
-            raise ConfigEntryAuthFailed(
-                f"Authentication failed for {self.server_name}: {err}"
-            ) from err
-        except ServerNotFoundError as err:
-            # Server no longer found by API - potentially deleted on manager side
-            _LOGGER.error(
-                "Server %s not found by API during update: %s", self.server_name, err
-            )
-            raise UpdateFailed(f"Server {self.server_name} not found: {err}") from err
-        except ServerNotRunningError as err:
-            # Return specific structure indicating stopped state
-            _LOGGER.debug(
-                "Server %s is not running during update: %s", self.server_name, err
-            )
-            return {"status": "success", "process_info": None, "message": str(err)}
-        except (APIError, CannotConnectError, asyncio.TimeoutError) as err:
-            # Other API errors or connection issues
-            _LOGGER.warning(
-                "Error communicating with API for %s: %s", self.server_name, err
-            )
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
-        except Exception as err:
-            # Catch-all for unexpected errors during update
+        try:
+            # Use asyncio.gather to fetch status and allowlist concurrently
+            async with async_timeout.timeout(self._scan_interval - 5):
+                results = await asyncio.gather(
+                    self.api.async_get_server_status_info(self.server_name),
+                    self.api.async_get_allowlist(self.server_name),
+                    return_exceptions=True,  # Return exceptions instead of raising immediately
+                )
+
+            # Process results
+            status_info_result = results[0]
+            allowlist_result = results[1]
+
+            # Handle status info result
+            if isinstance(status_info_result, Exception):
+                # Handle specific errors like AuthError or re-raise generic UpdateFailed
+                if isinstance(status_info_result, AuthError):
+                    raise ConfigEntryAuthFailed(
+                        f"Auth error fetching status: {status_info_result}"
+                    ) from status_info_result
+                if isinstance(status_info_result, ServerNotFoundError):
+                    raise UpdateFailed(
+                        f"Server not found fetching status: {status_info_result}"
+                    ) from status_info_result
+                # Log other status errors but maybe allow allowlist fetch to succeed
+                _LOGGER.warning(
+                    "Error fetching status info for %s: %s",
+                    self.server_name,
+                    status_info_result,
+                )
+                coordinator_data["message"] = (
+                    f"Status fetch failed: {status_info_result}"
+                )
+                # Keep process_info as None
+            elif isinstance(status_info_result, dict):
+                # Check for API reporting error in body despite 2xx code
+                if status_info_result.get("status") == "error":
+                    _LOGGER.warning(
+                        "API reported error fetching status for %s: %s",
+                        self.server_name,
+                        status_info_result.get("message"),
+                    )
+                    coordinator_data["message"] = (
+                        f"API error (status): {status_info_result.get('message')}"
+                    )
+                else:
+                    # Success for status info
+                    coordinator_data["process_info"] = status_info_result.get(
+                        "process_info"
+                    )
+                    # Check if server is running based on process_info
+                    if coordinator_data["process_info"] is None:
+                        # Handle case where status call worked but server is stopped
+                        if (
+                            "message" in status_info_result
+                        ):  # Use API message if available
+                            coordinator_data["message"] = status_info_result["message"]
+                        else:
+                            coordinator_data["message"] = "Server stopped"
+                    # Update overall status only if allowlist also succeeds below
+                    # coordinator_data["status"] = "success"
+                    # coordinator_data["message"] = "Status fetched" # Overwrite later if allowlist fails
+
+            # Handle allowlist result
+            if isinstance(allowlist_result, Exception):
+                # Log allowlist error but don't necessarily fail the whole update if status worked
+                _LOGGER.warning(
+                    "Error fetching allowlist for %s: %s",
+                    self.server_name,
+                    allowlist_result,
+                )
+                # Update message if status was okay, otherwise keep status error message
+                if coordinator_data.get("status") != "error":
+                    coordinator_data["message"] = (
+                        f"Allowlist fetch failed: {allowlist_result}"
+                    )
+                # Keep allowlist as None
+            elif isinstance(allowlist_result, dict):
+                if allowlist_result.get("status") == "error":
+                    _LOGGER.warning(
+                        "API reported error fetching allowlist for %s: %s",
+                        self.server_name,
+                        allowlist_result.get("message"),
+                    )
+                    if (
+                        coordinator_data.get("status") != "error"
+                    ):  # Prioritize status error message
+                        coordinator_data["message"] = (
+                            f"API error (allowlist): {allowlist_result.get('message')}"
+                        )
+                else:
+                    # Success for allowlist info
+                    coordinator_data["allowlist"] = allowlist_result.get(
+                        "existing_players", []
+                    )
+                    # If status also succeeded, mark overall success
+                    if (
+                        not isinstance(status_info_result, Exception)
+                        and status_info_result.get("status") != "error"
+                    ):
+                        coordinator_data["status"] = "success"
+                        coordinator_data["message"] = (
+                            "Data fetched successfully"  # Or use API messages?
+                        )
+
+            # Return the combined data (or error state)
+            return coordinator_data
+
+        # Handle specific exceptions from the gather call or coordinator logic itself
+        except ConfigEntryAuthFailed:
+            raise  # Re-raise auth errors
+        except UpdateFailed:
+            raise  # Re-raise update failures
+        except asyncio.TimeoutError as err:
+            _LOGGER.warning("Timeout fetching data for %s", self.server_name)
+            raise UpdateFailed(f"Timeout communicating with API: {err}") from err
+        except Exception as err:  # Catch-all for unexpected errors during update
             _LOGGER.exception(
                 "Unexpected error fetching data for %s: %s", self.server_name, err
             )
