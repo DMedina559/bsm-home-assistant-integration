@@ -1,5 +1,5 @@
 {
-  "hacs": "0.2.0",
+  "hacs": "0.3.0",
   "name": "Bedrock Server Manager",
   "homeassistant": "2023.1.0"
 }
