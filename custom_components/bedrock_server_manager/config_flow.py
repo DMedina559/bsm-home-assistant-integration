@@ -144,89 +144,71 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
-        """Handle the step for selecting which servers to monitor."""
-        errors: Dict[str, str] = {}
-        current_options = self.config_entry.options
-        old_selected_servers = set(
-            current_options.get(CONF_SERVER_NAMES, [])
-        )  # Set for easy diff
+        """Handle the server multi-selection step during initial setup."""
+        errors: Dict[str, str] = {}  # Keep for potential future validation here
 
-        if self._discovered_servers is None:
-            try:
-                api_client = await self._get_api_client()
-                await api_client.authenticate()
-                self._discovered_servers = await api_client.async_get_server_list()
-            except (APIError, CannotConnectError, AuthError) as err:
-                _LOGGER.error("Failed to fetch server list for options flow: %s", err)
-                errors["base"] = "fetch_servers_failed"
-                self._discovered_servers = []
-            except Exception as err:
-                _LOGGER.exception("Unexpected error fetching server list: %s", err)
-                errors["base"] = "unknown_error"
-                self._discovered_servers = []
+        # This step is only reached after step_user (connection & server list fetch) succeeds
 
-        if user_input is not None and not errors:
-            newly_selected_servers = set(user_input.get(CONF_SERVER_NAMES, []))
-            _LOGGER.debug(
-                "Updating server selection. Old: %s, New: %s",
-                old_selected_servers,
-                newly_selected_servers,
+        if user_input is not None:
+            # User has submitted the selection form
+            selected_servers = user_input.get(
+                CONF_SERVER_NAMES, []
+            )  # Get the selected list
+
+            _LOGGER.info(
+                "Creating config entry for manager %s, initially selected servers: %s",
+                f"{self._connection_data[CONF_HOST]}:{self._connection_data[CONF_PORT]}",
+                selected_servers,
             )
 
-            # --- Logic to disassociate deselected server devices ---
-            servers_to_remove = old_selected_servers - newly_selected_servers
-            if servers_to_remove:
-                device_registry = dr.async_get(self.hass)
-                for server_name_to_remove in servers_to_remove:
-                    device_identifier = (DOMAIN, server_name_to_remove)
-                    device_entry = device_registry.async_get_device(
-                        identifiers={device_identifier}
-                    )
-                    if device_entry:
-                        _LOGGER.info(
-                            "Disassociating device for deselected server '%s' (Device ID: %s) from config entry %s",
-                            server_name_to_remove,
-                            device_entry.id,
-                            self.config_entry.entry_id,
-                        )
-                        device_registry.async_update_device(
-                            device_entry.id,
-                            remove_config_entry_id=self.config_entry.entry_id,
-                        )
-                    else:
-                        _LOGGER.warning(
-                            "Could not find device for deselected server '%s' to disassociate.",
-                            server_name_to_remove,
-                        )
-            # --- End device disassociation ---
-
-            new_options = {
-                **current_options,
-                CONF_SERVER_NAMES: list(newly_selected_servers),
-            }
+            # Create the config entry:
+            # - Store connection details (from self._connection_data) in 'data'
+            # - Store initial server selection list in 'options'
             return self.async_create_entry(
-                title="", data=new_options
-            )  # Updates options
+                title=f"BSM @ {self._connection_data[CONF_HOST]}",  # Title identifies the manager instance
+                data=self._connection_data.copy(),  # Pass the validated connection data
+                options={
+                    CONF_SERVER_NAMES: selected_servers
+                },  # Store initial server list in options
+            )
 
-        # Show the form
-        current_selection_list = list(
-            old_selected_servers
-        )  # Use list for default in selector
+        # --- Show the form if user_input is None (first time showing this step) ---
+
+        # Prepare description placeholders based on whether servers were found
+        if not self._discovered_servers:
+            _LOGGER.warning(
+                "Showing server selection step, but no servers were discovered from manager."
+            )
+            description_placeholders = {
+                "message": "No servers were found on this manager. You can still add the manager itself and select servers later via its 'CONFIGURE' option."
+            }
+        else:
+            description_placeholders = {
+                "message": "Select the initial Minecraft server instances you want to monitor from the list below."
+            }
+
+        # Define the schema for the multi-select listbox dynamically
+        # For initial setup, the default selection is an empty list.
         select_schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_SERVER_NAMES, default=current_selection_list
-                ): selector.SelectSelector(
+                    CONF_SERVER_NAMES, default=[]
+                ): selector.SelectSelector(  # Default to empty list
                     selector.SelectSelectorConfig(
-                        options=self._discovered_servers or [],
+                        options=self._discovered_servers,  # Populate with discovered server names
                         multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
                         sort=True,
                     )
                 ),
             }
         )
+
         return self.async_show_form(
-            step_id="select_servers", data_schema=select_schema, errors=errors
+            step_id="select_servers",  # Step ID for this form
+            data_schema=select_schema,
+            errors=errors,
+            description_placeholders=description_placeholders,
         )
 
     # Options Flow Link

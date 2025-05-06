@@ -237,6 +237,7 @@ class BSMOptionsFlowHandler(
                     selector.SelectSelectorConfig(
                         options=self._discovered_servers or [],
                         multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
                         sort=True,
                     )
                 ),
