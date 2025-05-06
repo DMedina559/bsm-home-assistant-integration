@@ -253,7 +253,7 @@ configure_os_service:
       selector:
         boolean: {}
     autostart:
-      description: "(Linux Only) Enable/Disable the server to autostart with the system (via systemd user service)."
+      description: "Enable/Disable the server to autostart with the system (via systemd user service). If not included/enabled service will be disabled. (Linux Only)"
       required: false # Optional, as it's Linux-only
       example: true
       selector:
