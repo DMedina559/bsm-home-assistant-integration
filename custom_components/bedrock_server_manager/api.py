@@ -292,6 +292,17 @@ class BedrockServerManagerApi:
             self._jwt_token = None
             raise AuthError(f"API error during login: {e}") from e
 
+    # --- Manager Information Methods ---
+    async def async_get_manager_info(self) -> Dict[str, Any]:
+        """Gets system and application information from the manager. Calls GET /api/info."""
+        _LOGGER.debug(
+            "Fetching manager system and application information from /api/info"
+        )
+        # This endpoint does NOT require authentication
+        return await self._request(
+            method="GET", path="/info", authenticated=False  # Endpoint path
+        )
+
     # --- Server List Method ---
     async def async_get_server_list(self) -> List[str]:
         """Fetches the list of server names from the API (GET /api/servers)."""
@@ -369,6 +380,17 @@ class BedrockServerManagerApi:
         except APIError as e:
             _LOGGER.warning("Could not fetch world name for %s: %s", server_name, e)
             return None
+
+    async def async_get_server_properties(self, server_name: str) -> Dict[str, Any]:
+        """Gets the server.properties content for a server.
+        Calls GET /api/servers/{server_name}/read_properties.
+        """
+        _LOGGER.debug("Fetching server properties for server '%s'", server_name)
+        return await self._request(
+            method="GET",
+            path=f"/servers/{server_name}/read_properties",  # Corrected path
+            authenticated=True,
+        )
 
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
@@ -499,11 +521,138 @@ class BedrockServerManagerApi:
     async def async_restore_latest_all(self, server_name: str) -> Dict[str, Any]:
         """Restores the latest 'all' backup. Calls POST /api/server/{server_name}/restore/all."""
         _LOGGER.debug("Requesting restore latest all for server '%s'", server_name)
-        # Assumes no request body needed for this specific endpoint
         return await self._request(
             method="POST",
             path=f"/server/{server_name}/restore/all",
             data=None,  # No body needed
+            authenticated=True,
+        )
+
+    async def async_get_allowlist(self, server_name: str) -> Dict[str, Any]:
+        """Gets the current allowlist for a server. Calls GET /api/server/{server_name}/allowlist."""
+        _LOGGER.debug("Fetching allowlist for server '%s'", server_name)
+        return await self._request(
+            method="GET", path=f"/server/{server_name}/allowlist", authenticated=True
+        )
+
+    async def async_add_to_allowlist(
+        self, server_name: str, players: List[str], ignores_player_limit: bool = False
+    ) -> Dict[str, Any]:
+        """Adds players to the allowlist. Calls POST /api/server/{server_name}/allowlist/add."""
+        _LOGGER.debug(
+            "Adding players %s to allowlist for server '%s'", players, server_name
+        )
+        payload = {
+            "players": players,
+            "ignoresPlayerLimit": ignores_player_limit,
+        }
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/allowlist/add",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_remove_from_allowlist(
+        self, server_name: str, player_name: str
+    ) -> Dict[str, Any]:
+        """Removes a player from the allowlist. Calls DELETE /api/server/{server_name}/allowlist/player/{player_name}."""
+        _LOGGER.debug(
+            "Removing player '%s' from allowlist for server '%s'",
+            player_name,
+            server_name,
+        )
+        # Player name goes in the path, needs URL encoding if it contains special chars (aiohttp usually handles this)
+        return await self._request(
+            method="DELETE",
+            path=f"/server/{server_name}/allowlist/player/{player_name}",
+            data=None,  # No body
+            authenticated=True,
+        )
+
+    async def async_set_permissions(
+        self, server_name: str, permissions_dict: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Sets permissions for multiple players. Calls PUT /api/server/{server_name}/permissions."""
+        _LOGGER.info(
+            "Setting permissions for server '%s': %s", server_name, permissions_dict
+        )
+        # The payload is the dictionary itself, wrapped under a "permissions" key
+        payload = {"permissions": permissions_dict}
+        return await self._request(
+            method="PUT",  # Use PUT method
+            path=f"/server/{server_name}/permissions",
+            data=payload,  # Send the structured payload
+            authenticated=True,
+        )
+
+    async def async_update_properties(
+        self,
+        server_name: str,
+        properties_dict: Dict[str, Any],  # Allow Any for values (str/int/bool)
+    ) -> Dict[str, Any]:
+        """Updates server.properties with provided key-value pairs. Calls POST /api/server/{server_name}/properties."""
+        _LOGGER.info(
+            "Updating properties for server '%s': %s", server_name, properties_dict
+        )
+        # The API expects the dictionary directly as the JSON body
+        payload = properties_dict
+        return await self._request(
+            method="POST",  # Use POST method
+            path=f"/server/{server_name}/properties",
+            data=payload,  # Send the dictionary as the body
+            authenticated=True,
+        )
+
+    async def async_install_world(
+        self, server_name: str, filename: str
+    ) -> Dict[str, Any]:
+        """Installs a world from a .mcworld file. Calls POST /api/server/{server_name}/world/install."""
+        _LOGGER.info(
+            "Requesting world install for server '%s' from file '%s'",
+            server_name,
+            filename,
+        )
+        payload = {"filename": filename}
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/world/install",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_install_addon(
+        self, server_name: str, filename: str
+    ) -> Dict[str, Any]:
+        """Installs an addon (.mcaddon or .mcpack) file. Calls POST /api/server/{server_name}/addon/install."""
+        _LOGGER.info(
+            "Requesting addon install for server '%s' from file '%s'",
+            server_name,
+            filename,
+        )
+        payload = {"filename": filename}
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/addon/install",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_configure_os_service(
+        self,
+        server_name: str,
+        payload: Dict[str, bool],  # Payload built by service handler
+    ) -> Dict[str, Any]:
+        """Configures OS-specific service settings. Calls POST /api/server/{server_name}/service."""
+        _LOGGER.info(
+            "Requesting OS service configuration for server '%s' with payload: %s",
+            server_name,
+            payload,
+        )
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/service",
+            data=payload,  # Payload will be OS-specific
             authenticated=True,
         )
 
@@ -539,5 +688,40 @@ class BedrockServerManagerApi:
             method="POST",
             path="/downloads/prune",
             data=payload,  # Send the required payload
+            authenticated=True,
+        )
+
+    async def async_install_server(
+        self, server_name: str, server_version: str, overwrite: bool = False
+    ) -> Dict[str, Any]:
+        """Requests installation of a new server instance. Calls POST /api/server/install."""
+        _LOGGER.info(
+            "Requesting install for server '%s', version: %s, overwrite: %s",
+            server_name,
+            server_version,
+            overwrite,
+        )
+        payload = {
+            "server_name": server_name,
+            "server_version": server_version,
+            "overwrite": overwrite,  # Pass the overwrite flag
+        }
+        return await self._request(
+            method="POST",
+            path="/server/install",  # Global endpoint
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_delete_server(self, server_name: str) -> Dict[str, Any]:
+        """Deletes the server. Calls DELETE /api/server/{server_name}/delete. USE WITH CAUTION!"""
+        _LOGGER.warning(
+            "Requesting deletion of server '%s'. This is irreversible.", server_name
+        )
+        # DELETE request, no body needed
+        return await self._request(
+            method="DELETE",
+            path=f"/server/{server_name}/delete",
+            data=None,  # No body
             authenticated=True,
         )

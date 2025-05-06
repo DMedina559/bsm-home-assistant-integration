@@ -38,7 +38,7 @@
     "step": {
       "init": {
         "title": "Bedrock Server Manager Options",
-        "description": "Choose which settings to modify for the BSM at {host}.",
+        "description": "Choose which settings to modify for the manager at {host}.",
         "menu": {
           "options": {
             "update_credentials": "Update API Credentials",
@@ -157,6 +157,112 @@
     "restore_latest_all": {
       "name": "Restore latest full backup",
       "description": "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Overwrites current files!"
+    },
+    "install_server": {
+      "name": "Install new server",
+      "description": "Installs a new Minecraft Bedrock server instance via the manager.",
+      "fields": {
+        "server_name": {
+          "name": "Server Name",
+          "description": "Desired unique name for the new server."
+        },
+        "server_version": {
+          "name": "Server Version",
+          "description": "Version to install ('LATEST', 'PREVIEW', or specific version)."
+        },
+        "overwrite": {
+          "name": "Overwrite Existing",
+          "description": "(Optional) If true, deletes existing server data with the same name first."
+        }
+      }
+    },
+    "delete_server": {
+      "name": "Delete server",
+      "description": "Permanently deletes ALL data for the target server instance(s). IRREVERSIBLE!",
+      "fields": {
+        "confirm_deletion": {
+          "name": "Confirm Deletion",
+          "description": "MUST be true to confirm irreversible deletion."
+        }
+      }
+    },
+    "add_to_allowlist": {
+      "name": "Add to allowlist",
+      "description": "Adds one or more players to the target server's allowlist.",
+      "fields": {
+        "players": {
+          "name": "Players",
+          "description": "List of player Gamertags to add."
+        },
+        "ignores_player_limit": {
+          "name": "Ignores Player Limit",
+          "description": "(Optional) Set the 'ignoresPlayerLimit' flag for these players."
+        }
+      }
+    },
+    "remove_from_allowlist": {
+      "name": "Remove from allowlist",
+      "description": "Removes a specific player from the target server's allowlist (case-insensitive).",
+      "fields": {
+        "player_name": {
+          "name": "Player Name",
+          "description": "The Gamertag of the player to remove."
+        }
+      }
+    },
+    "set_permissions": {
+      "name": "Set player permissions",
+      "description": "Sets permission levels ('visitor', 'member', 'operator') for players using their XUIDs on the target server(s).",
+      "fields": {
+        "permissions": {
+          "name": "Permissions Map",
+          "description": "Dictionary mapping Player XUIDs (strings) to permission levels (strings: 'visitor', 'member', 'operator'). Input as YAML or JSON."
+        }
+      }
+    },
+    "update_properties": {
+      "name": "Update server properties",
+      "description": "Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.",
+      "fields": {
+        "properties": {
+          "name": "Properties Map",
+          "description": "Dictionary mapping allowed server property keys (strings) to their new values (strings, numbers, booleans). Input as YAML or JSON."
+        }
+      }
+    },
+    "install_world": {
+      "name": "Install world from file",
+      "description": "Installs a .mcworld file into the target server, REPLACING the current world. File must exist in manager's content/worlds directory.",
+      "fields": {
+        "filename": {
+          "name": "Filename",
+          "description": "The .mcworld filename (e.g., 'MyBackup.mcworld') relative to the manager's 'content/worlds' directory."
+        }
+      }
+    },
+    "install_addon": {
+      "name": "Install addon from file",
+      "description": "Installs an .mcaddon or .mcpack file into the target server. File must exist in the manager's 'content/addons' directory.",
+      "fields": {
+        "filename": {
+          "name": "Filename",
+          "description": "The .mcaddon or .mcpack filename (e.g., 'MyAwesomeAddon.mcaddon') relative to the manager's 'content/addons' directory."
+        }
+      }
+    },
+    "configure_os_service": {
+      "name": "Configure OS service settings",
+      "description": "Configures OS-specific service settings for the target server(s), like autoupdate or autostart (Linux only).",
+      "fields": {
+        "autoupdate": {
+          "name": "Enable Autoupdate",
+          "description": "Set to true to enable the autoupdate feature for the server."
+        },
+        "autostart": {
+          "name": "Enable Autostart (Linux Only)",
+          "description": "(Optional) Set to true to enable the server to start automatically on system boot (via systemd user service on Linux)."
+        }
+      }
     }
   }
 }

@@ -29,6 +29,8 @@ from .const import (
     ATTR_UPTIME,
     ATTR_WORLD_NAME,
     ATTR_INSTALLED_VERSION,
+    ATTR_ALLOWLISTED_PLAYERS,
+    ATTR_SERVER_PROPERTIES,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -194,7 +196,7 @@ class MinecraftServerSensor(
             identifiers={
                 (DOMAIN, self._server_name)
             },  # Unique identifier for THIS server instance
-            name=f"{self._server_name}",  # Name for this server device
+            name=f"bsm_{self._server_name}",  # Name for this server device
             manufacturer="Bedrock Server Manager",  # Can be the same
             model=f"Bedrock Server",  # Model indicating it's managed
             sw_version=self._installed_version or "Unknown",  # Use stored static info
@@ -278,28 +280,52 @@ class MinecraftServerSensor(
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
-        """Return entity specific state attributes."""
+        """Return entity specific state attributes based on the sensor type."""
         attrs = {}
-        # Use static info stored on self
-        if self._world_name:
-            attrs[ATTR_WORLD_NAME] = self._world_name
-        if self._installed_version:
-            attrs[ATTR_INSTALLED_VERSION] = self._installed_version
+        sensor_key = self.entity_description.key
 
-        # Add dynamic attributes from coordinator if available and server running
-        if (
-            self.coordinator.data
-            and isinstance(self.coordinator.data, dict)
-            and self.coordinator.data.get("status") != "error"
-        ):
-            process_info = self.coordinator.data.get("process_info")
-            if isinstance(process_info, dict):
-                pid = process_info.get("pid")
-                uptime = process_info.get("uptime")
-                if pid is not None:
-                    attrs[ATTR_PID] = pid
-                if uptime is not None:
-                    attrs[ATTR_UPTIME] = uptime
-            # Add player list here later if/when available
+        # --- Attributes ONLY for the 'status' sensor ---
+        if sensor_key == "status":
+            # Add static info stored on self
+            # if self._world_name:
+            #    attrs[ATTR_WORLD_NAME] = self._world_name
+            if self._installed_version:
+                attrs[ATTR_INSTALLED_VERSION] = self._installed_version
 
+            # Add allowlist from coordinator data if available
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                allowlist = self.coordinator.data.get("allowlist")
+                if allowlist is not None and isinstance(allowlist, list):
+                    attrs[ATTR_ALLOWLISTED_PLAYERS] = [
+                        p.get("name")
+                        for p in allowlist
+                        if isinstance(p, dict) and p.get("name")
+                    ]
+                else:
+                    attrs[ATTR_ALLOWLISTED_PLAYERS] = []  # Default to empty list
+                    # Add server properties from coordinator data if available
+                server_props = self.coordinator.data.get("properties")
+                if server_props is not None and isinstance(server_props, dict):
+                    attrs[ATTR_SERVER_PROPERTIES] = server_props
+
+        # --- Attributes ONLY for the 'cpu_percent' sensor ---
+        elif sensor_key == ATTR_CPU_PERCENT:
+            # Add PID and Uptime if server is running
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                process_info = self.coordinator.data.get("process_info")
+                if isinstance(process_info, dict):
+                    pid = process_info.get("pid")
+                    uptime = process_info.get("uptime")
+                    if pid is not None:
+                        attrs[ATTR_PID] = pid
+                    if uptime is not None:
+                        attrs[ATTR_UPTIME] = uptime
+                # else: server stopped, no PID/Uptime attributes added
+
+        # --- Attributes ONLY for the 'memory_mb' sensor ---
+        elif sensor_key == ATTR_MEMORY_MB:
+
+            pass
+
+        # Return attributes dictionary, or None if empty
         return attrs if attrs else None

@@ -7,6 +7,7 @@ import voluptuous as vol
 import aiohttp
 
 from homeassistant import config_entries, exceptions
+from homeassistant.helpers import device_registry as dr
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -143,42 +144,68 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
-        errors: Dict[str, str] = {}
+        """Handle the server multi-selection step during initial setup."""
+        errors: Dict[str, str] = {}  # Keep for potential future validation here
+
+        # This step is only reached after step_user (connection & server list fetch) succeeds
+
         if user_input is not None:
-            selected_servers = user_input.get(CONF_SERVER_NAMES, [])
+            # User has submitted the selection form
+            selected_servers = user_input.get(
+                CONF_SERVER_NAMES, []
+            )  # Get the selected list
+
             _LOGGER.info(
                 "Creating config entry for manager %s, initially selected servers: %s",
                 f"{self._connection_data[CONF_HOST]}:{self._connection_data[CONF_PORT]}",
                 selected_servers,
             )
+
+            # Create the config entry:
+            # - Store connection details (from self._connection_data) in 'data'
+            # - Store initial server selection list in 'options'
             return self.async_create_entry(
-                title=f"BSM @ {self._connection_data[CONF_HOST]}",
-                data=self._connection_data.copy(),
-                options={CONF_SERVER_NAMES: selected_servers},
+                title=f"BSM @ {self._connection_data[CONF_HOST]}",  # Title identifies the manager instance
+                data=self._connection_data.copy(),  # Pass the validated connection data
+                options={
+                    CONF_SERVER_NAMES: selected_servers
+                },  # Store initial server list in options
             )
 
+        # --- Show the form if user_input is None (first time showing this step) ---
+
+        # Prepare description placeholders based on whether servers were found
         if not self._discovered_servers:
+            _LOGGER.warning(
+                "Showing server selection step, but no servers were discovered from manager."
+            )
             description_placeholders = {
-                "message": "No servers were found on this manager. You can still add the manager itself and select servers later via configuration."
+                "message": "No servers were found on this manager. You can still add the manager itself and select servers later via its 'CONFIGURE' option."
             }
         else:
             description_placeholders = {
-                "message": "Select the initial Minecraft server instances you want to monitor."
+                "message": "Select the initial Minecraft server instances you want to monitor from the list below."
             }
 
+        # Define the schema for the multi-select listbox dynamically
+        # For initial setup, the default selection is an empty list.
         select_schema = vol.Schema(
             {
-                vol.Optional(CONF_SERVER_NAMES, default=[]): selector.SelectSelector(
+                vol.Optional(
+                    CONF_SERVER_NAMES, default=[]
+                ): selector.SelectSelector(  # Default to empty list
                     selector.SelectSelectorConfig(
-                        options=self._discovered_servers,
+                        options=self._discovered_servers,  # Populate with discovered server names
                         multiple=True,
-                        sort=True,  # Sort servers alphabetically
+                        mode=selector.SelectSelectorMode.LIST,
+                        sort=True,
                     )
                 ),
             }
         )
+
         return self.async_show_form(
-            step_id="select_servers",
+            step_id="select_servers",  # Step ID for this form
             data_schema=select_schema,
             errors=errors,
             description_placeholders=description_placeholders,

@@ -96,3 +96,165 @@ restore_latest_all:
       integration: bedrock_server_manager
     device:
       integration: bedrock_server_manager
+
+install_server:
+  description: "Installs a new Minecraft Bedrock server instance via the manager. Does NOT prompt for overwrite confirmation - set 'overwrite: true' explicitly if needed."
+  fields:
+    server_name:
+      description: Desired unique name for the new server (valid directory name characters only).
+      required: true
+      example: "my_new_survival"
+      selector:
+        text: {}
+    server_version:
+      description: Version to install ('LATEST', 'PREVIEW', or specific version like '1.20.81.01').
+      required: true
+      example: "LATEST"
+      selector:
+        text: {}
+    overwrite:
+      description: "(Optional) If true, deletes any existing server data with the same name before installing. Defaults to false."
+      required: false
+      example: false
+      selector:
+        boolean: {}
+
+delete_server:
+  description: Permanently deletes ALL data for the target server instance(s), including installation, configuration, and backups. THIS ACTION IS IRREVERSIBLE AND CANNOT BE UNDONE. USE WITH EXTREME CAUTION!
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    confirm_deletion:
+      description: MUST be set to 'true' to confirm you understand this action is irreversible and will delete all server data.
+      required: true
+      example: false
+      selector:
+        boolean: {}
+
+add_to_allowlist:
+  description: Adds one or more players to the target server's allowlist. Does not remove existing players.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    players:
+      description: A list of player Gamertags to add.
+      required: true
+      example: ["Player1", "AnotherGamer"]
+      selector:
+        object: {}
+    ignores_player_limit:
+      description: "(Optional) Set the 'ignoresPlayerLimit' flag for these players."
+      required: false
+      example: false
+      selector:
+        boolean: {}
+
+remove_from_allowlist:
+  description: Removes a specific player from the target server's allowlist (case-insensitive).
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    player_name:
+      description: The Gamertag of the player to remove.
+      required: true
+      example: "PlayerToRemove"
+      selector:
+        text: {}
+
+set_permissions:
+  description: Sets permission levels ('visitor', 'member', 'operator') for players using their XUID on the target server(s). Replaces existing levels for specified players.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    permissions:
+      description: A dictionary mapping Player XUIDs (as strings) to permission levels (as strings 'visitor', 'member', or 'operator').
+      required: true
+      example: '{"2535416409681153": "operator", "2535457894355891": "member"}'
+      selector:
+        object: {}
+
+update_properties:
+  description: Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    properties:
+      description: A dictionary mapping server property keys (strings) to their new desired values (strings or numbers). See integration docs for allowed keys.
+      required: true
+      example: '{"max-players": "15", "difficulty": "normal", "allow-list": true}'
+      selector:
+        object: {} # Use the object selector, users will input YAML/JSON mapping
+
+install_world:
+  description: "Installs a world from a .mcworld file into the target server, replacing the existing world. WARNING: This overwrites the current world. The .mcworld file must already exist in the manager's configured 'content/worlds' directory"
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    filename:
+      description: The name of the .mcworld file (e.g., 'MyCoolWorld.mcworld') located in the manager's 'content/worlds' directory. Can include subdirectories (e.g., 'user_uploads/MyCoolWorld.mcworld').
+      required: true
+      example: "MyCoolWorld.mcworld"
+      selector:
+        text: {}
+
+install_addon:
+  description: Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the manager's configured 'content/addons' directory.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    filename:
+      description: The name of the .mcaddon or .mcpack file (e.g., 'MyAwesomeAddon.mcaddon') located in the manager's 'content/addons' directory. Can include subdirectories.
+      required: true
+      example: "CoolBehaviorPack.mcpack"
+      selector:
+        text: {}
+
+configure_os_service:
+  description: Configures OS-specific service settings for the target server(s) (e.g., autostart, autoupdate).
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    autoupdate:
+      description: Enable/Disable autoupdate feature for the server. (Applies to Linux systemd service and Windows config).
+      required: true
+      example: true
+      selector:
+        boolean: {}
+    autostart:
+      description: "Enable/Disable the server to autostart with the system (via systemd user service). If not included/enabled service will be disabled. (Linux Only)"
+      required: false # Optional, as it's Linux-only
+      example: true
+      selector:
+        boolean: {}

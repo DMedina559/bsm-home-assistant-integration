@@ -72,6 +72,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api_client = BedrockServerManagerApi(host, port, username, password, session)
 
+    manager_os_type = "Unknown"  # Default
+    manager_app_version = "Unknown"
+    try:
+        info_response = await api_client.async_get_manager_info()  # Existing call
+        if (
+            info_response
+            and info_response.get("status") == "success"
+            and isinstance(info_response.get("data"), dict)
+        ):
+            manager_os_type = (
+                info_response["data"].get("os_type", manager_os_type).lower()
+            )  # Store lowercase
+            manager_app_version = info_response["data"].get(
+                "app_version", manager_app_version
+            )
+        else:
+            _LOGGER.warning("Failed to parse manager info: %s", info_response)
+    except Exception as err:
+        _LOGGER.warning("Error fetching manager info: %s. Using defaults.", err)
+
     # --- Create the Central "Manager" Device ---
     # This device represents the BSM API endpoint itself
     manager_host_port_id = f"{host}:{port}"  # Logical identifier value (string)
@@ -82,9 +102,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier},  # Pass the identifier tuple in a set
         name=f"BSM @ {host}",
-        manufacturer="Bedrock Server Manager",  # Or your specific branding
-        model="Bedrock Server Manager API",
-        # sw_version=? # Can add manager version if API provides it
+        manufacturer="Bedrock Server Manager",
+        model=f"BSM-{manager_os_type.upper()}",
+        sw_version=manager_app_version,
         configuration_url=f"http://{host}:{port}",  # Link to the manager UI
     )
     _LOGGER.debug(
@@ -98,6 +118,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
         "manager_identifier": manager_identifier,  # Store identifier tuple
+        "manager_os_type": manager_os_type,
+        "manager_app_version": manager_app_version,
         "servers": {},  # Dictionary to hold data for each server instance
     }
 
