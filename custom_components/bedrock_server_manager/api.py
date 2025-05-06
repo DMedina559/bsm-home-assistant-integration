@@ -604,6 +604,58 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    async def async_install_world(
+        self, server_name: str, filename: str
+    ) -> Dict[str, Any]:
+        """Installs a world from a .mcworld file. Calls POST /api/server/{server_name}/world/install."""
+        _LOGGER.info(
+            "Requesting world install for server '%s' from file '%s'",
+            server_name,
+            filename,
+        )
+        payload = {"filename": filename}
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/world/install",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_install_addon(
+        self, server_name: str, filename: str
+    ) -> Dict[str, Any]:
+        """Installs an addon (.mcaddon or .mcpack) file. Calls POST /api/server/{server_name}/addon/install."""
+        _LOGGER.info(
+            "Requesting addon install for server '%s' from file '%s'",
+            server_name,
+            filename,
+        )
+        payload = {"filename": filename}
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/addon/install",
+            data=payload,
+            authenticated=True,
+        )
+
+    async def async_configure_os_service(
+        self,
+        server_name: str,
+        payload: Dict[str, bool],  # Payload built by service handler
+    ) -> Dict[str, Any]:
+        """Configures OS-specific service settings. Calls POST /api/server/{server_name}/service."""
+        _LOGGER.info(
+            "Requesting OS service configuration for server '%s' with payload: %s",
+            server_name,
+            payload,
+        )
+        return await self._request(
+            method="POST",
+            path=f"/server/{server_name}/service",
+            data=payload,  # Payload will be OS-specific
+            authenticated=True,
+        )
+
     # --- Global Manager Action Methods ---
     async def async_scan_player_logs(self) -> Dict[str, Any]:
         """Triggers scanning of player logs."""

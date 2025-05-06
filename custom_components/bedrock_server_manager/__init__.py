@@ -72,34 +72,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api_client = BedrockServerManagerApi(host, port, username, password, session)
 
-    manager_os_type = "Unknown OS"
-    manager_app_version = "Unknown Version"
+    manager_os_type = "Unknown"  # Default
+    manager_app_version = "Unknown"
     try:
-        # For /api/info, we call it without forcing auth first.
-        info_response = await api_client.async_get_manager_info()
+        info_response = await api_client.async_get_manager_info()  # Existing call
         if (
             info_response
             and info_response.get("status") == "success"
             and isinstance(info_response.get("data"), dict)
         ):
-            manager_os_type = info_response["data"].get("os_type", manager_os_type)
+            manager_os_type = (
+                info_response["data"].get("os_type", manager_os_type).lower()
+            )  # Store lowercase
             manager_app_version = info_response["data"].get(
                 "app_version", manager_app_version
             )
-            _LOGGER.debug(
-                "Manager Info: OS=%s, Version=%s", manager_os_type, manager_app_version
-            )
         else:
-            _LOGGER.warning(
-                "Failed to parse manager info response or API reported error: %s",
-                info_response,
-            )
-    except APIError as err:  # Catch APIError specifically from _request
-        _LOGGER.warning("API error fetching manager info: %s. Using defaults.", err)
-    except Exception as err:  # Catch any other unexpected errors
-        _LOGGER.exception(
-            "Unexpected error fetching manager info: %s. Using defaults.", err
-        )
+            _LOGGER.warning("Failed to parse manager info: %s", info_response)
+    except Exception as err:
+        _LOGGER.warning("Error fetching manager info: %s. Using defaults.", err)
 
     # --- Create the Central "Manager" Device ---
     # This device represents the BSM API endpoint itself
@@ -127,6 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
         "manager_identifier": manager_identifier,  # Store identifier tuple
+        "manager_os_type": manager_os_type,
         "servers": {},  # Dictionary to hold data for each server instance
     }
 

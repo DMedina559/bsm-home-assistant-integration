@@ -204,3 +204,57 @@ update_properties:
       example: '{"max-players": "15", "difficulty": "normal", "allow-list": true}'
       selector:
         object: {} # Use the object selector, users will input YAML/JSON mapping
+
+install_world:
+  description: "Installs a world from a .mcworld file into the target server, replacing the existing world. WARNING: This overwrites the current world. The .mcworld file must already exist in the manager's configured 'content/worlds' directory"
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    filename:
+      description: The name of the .mcworld file (e.g., 'MyCoolWorld.mcworld') located in the manager's 'content/worlds' directory. Can include subdirectories (e.g., 'user_uploads/MyCoolWorld.mcworld').
+      required: true
+      example: "MyCoolWorld.mcworld"
+      selector:
+        text: {}
+
+install_addon:
+  description: Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the manager's configured 'content/addons' directory.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    filename:
+      description: The name of the .mcaddon or .mcpack file (e.g., 'MyAwesomeAddon.mcaddon') located in the manager's 'content/addons' directory. Can include subdirectories.
+      required: true
+      example: "CoolBehaviorPack.mcpack"
+      selector:
+        text: {}
+
+configure_os_service:
+  description: Configures OS-specific service settings for the target server(s) (e.g., autostart, autoupdate).
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    autoupdate:
+      description: Enable/Disable autoupdate feature for the server. (Applies to Linux systemd service and Windows config).
+      required: true
+      example: true
+      selector:
+        boolean: {}
+    autostart:
+      description: "(Linux Only) Enable/Disable the server to autostart with the system (via systemd user service)."
+      required: false # Optional, as it's Linux-only
+      example: true
+      selector:
+        boolean: {}

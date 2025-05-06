@@ -26,6 +26,9 @@ from .const import (
     SERVICE_REMOVE_FROM_ALLOWLIST,
     SERVICE_SET_PERMISSIONS,
     SERVICE_UPDATE_PROPERTIES,
+    SERVICE_INSTALL_WORLD,
+    SERVICE_INSTALL_ADDON,
+    SERVICE_CONFIGURE_OS_SERVICE,
     FIELD_BACKUP_TYPE,
     FIELD_RESTORE_TYPE,
     FIELD_FILE_TO_BACKUP,
@@ -42,6 +45,10 @@ from .const import (
     FIELD_IGNORE_PLAYER_LIMIT,
     FIELD_PERMISSIONS,
     FIELD_PROPERTIES,
+    FIELD_INSTALL_WORLD,
+    FIELD_FILENAME,
+    FIELD_AUTOUPDATE,
+    FIELD_AUTOSTART,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -154,6 +161,34 @@ UPDATE_PROPERTIES_SERVICE_SCHEMA = vol.Schema(
             {cv.string: vol.Any(cv.string, cv.positive_int, cv.boolean)}
         ),
         # Add target keys workaround if needed
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+INSTALL_WORLD_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_FILENAME): str,
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+INSTALL_ADDON_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_FILENAME): str,
+        vol.Optional(ATTR_ENTITY_ID): object,
+        vol.Optional(ATTR_DEVICE_ID): object,
+        vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+CONFIGURE_OS_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_AUTOUPDATE): bool,
+        vol.Optional(FIELD_AUTOSTART): bool,
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
@@ -496,6 +531,69 @@ async def _async_handle_update_properties(
         )
         raise HomeAssistantError(
             f"Unexpected error updating properties: {err}"
+        ) from err
+
+
+async def _async_handle_install_world(
+    api: BedrockServerManagerApi, server: str, filename: str
+):
+    """Helper coroutine to call API for install_world."""
+    try:
+        await api.async_install_world(server_name=server, filename=filename)
+        _LOGGER.info(
+            "Successfully requested world install from '%s' for server '%s'",
+            filename,
+            server,
+        )
+    except APIError as err:
+        _LOGGER.error("API Error installing world for '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error installing world: {err}") from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error installing world for '%s': %s", server, err)
+        raise HomeAssistantError(f"Unexpected error installing world: {err}") from err
+
+
+async def _async_handle_install_addon(
+    api: BedrockServerManagerApi, server: str, filename: str
+):
+    """Helper coroutine to call API for install_addon."""
+    try:
+        await api.async_install_addon(server_name=server, filename=filename)
+        _LOGGER.info(
+            "Successfully requested addon install from '%s' for server '%s'",
+            filename,
+            server,
+        )
+    except APIError as err:
+        _LOGGER.error("API Error installing addon for '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error installing addon: {err}") from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error installing addon for '%s': %s", server, err)
+        raise HomeAssistantError(f"Unexpected error installing addon: {err}") from err
+
+
+async def _async_handle_configure_os_service(
+    api: BedrockServerManagerApi,
+    server: str,
+    payload: Dict[str, bool],  # Payload is already OS-specific
+):
+    """Helper coroutine to call API for configure_os_service."""
+    try:
+        await api.async_configure_os_service(server_name=server, payload=payload)
+        _LOGGER.info(
+            "Successfully requested OS service configuration for server '%s' with %s",
+            server,
+            payload,
+        )
+    except APIError as err:
+        _LOGGER.error("API Error configuring OS service for '%s': %s", server, err)
+        raise HomeAssistantError(f"API Error configuring OS service: {err}") from err
+    except Exception as err:
+        _LOGGER.exception(
+            "Unexpected error configuring OS service for '%s': %s", server, err
+        )
+        raise HomeAssistantError(
+            f"Unexpected error configuring OS service: {err}"
         ) from err
 
 
@@ -1271,6 +1369,253 @@ async def async_handle_update_properties_service(
                 )
 
 
+async def async_handle_install_world_service(service: ServiceCall, hass: HomeAssistant):
+    """Handle the install_world service call."""
+    filename = service.data[FIELD_FILENAME]
+
+    _LOGGER.info(
+        "Executing install_world service for target(s) with file: %s", filename
+    )
+
+    resolved_targets = await _resolve_server_targets(service, hass)  # Reuse resolver
+    tasks = []
+
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: MinecraftBedrockApi = hass.data[DOMAIN][config_entry_id]["api"]
+            _LOGGER.info(
+                "Queueing world install from '%s' for server '%s' (config entry %s)",
+                filename,
+                target_server_name,
+                config_entry_id,
+            )
+            tasks.append(
+                _async_handle_install_world(target_api, target_server_name, filename)
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing install_world for %s: %s", target_server_name, e
+            )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Log errors
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                failed_entry_id = list(resolved_targets.keys())[i]
+                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                _LOGGER.error(
+                    "Error executing install_world for server '%s' (entry %s): %s",
+                    failed_server_name,
+                    failed_entry_id,
+                    result,
+                )
+
+
+async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAssistant):
+    """Handle the install_addon service call."""
+    filename = service.data[FIELD_FILENAME]
+
+    _LOGGER.info(
+        "Executing install_addon service for target(s) with file: %s", filename
+    )
+
+    resolved_targets = await _resolve_server_targets(service, hass)
+    tasks = []
+
+    for config_entry_id, target_server_name in resolved_targets.items():
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            continue
+        try:
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
+            _LOGGER.info(
+                "Queueing addon install from '%s' for server '%s' (config entry %s)",
+                filename,
+                target_server_name,
+                config_entry_id,
+            )
+            tasks.append(
+                _async_handle_install_addon(target_api, target_server_name, filename)
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Error queueing install_addon for %s: %s", target_server_name, e
+            )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Log errors
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                failed_entry_id = list(resolved_targets.keys())[i]
+                failed_server_name = resolved_targets.get(failed_entry_id, "unknown")
+                _LOGGER.error(
+                    "Error executing install_addon for server '%s' (entry %s): %s",
+                    failed_server_name,
+                    failed_entry_id,
+                    result,
+                )
+
+
+async def async_handle_configure_os_service_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle the configure_os_service service call."""
+    # Schema validation ensures these fields exist if required, or provides defaults
+    autoupdate_val = service.data[FIELD_AUTOUPDATE]
+    # autostart_val is optional, .get() will return None if not provided by user
+    # and no default is set in the schema directly that would make it always present.
+    autostart_val = service.data.get(FIELD_AUTOSTART)  # Will be None if not provided
+
+    _LOGGER.info(
+        "Executing configure_os_service for target(s). User input - Autoupdate: %s, Autostart: %s",
+        autoupdate_val,
+        autostart_val if autostart_val is not None else "(not provided)",
+    )
+
+    # Resolve which server(s) were targeted
+    try:
+        resolved_targets = await _resolve_server_targets(service, hass)
+    except HomeAssistantError as e:
+        _LOGGER.error(
+            "Cannot execute configure_os_service: Failed to resolve targets - %s", e
+        )
+        raise  # Re-raise to let HA handle and report the error
+    except Exception as e:
+        _LOGGER.exception(
+            "Unexpected error resolving targets for configure_os_service."
+        )
+        raise HomeAssistantError("Unexpected error resolving service targets.") from e
+
+    tasks = []
+    servers_processed_info = []  # For potential summary notification
+
+    for config_entry_id, target_server_name in resolved_targets.items():
+        # Ensure entry data is loaded
+        if config_entry_id not in hass.data.get(DOMAIN, {}):
+            _LOGGER.warning(
+                "Config entry %s (for server %s) not loaded or has no data. Skipping OS service config.",
+                config_entry_id,
+                target_server_name,
+            )
+            continue
+
+        try:
+            entry_data = hass.data[DOMAIN][config_entry_id]
+            target_api: BedrockServerManagerApi = entry_data["api"]
+            # Get the stored OS type for the manager associated with this config entry
+            manager_os_type: str = entry_data.get("manager_os_type", "unknown").lower()
+
+            # --- Build OS-specific payload for the API ---
+            payload_for_api: Dict[str, bool] = {"autoupdate": autoupdate_val}
+
+            if manager_os_type == "linux":
+                if (
+                    autostart_val is not None
+                ):  # Only include autostart if user explicitly provided a value
+                    payload_for_api["autostart"] = autostart_val
+                # If autostart_val is None (user didn't touch the optional field),
+                # we don't send 'autostart' to the API for Linux, letting API/manager use defaults or ignore.
+            elif manager_os_type == "windows":
+                # For Windows, 'autostart' is not applicable via this API endpoint.
+                # Log if user tried to set it.
+                if autostart_val is not None:
+                    _LOGGER.warning(
+                        "Autostart field was provided for server '%s' (manager OS: Windows), "
+                        "but it's not applicable. 'autostart' will be omitted from API call.",
+                        target_server_name,
+                    )
+            else:  # Unknown or other OS types
+                if autostart_val is not None:
+                    _LOGGER.warning(
+                        "Autostart field provided for server '%s' (manager OS: '%s'), "
+                        "but OS specific behavior is unknown. 'autostart' will be omitted.",
+                        target_server_name,
+                        manager_os_type,
+                    )
+            # --- End Build Payload ---
+
+            _LOGGER.info(
+                "Queueing OS service config for server '%s' (Manager OS: %s) with API payload: %s",
+                target_server_name,
+                manager_os_type,
+                payload_for_api,
+            )
+            tasks.append(
+                _async_handle_configure_os_service(
+                    target_api, target_server_name, payload_for_api
+                )
+            )
+            servers_processed_info.append(
+                {"name": target_server_name, "payload": payload_for_api}
+            )
+
+        except KeyError as e:
+            _LOGGER.error(
+                "Missing expected data ('%s') for config entry %s when queueing configure_os_service for server '%s'.",
+                e,
+                config_entry_id,
+                target_server_name,
+            )
+        except Exception as e:
+            _LOGGER.exception(
+                "Unexpected error queueing configure_os_service for server '%s': %s",
+                target_server_name,
+                e,
+            )
+
+    if tasks:
+        _LOGGER.info(
+            "Proceeding with configure_os_service API calls for %d server(s).",
+            len(tasks),
+        )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Log any errors that occurred during the API calls
+        processed_errors = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_errors += 1
+                # Get corresponding server name for better logging
+                failed_server_info = (
+                    servers_processed_info[i]
+                    if i < len(servers_processed_info)
+                    else {"name": "unknown"}
+                )
+                _LOGGER.error(
+                    "Error executing configure_os_service for server '%s': %s",
+                    failed_server_info["name"],
+                    result,
+                )
+                # HomeAssistantError raised by helper will be handled by HA's service layer
+
+        if servers_processed_info:
+            status_summary = (
+                f"OS service configuration attempt finished for {len(servers_processed_info)} server(s). "
+                f"{processed_errors} error(s) occurred (check logs for details)."
+            )
+            _LOGGER.info(status_summary)
+
+    elif not resolved_targets:
+        # This case should have been caught by the _resolve_server_targets check raising an error
+        _LOGGER.error(
+            "Configure OS service handler reached but no valid targets were resolved (this should not happen)."
+        )
+    else:
+        # No tasks were queued, likely due to errors finding API client or other data issues
+        _LOGGER.error(
+            "Configure OS service handler did not queue any tasks despite resolved targets. Check previous logs for errors."
+        )
+
+
 # --- Service Registration Function ---
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
@@ -1431,6 +1776,50 @@ async def async_register_services(hass: HomeAssistant):
             schema=UPDATE_PROPERTIES_SERVICE_SCHEMA,
         )
 
+    # Install World
+    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL_WORLD):
+
+        async def install_world_wrapper(call: ServiceCall):
+            await async_handle_install_world_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_INSTALL_WORLD)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_INSTALL_WORLD,
+            install_world_wrapper,
+            schema=INSTALL_WORLD_SERVICE_SCHEMA,
+        )
+
+    # Install Addon
+    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL_ADDON):
+
+        async def install_addon_wrapper(call: ServiceCall):
+            await async_handle_install_addon_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_INSTALL_ADDON)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_INSTALL_ADDON,
+            install_addon_wrapper,
+            schema=INSTALL_ADDON_SERVICE_SCHEMA,
+        )
+
+    # Configure OS Service
+    if not hass.services.has_service(DOMAIN, SERVICE_CONFIGURE_OS_SERVICE):
+
+        async def configure_os_service_wrapper(call: ServiceCall):
+            await async_handle_configure_os_service_service(call, hass)
+
+        _LOGGER.debug(
+            "Registering service: %s.%s", DOMAIN, SERVICE_CONFIGURE_OS_SERVICE
+        )
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_CONFIGURE_OS_SERVICE,
+            configure_os_service_wrapper,
+            schema=CONFIGURE_OS_SERVICE_SCHEMA,
+        )
+
 
 # --- Service Removal Function ---
 async def async_remove_services(hass: HomeAssistant):
@@ -1448,6 +1837,9 @@ async def async_remove_services(hass: HomeAssistant):
             SERVICE_REMOVE_FROM_ALLOWLIST,
             SERVICE_SET_PERMISSIONS,
             SERVICE_UPDATE_PROPERTIES,
+            SERVICE_INSTALL_WORLD,
+            SERVICE_INSTALL_ADDON,
+            SERVICE_CONFIGURE_OS_SERVICE,
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):

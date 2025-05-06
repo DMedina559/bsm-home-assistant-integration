@@ -229,6 +229,40 @@
           "description": "Dictionary mapping allowed server property keys (strings) to their new values (strings, numbers, booleans). Input as YAML or JSON."
         }
       }
+    },
+    "install_world": {
+      "name": "Install world from file",
+      "description": "Installs a .mcworld file into the target server, REPLACING the current world. File must exist in manager's content/worlds directory.",
+      "fields": {
+        "filename": {
+          "name": "Filename",
+          "description": "The .mcworld filename (e.g., 'MyBackup.mcworld') relative to the manager's 'content/worlds' directory."
+        }
+      }
+    },
+    "install_addon": {
+      "name": "Install addon from file",
+      "description": "Installs an .mcaddon or .mcpack file into the target server. File must exist in the manager's 'content/addons' directory.",
+      "fields": {
+        "filename": {
+          "name": "Filename",
+          "description": "The .mcaddon or .mcpack filename (e.g., 'MyAwesomeAddon.mcaddon') relative to the manager's 'content/addons' directory."
+        }
+      }
+    },
+    "configure_os_service": {
+      "name": "Configure OS service settings",
+      "description": "Configures OS-specific service settings for the target server(s), like autoupdate or autostart (Linux only).",
+      "fields": {
+        "autoupdate": {
+          "name": "Enable Autoupdate",
+          "description": "Set to true to enable the autoupdate feature for the server."
+        },
+        "autostart": {
+          "name": "Enable Autostart (Linux Only)",
+          "description": "(Optional) Set to true to enable the server to start automatically on system boot (via systemd user service on Linux)."
+        }
+      }
     }
   }
 }
