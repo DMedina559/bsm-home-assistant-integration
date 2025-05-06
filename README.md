@@ -2,7 +2,7 @@
     <img src="https://github.com/DMedina559/bedrock-server-manager/blob/main/bedrock_server_manager/web/static/image/icon/favicon.svg" alt="ICON" width="200" height="200">
 </div>
 
-# Home Assistant Integration Bedrock Server Manager
+# Bedrock Server Manager - Home Assistant Integration
 
 <!-- [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs) -->
 
