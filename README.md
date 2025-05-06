@@ -41,7 +41,7 @@ Connect Home Assistant with your [Bedrock Server Manager](https://github.com/dme
 ### Manual Installation
 
 1.  **Download:** Download the latest release or clone the repository.
-2.  **Copy:** Copy the entire `bedrock_server_manager` folder, into your Home Assistant `/config/custom_components/` directory. Create `custom_components` if it doesn't exist.
+2.  **Copy:** Copy the entire `./custom_components/bedrock_server_manager` folder, into your Home Assistant `/config/custom_components/` directory. Create `custom_components` if it doesn't exist.
 3.  **Restart Home Assistant:** Restart Home Assistant (Developer Tools -> Server Management -> Restart).
 
 ## Configuration
@@ -96,32 +96,49 @@ Entities are linked to their corresponding **Server Device** unless otherwise no
 Services allow for more control via automations and scripts.
 
 *   **`bedrock_server_manager.send_command`**:
-    *   Sends a command to a specific server's console.
-    *   **Target:** Must target a specific server device or entity (e.g., `device_id: ...` or `entity_id: sensor.{server_name}_status`).
-    *   **Data:**
-        *   `command` (Required, string): The command to send (e.g., `say Hello`).
+    *   Sends a console command to specific server(s).
+    *   **Target:** Server device(s) or entity(s) (e.g., `entity_id: sensor.{server_name}_status`).
+    *   **Data:** `command` (Required, string).
 *   **`bedrock_server_manager.prune_download_cache`**:
-    *   Prunes the global download cache on the manager host.
-    *   **Target:** None required (global action).
-    *   **Data:**
-        *   `directory` (Required, string): Absolute path to the download cache directory on the manager host.
-        *   `keep` (Optional, integer): Number of newest files to keep (uses manager default if omitted).
+    *   Prunes the global download cache.
+    *   **Target:** None required.
+    *   **Data:** `directory` (Required, string), `keep` (Optional, integer).
 *   **`bedrock_server_manager.trigger_backup`**:
-    *   Triggers a specific type of backup for the target server(s).
+    *   Triggers a specific type of backup.
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `backup_type` (Required, string): `all`, `world`, or `config`.
-        *   `file_to_backup` (Optional, string): Relative path required only if `backup_type` is `config`.
+    *   **Data:** `backup_type` (Required: `all`, `world`, `config`), `file_to_backup` (Optional, Required if `backup_type: config`).
 *   **`bedrock_server_manager.restore_backup`**:
-    *   Restores a specific backup file for the target server(s). **USE WITH CAUTION.**
+    *   Restores a specific backup file. **CAUTION: Overwrites data.**
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `restore_type` (Required, string): `world` or `config`.
-        *   `backup_file` (Required, string): Full path to the backup file on the manager host.
+    *   **Data:** `restore_type` (Required: `world`, `config`), `backup_file` (Required: full path on manager).
 *   **`bedrock_server_manager.restore_latest_all`**:
-    *   Restores the latest full backup for the target server(s). **USE WITH CAUTION.**
+    *   Restores the latest full backup. **CAUTION: Overwrites data.**
     *   **Target:** Server device(s) or entity(s).
     *   **Data:** None.
+*   **`bedrock_server_manager.add_to_allowlist`**:
+    *   Adds player(s) to the allowlist.
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:** `players` (Required, list of strings), `ignores_player_limit` (Optional, boolean).
+*   **`bedrock_server_manager.remove_from_allowlist`**:
+    *   Removes a player from the allowlist.
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:** `player_name` (Required, string).
+*   **`bedrock_server_manager.set_permissions`**:
+    *   Sets permission levels via XUID.
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:** `permissions` (Required, dictionary: `{"XUID1": "level", ...}`). Levels: `visitor`, `member`, `operator`.
+*   **`bedrock_server_manager.update_properties`**:
+    *   Updates allowed `server.properties`.
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:** `properties` (Required, dictionary: `{"property-key": "value", ...}`).
+*   **`bedrock_server_manager.install_server`**:
+    *   Installs a new server instance.
+    *   **Target:** None required.
+    *   **Data:** `server_name` (Required), `server_version` (Required: `LATEST`, `PREVIEW`, or `x.y.z`), `overwrite` (Optional, boolean).
+*   **`bedrock_server_manager.delete_server`**:
+    *   Permanently deletes ALL data for target server(s). **IRREVERSIBLE.**
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:** `confirm_deletion` (Required, boolean: must be `true`).
 
 ## Options / Reconfiguration
 
