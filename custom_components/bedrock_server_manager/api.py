@@ -292,6 +292,17 @@ class BedrockServerManagerApi:
             self._jwt_token = None
             raise AuthError(f"API error during login: {e}") from e
 
+    # --- Manager Information Methods ---
+    async def async_get_manager_info(self) -> Dict[str, Any]:
+        """Gets system and application information from the manager. Calls GET /api/info."""
+        _LOGGER.debug(
+            "Fetching manager system and application information from /api/info"
+        )
+        # This endpoint does NOT require authentication
+        return await self._request(
+            method="GET", path="/info", authenticated=False  # Endpoint path
+        )
+
     # --- Server List Method ---
     async def async_get_server_list(self) -> List[str]:
         """Fetches the list of server names from the API (GET /api/servers)."""
