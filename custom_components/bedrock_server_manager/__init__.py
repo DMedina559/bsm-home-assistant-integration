@@ -119,6 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": api_client,
         "manager_identifier": manager_identifier,  # Store identifier tuple
         "manager_os_type": manager_os_type,
+        "manager_app_version": manager_app_version,
         "servers": {},  # Dictionary to hold data for each server instance
     }
 

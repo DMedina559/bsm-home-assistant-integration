@@ -178,9 +178,8 @@ class MinecraftServerButton(
 
         # --- Device Info links to the specific server device ---
         self._attr_device_info = DeviceInfo(
-            identifiers={
-                (DOMAIN, self._server_name)
-            },  # Use server name as identifier for THIS device
+            identifiers={(DOMAIN, self._server_name)},
+            name=f"bsm_{self._server_name}",
             # Let HA merge name/model etc from sensor/switch platform
             via_device=manager_identifier,  # Link to the main manager device
         )

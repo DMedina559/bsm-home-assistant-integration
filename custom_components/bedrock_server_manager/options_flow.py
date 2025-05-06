@@ -15,23 +15,24 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
 )
-from homeassistant.core import callback  # Ensure callback is imported
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
+from homeassistant.helpers import device_registry as dr  # For device removal
 
 # Import local constants
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAMES,  # Import the constant for the server list
+    CONF_SERVER_NAMES,
     DEFAULT_SCAN_INTERVAL_SECONDS,
 )
 
 # Import API definitions and exceptions
 from .api import (
-    BedrockServerManagerApi,  # <-- Make sure this matches api.py class name EXACTLY
+    BedrockServerManagerApi,
     APIError,
-    AuthError,  # <-- Make sure this is imported
-    CannotConnectError,  # <-- Make sure this is imported
+    AuthError,
+    CannotConnectError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,13 +64,17 @@ STEP_POLLING_SCHEMA = vol.Schema(
 )
 
 
-class BSMOptionsFlowHandler(config_entries.OptionsFlow):
+class BSMOptionsFlowHandler(
+    config_entries.OptionsFlow
+):  # Ensure class name matches config_flow.py
     """Handle an options flow for Bedrock Server Manager."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        # Base class handles self.config_entry storage
-        self._discovered_servers: Optional[List[str]] = None
+        # Base class stores config_entry as self.config_entry
+        self._discovered_servers: Optional[List[str]] = (
+            None  # To cache server list within flow
+        )
 
     async def _get_api_client(
         self, data_override: Optional[Dict[str, Any]] = None
@@ -106,12 +111,14 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 api_client = await self._get_api_client(data_override=validation_data)
                 await api_client.authenticate()
                 _LOGGER.info(
-                    "Credentials validation successful for %s. Updating entry.",
+                    "Credentials validation successful. Updating entry data for %s.",
                     self.config_entry.entry_id,
                 )
+                # Update the 'data' part of the config entry
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data={**self.config_entry.data, **user_input}
                 )
+                # Listener in __init__ will reload. Abort reason signals success to UI.
                 return self.async_abort(reason="credentials_updated")
             except AuthError:
                 _LOGGER.warning(
@@ -148,6 +155,10 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         """Handle the step for selecting which servers to monitor."""
         errors: Dict[str, str] = {}
+        current_options = self.config_entry.options
+        old_selected_servers = set(current_options.get(CONF_SERVER_NAMES, []))
+
+        # Fetch server list only once per flow instance or if forced
         if self._discovered_servers is None:
             try:
                 api_client = await self._get_api_client()
@@ -164,24 +175,64 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "unknown_error"
                 self._discovered_servers = []
 
-        if user_input is not None and not errors:
-            selected_servers = user_input.get(CONF_SERVER_NAMES, [])
+        if (
+            user_input is not None and not errors
+        ):  # Only proceed if server list fetched successfully
+            newly_selected_servers_list = user_input.get(CONF_SERVER_NAMES, [])
+            newly_selected_servers_set = set(newly_selected_servers_list)
             _LOGGER.debug(
-                "Updating server selection for entry %s to: %s",
-                self.config_entry.entry_id,
-                selected_servers,
+                "Updating server selection. Old: %s, New: %s",
+                old_selected_servers,
+                newly_selected_servers_set,
             )
-            new_options = {
-                **self.config_entry.options,
-                CONF_SERVER_NAMES: selected_servers,
-            }
-            return self.async_create_entry(title="", data=new_options)
 
-        current_selection = self.config_entry.options.get(CONF_SERVER_NAMES, [])
+            servers_to_disassociate = old_selected_servers - newly_selected_servers_set
+            if servers_to_disassociate:
+                device_registry = dr.async_get(self.hass)
+                for server_name_to_remove in servers_to_disassociate:
+                    device_identifier = (DOMAIN, server_name_to_remove)
+                    device_entry = device_registry.async_get_device(
+                        identifiers={device_identifier}
+                    )
+                    if device_entry:
+                        _LOGGER.info(
+                            "Disassociating device for deselected server '%s' (Device ID: %s) from config entry %s",
+                            server_name_to_remove,
+                            device_entry.id,
+                            self.config_entry.entry_id,
+                        )
+                        # This call tells HA this config entry no longer manages this device
+                        device_registry.async_update_device(
+                            device_entry.id,
+                            remove_config_entry_id=self.config_entry.entry_id,
+                        )
+                        # async_remove_device might be preferred?
+                        # try:
+                        #     device_registry.async_remove_device(device_entry.id)
+                        #     _LOGGER.info("Device for server '%s' removed.", server_name_to_remove)
+                        # except Exception as e:
+                        #     _LOGGER.error("Failed to remove device for '%s', falling back to disassociation: %s", server_name_to_remove, e)
+                        #     device_registry.async_update_device(device_entry.id, remove_config_entry_id=self.config_entry.entry_id)
+                    else:
+                        _LOGGER.warning(
+                            "Could not find device for deselected server '%s' to disassociate.",
+                            server_name_to_remove,
+                        )
+
+            # Update options with the new list of selected servers
+            new_options_data = {
+                **current_options,
+                CONF_SERVER_NAMES: newly_selected_servers_list,
+            }
+            # Save updated options. Listener in __init__ will reload.
+            return self.async_create_entry(title="", data=new_options_data)
+
+        # Show the form
+        current_selection_list = list(old_selected_servers)  # For default value
         select_schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_SERVER_NAMES, default=current_selection
+                    CONF_SERVER_NAMES, default=current_selection_list
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=self._discovered_servers or [],
@@ -210,13 +261,12 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                     self.config_entry.entry_id,
                     scan_interval,
                 )
-                new_options = {
+                new_options_data = {
                     **self.config_entry.options,
                     CONF_SCAN_INTERVAL: scan_interval,
                 }
-                # --- CORRECTED: Use async_create_entry to save options ---
-                return self.async_create_entry(title="", data=new_options)
-                # --- END CORRECTION ---
+                # Save updated options. Listener in __init__ will reload.
+                return self.async_create_entry(title="", data=new_options_data)
 
         current_scan_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS

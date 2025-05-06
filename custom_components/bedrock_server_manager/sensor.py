@@ -196,7 +196,7 @@ class MinecraftServerSensor(
             identifiers={
                 (DOMAIN, self._server_name)
             },  # Unique identifier for THIS server instance
-            name=f"{self._server_name}",  # Name for this server device
+            name=f"bsm_{self._server_name}",  # Name for this server device
             manufacturer="Bedrock Server Manager",  # Can be the same
             model=f"Bedrock Server",  # Model indicating it's managed
             sw_version=self._installed_version or "Unknown",  # Use stored static info

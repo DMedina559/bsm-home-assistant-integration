@@ -129,6 +129,7 @@ class MinecraftServerSwitch(
             identifiers={
                 (DOMAIN, self._server_name)
             },  # Use server name as identifier for THIS device
+            name=f"bsm_{self._server_name}",
             # Let HA merge name/model etc from sensor platform if defined there
             # Link to the manager device via its identifier tuple
             via_device=manager_identifier,

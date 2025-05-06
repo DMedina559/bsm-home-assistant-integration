@@ -7,6 +7,7 @@ import voluptuous as vol
 import aiohttp
 
 from homeassistant import config_entries, exceptions
+from homeassistant.helpers import device_registry as dr
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -143,45 +144,89 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
+        """Handle the step for selecting which servers to monitor."""
         errors: Dict[str, str] = {}
-        if user_input is not None:
-            selected_servers = user_input.get(CONF_SERVER_NAMES, [])
-            _LOGGER.info(
-                "Creating config entry for manager %s, initially selected servers: %s",
-                f"{self._connection_data[CONF_HOST]}:{self._connection_data[CONF_PORT]}",
-                selected_servers,
+        current_options = self.config_entry.options
+        old_selected_servers = set(
+            current_options.get(CONF_SERVER_NAMES, [])
+        )  # Set for easy diff
+
+        if self._discovered_servers is None:
+            try:
+                api_client = await self._get_api_client()
+                await api_client.authenticate()
+                self._discovered_servers = await api_client.async_get_server_list()
+            except (APIError, CannotConnectError, AuthError) as err:
+                _LOGGER.error("Failed to fetch server list for options flow: %s", err)
+                errors["base"] = "fetch_servers_failed"
+                self._discovered_servers = []
+            except Exception as err:
+                _LOGGER.exception("Unexpected error fetching server list: %s", err)
+                errors["base"] = "unknown_error"
+                self._discovered_servers = []
+
+        if user_input is not None and not errors:
+            newly_selected_servers = set(user_input.get(CONF_SERVER_NAMES, []))
+            _LOGGER.debug(
+                "Updating server selection. Old: %s, New: %s",
+                old_selected_servers,
+                newly_selected_servers,
             )
+
+            # --- Logic to disassociate deselected server devices ---
+            servers_to_remove = old_selected_servers - newly_selected_servers
+            if servers_to_remove:
+                device_registry = dr.async_get(self.hass)
+                for server_name_to_remove in servers_to_remove:
+                    device_identifier = (DOMAIN, server_name_to_remove)
+                    device_entry = device_registry.async_get_device(
+                        identifiers={device_identifier}
+                    )
+                    if device_entry:
+                        _LOGGER.info(
+                            "Disassociating device for deselected server '%s' (Device ID: %s) from config entry %s",
+                            server_name_to_remove,
+                            device_entry.id,
+                            self.config_entry.entry_id,
+                        )
+                        device_registry.async_update_device(
+                            device_entry.id,
+                            remove_config_entry_id=self.config_entry.entry_id,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Could not find device for deselected server '%s' to disassociate.",
+                            server_name_to_remove,
+                        )
+            # --- End device disassociation ---
+
+            new_options = {
+                **current_options,
+                CONF_SERVER_NAMES: list(newly_selected_servers),
+            }
             return self.async_create_entry(
-                title=f"BSM @ {self._connection_data[CONF_HOST]}",
-                data=self._connection_data.copy(),
-                options={CONF_SERVER_NAMES: selected_servers},
-            )
+                title="", data=new_options
+            )  # Updates options
 
-        if not self._discovered_servers:
-            description_placeholders = {
-                "message": "No servers were found on this manager. You can still add the manager itself and select servers later via configuration."
-            }
-        else:
-            description_placeholders = {
-                "message": "Select the initial Minecraft server instances you want to monitor."
-            }
-
+        # Show the form
+        current_selection_list = list(
+            old_selected_servers
+        )  # Use list for default in selector
         select_schema = vol.Schema(
             {
-                vol.Optional(CONF_SERVER_NAMES, default=[]): selector.SelectSelector(
+                vol.Optional(
+                    CONF_SERVER_NAMES, default=current_selection_list
+                ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=self._discovered_servers,
+                        options=self._discovered_servers or [],
                         multiple=True,
-                        sort=True,  # Sort servers alphabetically
+                        sort=True,
                     )
                 ),
             }
         )
         return self.async_show_form(
-            step_id="select_servers",
-            data_schema=select_schema,
-            errors=errors,
-            description_placeholders=description_placeholders,
+            step_id="select_servers", data_schema=select_schema, errors=errors
         )
 
     # Options Flow Link
