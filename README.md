@@ -98,47 +98,92 @@ Services allow for more control via automations and scripts.
 *   **`bedrock_server_manager.send_command`**:
     *   Sends a console command to specific server(s).
     *   **Target:** Server device(s) or entity(s) (e.g., `entity_id: sensor.{server_name}_status`).
-    *   **Data:** `command` (Required, string).
+    *   **Data:**
+        *   `command` (Required, string): The command to send (e.g., `say Hello`).
+
 *   **`bedrock_server_manager.prune_download_cache`**:
-    *   Prunes the global download cache.
-    *   **Target:** None required.
-    *   **Data:** `directory` (Required, string), `keep` (Optional, integer).
+    *   Prunes the global download cache on the manager host.
+    *   **Target:** None required (global action, targets the BSM instance itself).
+    *   **Data:**
+        *   `directory` (Required, string): Absolute path to the download cache directory on the manager host.
+        *   `keep` (Optional, integer): Number of newest files to keep (uses manager default if omitted).
+
 *   **`bedrock_server_manager.trigger_backup`**:
-    *   Triggers a specific type of backup.
+    *   Triggers a specific type of backup for target server(s).
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `backup_type` (Required: `all`, `world`, `config`), `file_to_backup` (Optional, Required if `backup_type: config`).
+    *   **Data:**
+        *   `backup_type` (Required, string): `all`, `world`, or `config`.
+        *   `file_to_backup` (Optional, string): Relative path required only if `backup_type` is `config`.
+
 *   **`bedrock_server_manager.restore_backup`**:
-    *   Restores a specific backup file. **CAUTION: Overwrites data.**
+    *   Restores a specific backup file for target server(s). **CAUTION: Overwrites data.**
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `restore_type` (Required: `world`, `config`), `backup_file` (Required: full path on manager).
+    *   **Data:**
+        *   `restore_type` (Required, string): `world` or `config`.
+        *   `backup_file` (Required, string): Full path to the backup file on the manager host.
+
 *   **`bedrock_server_manager.restore_latest_all`**:
-    *   Restores the latest full backup. **CAUTION: Overwrites data.**
+    *   Restores the latest full backup for target server(s). **CAUTION: Overwrites data.**
     *   **Target:** Server device(s) or entity(s).
     *   **Data:** None.
+
 *   **`bedrock_server_manager.add_to_allowlist`**:
-    *   Adds player(s) to the allowlist.
+    *   Adds player(s) to the allowlist for target server(s).
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `players` (Required, list of strings), `ignores_player_limit` (Optional, boolean).
+    *   **Data:**
+        *   `players` (Required, list of strings): Gamertags to add.
+        *   `ignores_player_limit` (Optional, boolean, default `false`).
+
 *   **`bedrock_server_manager.remove_from_allowlist`**:
-    *   Removes a player from the allowlist.
+    *   Removes a player from the allowlist for target server(s).
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `player_name` (Required, string).
+    *   **Data:**
+        *   `player_name` (Required, string): Gamertag to remove.
+
 *   **`bedrock_server_manager.set_permissions`**:
-    *   Sets permission levels via XUID.
+    *   Sets permission levels for player(s) via XUID for target server(s).
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `permissions` (Required, dictionary: `{"XUID1": "level", ...}`). Levels: `visitor`, `member`, `operator`.
+    *   **Data:**
+        *   `permissions` (Required, dictionary): `{"XUID1": "level", "XUID2": "level", ...}`. Valid levels: `visitor`, `member`, `operator`.
+
 *   **`bedrock_server_manager.update_properties`**:
-    *   Updates allowed `server.properties`.
+    *   Updates allowed `server.properties` values for target server(s).
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `properties` (Required, dictionary: `{"property-key": "value", ...}`).
+    *   **Data:**
+        *   `properties` (Required, dictionary): `{"property-key": "value", ...}`. See BSM docs for allowed keys.
+
 *   **`bedrock_server_manager.install_server`**:
-    *   Installs a new server instance.
-    *   **Target:** None required.
-    *   **Data:** `server_name` (Required), `server_version` (Required: `LATEST`, `PREVIEW`, or `x.y.z`), `overwrite` (Optional, boolean).
+    *   Installs a new server instance via the manager.
+    *   **Target:** None required (global action).
+    *   **Data:**
+        *   `server_name` (Required, string): Desired unique name.
+        *   `server_version` (Required, string): `LATEST`, `PREVIEW`, or specific version `x.y.z`.
+        *   `overwrite` (Optional, boolean, default `false`).
+
 *   **`bedrock_server_manager.delete_server`**:
-    *   Permanently deletes ALL data for target server(s). **IRREVERSIBLE.**
+    *   Permanently deletes ALL data for target server instance(s). **IRREVERSIBLE - USE EXTREME CAUTION.**
     *   **Target:** Server device(s) or entity(s).
-    *   **Data:** `confirm_deletion` (Required, boolean: must be `true`).
+    *   **Data:**
+        *   `confirm_deletion` (Required, boolean: must be `true`).
+
+*   **`bedrock_server_manager.configure_os_service`**:
+    *   Configures OS-specific service settings for target server(s).
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:**
+        *   `autoupdate` (Required, boolean): Enable/disable autoupdate.
+        *   `autostart` (Optional, boolean): (Linux Only) Enable/disable autostart via systemd user service.
+
+*   **`bedrock_server_manager.install_world`**:
+    *   Installs a `.mcworld` file into the target server, replacing the current world. **CAUTION: Overwrites data.**
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:**
+        *   `filename` (Required, string): The `.mcworld` filename (e.g., `MyBackup.mcworld`) relative to the manager's `content/worlds` directory.
+
+*   **`bedrock_server_manager.install_addon`**:
+    *   Installs an `.mcaddon` or `.mcpack` file into the target server.
+    *   **Target:** Server device(s) or entity(s).
+    *   **Data:**
+        *   `filename` (Required, string): The `.mcaddon` or `.mcpack` filename (e.g., `MyAwesomeAddon.mcaddon`) relative to the manager's `content/addons` directory.
 
 ## Options / Reconfiguration
 
