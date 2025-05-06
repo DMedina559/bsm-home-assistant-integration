@@ -102,8 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier},  # Pass the identifier tuple in a set
         name=f"BSM @ {host}",
-        manufacturer="Bedrock Server Manager",  # Or your specific branding
-        model=manager_os_type,
+        manufacturer="Bedrock Server Manager",
+        model=f"OS: {manager_os_type.upper()}",
         sw_version=manager_app_version,
         configuration_url=f"http://{host}:{port}",  # Link to the manager UI
     )
