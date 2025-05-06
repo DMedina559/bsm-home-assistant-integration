@@ -28,6 +28,7 @@ ATTR_UPTIME = "uptime"
 ATTR_PLAYERS_ONLINE = "players_online"
 ATTR_MAX_PLAYERS = "max_players"
 ATTR_ALLOWLISTED_PLAYERS = "allowed_players"
+ATTR_SERVER_PROPERTIES = "server_properties"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"

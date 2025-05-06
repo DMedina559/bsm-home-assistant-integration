@@ -53,6 +53,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "message": "Update failed",
             "process_info": None,
             "allowlist": None,
+            "properties": None,
         }
 
         try:
@@ -61,12 +62,14 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 results = await asyncio.gather(
                     self.api.async_get_server_status_info(self.server_name),
                     self.api.async_get_allowlist(self.server_name),
+                    self.api.async_get_server_properties(self.server_name),
                     return_exceptions=True,  # Return exceptions instead of raising immediately
                 )
 
             # Process results
             status_info_result = results[0]
             allowlist_result = results[1]
+            properties_result = results[2]
 
             # Handle status info result
             if isinstance(status_info_result, Exception):
@@ -150,17 +153,61 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     coordinator_data["allowlist"] = allowlist_result.get(
                         "existing_players", []
                     )
-                    # If status also succeeded, mark overall success
-                    if (
-                        not isinstance(status_info_result, Exception)
-                        and status_info_result.get("status") != "error"
-                    ):
-                        coordinator_data["status"] = "success"
-                        coordinator_data["message"] = (
-                            "Data fetched successfully"  # Or use API messages?
-                        )
 
-            # Return the combined data (or error state)
+            # --- Handle server properties result ---
+            if isinstance(properties_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching server properties for %s: %s",
+                    self.server_name,
+                    properties_result,
+                )
+                # Don't fail entire update if only properties fetch failed, set message if others were okay
+                if coordinator_data.get("status") != "error":  # Prioritize other errors
+                    coordinator_data["message"] = (
+                        f"Properties fetch failed: {properties_result}"
+                    )
+                # Keep properties as None
+            elif isinstance(properties_result, dict):
+                if properties_result.get("status") == "error":
+                    _LOGGER.warning(
+                        "API reported error fetching properties for %s: %s",
+                        self.server_name,
+                        properties_result.get("message"),
+                    )
+                    if coordinator_data.get("status") != "error":
+                        coordinator_data["message"] = (
+                            f"API error (properties): {properties_result.get('message')}"
+                        )
+                else:
+                    # Success for properties info
+                    coordinator_data["properties"] = properties_result.get(
+                        "properties", {}
+                    )  # Default to empty dict
+
+            # Determine overall success (if all critical fetches were okay)
+            if not isinstance(status_info_result, Exception) and (
+                isinstance(status_info_result, dict)
+                and status_info_result.get("status") != "error"
+            ):
+                # Status is critical. Allowlist and Properties are supplementary.
+                coordinator_data["status"] = "success"
+                if coordinator_data.get("process_info") is not None:
+                    coordinator_data["message"] = "Server running and data fetched."
+                else:
+                    coordinator_data["message"] = "Server stopped, data fetched."
+
+                # Append specific fetch failures to the message if overall status is success
+                if isinstance(allowlist_result, Exception) or (
+                    isinstance(allowlist_result, dict)
+                    and allowlist_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Allowlist fetch failed)"
+                if isinstance(properties_result, Exception) or (
+                    isinstance(properties_result, dict)
+                    and properties_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Properties fetch failed)"
+
             return coordinator_data
 
         # Handle specific exceptions from the gather call or coordinator logic itself

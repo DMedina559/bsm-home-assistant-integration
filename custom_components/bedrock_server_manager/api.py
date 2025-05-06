@@ -381,6 +381,17 @@ class BedrockServerManagerApi:
             _LOGGER.warning("Could not fetch world name for %s: %s", server_name, e)
             return None
 
+    async def async_get_server_properties(self, server_name: str) -> Dict[str, Any]:
+        """Gets the server.properties content for a server.
+        Calls GET /api/servers/{server_name}/read_properties.
+        """
+        _LOGGER.debug("Fetching server properties for server '%s'", server_name)
+        return await self._request(
+            method="GET",
+            path=f"/servers/{server_name}/read_properties",  # Corrected path
+            authenticated=True,
+        )
+
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""

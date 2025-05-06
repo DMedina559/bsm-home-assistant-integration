@@ -30,6 +30,7 @@ from .const import (
     ATTR_WORLD_NAME,
     ATTR_INSTALLED_VERSION,
     ATTR_ALLOWLISTED_PLAYERS,
+    ATTR_SERVER_PROPERTIES,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -286,8 +287,8 @@ class MinecraftServerSensor(
         # --- Attributes ONLY for the 'status' sensor ---
         if sensor_key == "status":
             # Add static info stored on self
-            if self._world_name:
-                attrs[ATTR_WORLD_NAME] = self._world_name
+            # if self._world_name:
+            #    attrs[ATTR_WORLD_NAME] = self._world_name
             if self._installed_version:
                 attrs[ATTR_INSTALLED_VERSION] = self._installed_version
 
@@ -302,6 +303,10 @@ class MinecraftServerSensor(
                     ]
                 else:
                     attrs[ATTR_ALLOWLISTED_PLAYERS] = []  # Default to empty list
+                    # Add server properties from coordinator data if available
+                server_props = self.coordinator.data.get("properties")
+                if server_props is not None and isinstance(server_props, dict):
+                    attrs[ATTR_SERVER_PROPERTIES] = server_props
 
         # --- Attributes ONLY for the 'cpu_percent' sensor ---
         elif sensor_key == ATTR_CPU_PERCENT:
