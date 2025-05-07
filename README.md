@@ -185,6 +185,22 @@ Services allow for more control via automations and scripts.
     *   **Data:**
         *   `filename` (Required, string): The `.mcaddon` or `.mcpack` filename (e.g., `MyAwesomeAddon.mcaddon`) relative to the manager's `content/addons` directory.
 
+### Custom Cards
+
+The Bedrock Server Manager integration comes with 3 custom cards to enhance your BSM experience in Home Assistant:
+
+#### Send Command:
+
+Select a server device and enter a command to send to the server. This card is useful for sending commands like `say Hello` or `give @p diamond`.
+
+#### Configure Allowlist:
+
+Select a server device and enter a player to add to the allowlist, or remove an existing player from the list. This card is useful for quickly adding or removing players.
+
+#### Configure Properties:
+
+Select a server device and modify a property you want to update from the list. This card is useful for changing server properties like `max-players` or `difficulty`.
+
 ## Options / Reconfiguration
 
 After adding the integration, you can change settings without removing and re-adding:
