@@ -1,5 +1,11 @@
 """Constants for the Bedrock Server Manager integration."""
 
+import json
+from pathlib import Path
+
+
+FRONTEND_URL_BASE = f"/bsm_cards"
+
 # Domain slug for Home Assistant
 DOMAIN = "bedrock_server_manager"
 
@@ -66,3 +72,37 @@ FIELD_PROPERTIES = "properties"
 FIELD_FILENAME = "filename"
 FIELD_AUTOUPDATE = "autoupdate"
 FIELD_AUTOSTART = "autostart"
+
+
+def get_integration_version(integration_name: str = DOMAIN) -> str:
+    """Get the version of the integration."""
+    try:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        with open(manifest_path, encoding="utf-8") as manifest_file:
+            manifest = json.load(manifest_file)
+        return manifest.get("version", "0.0.0-unknown")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return "0.0.0-error"
+
+
+INTEGRATION_VERSION = get_integration_version()
+
+# List of JS modules to register
+# Add dictionaries for each card JS file
+JS_MODULES = [
+    {
+        "filename": "bsm-command-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Send Command Card",  # Friendly name for logging
+    },
+    {
+        "filename": "bsm-properties-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Server Properties Card",  # Friendly name for logging
+    },
+    {
+        "filename": "bsm-allowlist-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Allowlist Card",  # Friendly name for logging
+    },
+]
