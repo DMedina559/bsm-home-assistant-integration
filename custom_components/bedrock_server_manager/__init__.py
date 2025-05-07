@@ -33,6 +33,7 @@ from .api import (
 )
 
 # Import local constants
+from .frontend import BsmFrontendRegistration
 from .const import (
     DOMAIN,
     CONF_SERVER_NAMES,  # Import the constant for the list
@@ -55,6 +56,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].setdefault(
         entry.entry_id, {}
     )  # Prepare entry-specific data store
+
+    # --- Frontend Registration ---
+    frontend_registrar = BsmFrontendRegistration(hass)
+    try:
+        await frontend_registrar.async_register()
+        # Store registrar instance for unload if needed, or just let it run
+        hass.data[DOMAIN][entry.entry_id]["frontend_registrar"] = frontend_registrar
+    except Exception as e:
+        # Log error but don't necessarily prevent rest of setup
+        _LOGGER.error(
+            "Failed during frontend module registration: %s", e, exc_info=True
+        )
+    # --- End Frontend Registration ---
 
     # --- Get configuration data ---
     host = entry.data[CONF_HOST]
@@ -249,6 +263,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_data = hass.data[DOMAIN].pop(
             entry.entry_id, None
         )  # Remove entry's data safely
+
+        # --- Unregister Frontend ---
+        if entry_data and "frontend_registrar" in entry_data:
+            registrar: BsmFrontendRegistration = entry_data["frontend_registrar"]
+            try:
+                await registrar.async_unregister()
+            except Exception as e:
+                _LOGGER.error(
+                    "Failed during frontend module unregistration: %s", e, exc_info=True
+                )
+        # --- End Unregister ---
 
         if entry_data:
             _LOGGER.debug(

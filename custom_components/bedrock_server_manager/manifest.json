@@ -1,7 +1,7 @@
 {
   "domain": "bedrock_server_manager",
   "name": "Bedrock Server Manager",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "documentation": "https://github.com/dmedina559/bsm-home-assistant-integration",
   "issue_tracker": "https://github.com/dmedina559/bsm-home-assistant-integration",
   "codeowners": [ "@DMedina559" ],
