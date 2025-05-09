@@ -1383,7 +1383,7 @@ async def async_handle_install_world_service(service: ServiceCall, hass: HomeAss
         if config_entry_id not in hass.data.get(DOMAIN, {}):
             continue
         try:
-            target_api: MinecraftBedrockApi = hass.data[DOMAIN][config_entry_id]["api"]
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id]["api"]
             _LOGGER.info(
                 "Queueing world install from '%s' for server '%s' (config entry %s)",
                 filename,
