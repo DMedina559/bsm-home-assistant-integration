@@ -383,12 +383,12 @@ class BedrockServerManagerApi:
 
     async def async_get_server_properties(self, server_name: str) -> Dict[str, Any]:
         """Gets the server.properties content for a server.
-        Calls GET /api/servers/{server_name}/read_properties.
+        Calls GET /api/server/{server_name}/read_properties.
         """
         _LOGGER.debug("Fetching server properties for server '%s'", server_name)
         return await self._request(
             method="GET",
-            path=f"/servers/{server_name}/read_properties",  # Corrected path
+            path=f"/server/{server_name}/read_properties",
             authenticated=True,
         )
 
