@@ -116,4 +116,9 @@ JS_MODULES = [
         "version": INTEGRATION_VERSION,  # Link to integration version
         "name": "Allowlist Card",  # Friendly name for logging
     },
+    {
+        "filename": "bsm-permissions-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Permissions Card",  # Friendly name for logging
+    },
 ]
