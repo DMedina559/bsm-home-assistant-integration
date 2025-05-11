@@ -129,6 +129,9 @@
       },
       "memory_usage": {
         "name": "Memory Usage"
+      },
+      "server_permissions_count": {
+        "name": "Permissioned Players"
       }
     }
   },

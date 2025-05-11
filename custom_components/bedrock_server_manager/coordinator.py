@@ -55,6 +55,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "process_info": None,
             "allowlist": None,
             "properties": None,
+            "server_permissions": None,
         }
 
         try:
@@ -64,6 +65,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_get_server_status_info(self.server_name),
                     self.api.async_get_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
+                    self.api.async_get_server_permissions_data(self.server_name),
                     return_exceptions=True,  # Return exceptions instead of raising immediately
                 )
 
@@ -71,6 +73,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             status_info_result = results[0]
             allowlist_result = results[1]
             properties_result = results[2]
+            permissions_result = results[3]
 
             # Handle status info result
             if isinstance(status_info_result, Exception):
@@ -185,6 +188,40 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                         "properties", {}
                     )  # Default to empty dict
 
+            # --- Handle server prermissions result ---
+            if isinstance(permissions_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching server permissions for %s: %s",
+                    self.server_name,
+                    permissions_result,
+                )
+                # Non-critical, just note in message if others were okay
+            elif (
+                isinstance(permissions_result, dict)
+                and permissions_result.get("status") == "success"
+            ):
+                # The API returns {"status": "success", "data": {"permissions": [...]}}
+                # So we need to get data -> permissions
+                permissions_data_obj = permissions_result.get("data")
+                if isinstance(permissions_data_obj, dict):
+                    coordinator_data["server_permissions"] = permissions_data_obj.get(
+                        "permissions", []
+                    )
+                else:
+                    coordinator_data["server_permissions"] = (
+                        []
+                    )  # Default if 'data' key is missing/wrong type
+                    _LOGGER.warning(
+                        "Unexpected structure for server_permissions response for %s: 'data' key missing or not an object. Response: %s",
+                        self.server_name,
+                        permissions_result,
+                    )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for server permissions: %s",
+                    permissions_result,
+                )
+
             # Determine overall success (if all critical fetches were okay)
             if not isinstance(status_info_result, Exception) and (
                 isinstance(status_info_result, dict)
@@ -208,6 +245,11 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     and properties_result.get("status") == "error"
                 ):
                     coordinator_data["message"] += " (Properties fetch failed)"
+                if isinstance(permissions_result, Exception) or (
+                    isinstance(permissions_result, dict)
+                    and permissions_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Server Permissions fetch failed)"
 
             return coordinator_data
 

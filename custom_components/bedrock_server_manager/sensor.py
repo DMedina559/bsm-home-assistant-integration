@@ -33,7 +33,9 @@ from .const import (
     ATTR_ALLOWLISTED_PLAYERS,
     ATTR_SERVER_PROPERTIES,
     KEY_GLOBAL_PLAYERS,
+    KEY_SERVER_PERMISSIONS_COUNT,
     ATTR_GLOBAL_PLAYERS_LIST,
+    ATTR_SERVER_PERMISSIONS_LIST,
 )
 from .api import (
     BedrockServerManagerApi,
@@ -63,6 +65,12 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         suggested_display_precision=1,
         device_class=SensorDeviceClass.DATA_SIZE,
         suggested_unit_of_measurement="MiB",
+    ),
+    SensorEntityDescription(
+        key=KEY_SERVER_PERMISSIONS_COUNT,
+        name="Permissioned Players",
+        icon="mdi:account-key",
+        state_class=SensorStateClass.MEASUREMENT,
     ),
 )
 
@@ -264,6 +272,9 @@ class MinecraftServerSensor(
             return process_info.get(ATTR_CPU_PERCENT)
         if sensor_key == ATTR_MEMORY_MB:
             return process_info.get(ATTR_MEMORY_MB)
+        if sensor_key == KEY_SERVER_PERMISSIONS_COUNT:
+            permissions_list = self.coordinator.data.get("server_permissions", [])
+            return len(permissions_list if isinstance(permissions_list, list) else [])
         _LOGGER.warning("Sensor state for unhandled key: %s", sensor_key)
         return None
 
@@ -307,6 +318,12 @@ class MinecraftServerSensor(
                 uptime = process_info.get("uptime")
                 attrs[ATTR_PID] = pid
                 attrs[ATTR_UPTIME] = uptime
+        elif sensor_key == KEY_SERVER_PERMISSIONS_COUNT:
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                permissions_list = self.coordinator.data.get("server_permissions", [])
+                attrs[ATTR_SERVER_PERMISSIONS_LIST] = (
+                    permissions_list if isinstance(permissions_list, list) else []
+                )
         return attrs if attrs else None
 
 

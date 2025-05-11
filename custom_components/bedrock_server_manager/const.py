@@ -40,8 +40,10 @@ ATTR_MAX_PLAYERS = "max_players"
 ATTR_ALLOWLISTED_PLAYERS = "allowed_players"
 ATTR_SERVER_PROPERTIES = "server_properties"
 ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"
+ATTR_SERVER_PERMISSIONS_LIST = "server_permissions"
 
 KEY_GLOBAL_PLAYERS = "global_players_count"
+KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"

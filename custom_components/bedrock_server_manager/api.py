@@ -392,6 +392,19 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    async def async_get_server_permissions_data(
+        self, server_name: str
+    ) -> Dict[str, Any]:
+        """Gets the permissions.json content for a server.
+        Calls GET /api/server/{server_name}/permissions_data.
+        """
+        _LOGGER.debug("Fetching server permissions data for server '%s'", server_name)
+        return await self._request(
+            method="GET",
+            path=f"/server/{server_name}/permissions_data",
+            authenticated=True,
+        )
+
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""
