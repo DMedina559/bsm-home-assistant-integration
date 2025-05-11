@@ -125,4 +125,9 @@ JS_MODULES = [
         "version": INTEGRATION_VERSION,  # Link to integration version
         "name": "Permissions Card",  # Friendly name for logging
     },
+        {
+        "filename": "bsm-restore-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Restore Card",  # Friendly name for logging
+    },
 ]
