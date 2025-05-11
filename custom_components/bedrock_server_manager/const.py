@@ -20,6 +20,10 @@ CONF_PASSWORD = "password"
 CONF_SERVER_NAME = "server_name"
 CONF_SERVER_NAMES = "servers"
 
+
+CONF_MANAGER_SCAN_INTERVAL = "manager_scan_interval"
+DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS = 600
+
 # Default values
 DEFAULT_PORT = 11325
 DEFAULT_SCAN_INTERVAL_SECONDS = 30
@@ -35,6 +39,9 @@ ATTR_PLAYERS_ONLINE = "players_online"
 ATTR_MAX_PLAYERS = "max_players"
 ATTR_ALLOWLISTED_PLAYERS = "allowed_players"
 ATTR_SERVER_PROPERTIES = "server_properties"
+ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"
+
+KEY_GLOBAL_PLAYERS = "global_players_count"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
@@ -51,6 +58,8 @@ SERVICE_UPDATE_PROPERTIES = "update_properties"
 SERVICE_INSTALL_WORLD = "install_world"
 SERVICE_INSTALL_ADDON = "install_addon"
 SERVICE_CONFIGURE_OS_SERVICE = "configure_os_service"
+SERVICE_CONFIGURE_OS_SERVICE = "configure_os_service"
+SERVICE_ADD_GLOBAL_PLAYERS = "add_global_players"
 
 # Service field names
 FIELD_COMMAND = "command"

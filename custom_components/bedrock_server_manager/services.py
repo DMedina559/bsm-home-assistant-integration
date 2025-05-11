@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
+    SERVICE_ADD_GLOBAL_PLAYERS,
     SERVICE_SEND_COMMAND,
     SERVICE_PRUNE_DOWNLOADS,
     SERVICE_RESTORE_BACKUP,
@@ -54,6 +55,7 @@ from .api import (
     APIError,
     ServerNotRunningError,
 )
+from .coordinator import ManagerDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -191,6 +193,12 @@ CONFIGURE_OS_SERVICE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_ENTITY_ID): object,
         vol.Optional(ATTR_DEVICE_ID): object,
         vol.Optional(ATTR_AREA_ID): object,
+    }
+)
+
+ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PLAYERS): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -593,6 +601,34 @@ async def _async_handle_configure_os_service(
         )
         raise HomeAssistantError(
             f"Unexpected error configuring OS service: {err}"
+        ) from err
+
+
+async def _async_handle_add_global_players(
+    api: BedrockServerManagerApi, players_data: List[str]
+):
+    """Helper coroutine to call API for add_global_players."""
+    try:
+        await api.async_add_global_players(players_data=players_data)
+        _LOGGER.info(
+            "Successfully requested add/update global players: %s", players_data
+        )
+    except APIError as err:
+        _LOGGER.error("API Error adding/updating global players: %s", err)
+        raise HomeAssistantError(
+            f"API Error adding/updating global players: {err}"
+        ) from err
+    except (
+        ValueError
+    ) as err:  # Catch potential format errors from API method before call
+        _LOGGER.error("Invalid input for add_global_players service: %s", err)
+        raise HomeAssistantError(
+            f"Invalid input for adding global players: {err}"
+        ) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error adding/updating global players: %s", err)
+        raise HomeAssistantError(
+            f"Unexpected error adding/updating global players: {err}"
         ) from err
 
 
@@ -1383,7 +1419,9 @@ async def async_handle_install_world_service(service: ServiceCall, hass: HomeAss
         if config_entry_id not in hass.data.get(DOMAIN, {}):
             continue
         try:
-            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id]["api"]
+            target_api: BedrockServerManagerApi = hass.data[DOMAIN][config_entry_id][
+                "api"
+            ]
             _LOGGER.info(
                 "Queueing world install from '%s' for server '%s' (config entry %s)",
                 filename,
@@ -1615,6 +1653,57 @@ async def async_handle_configure_os_service_service(
         )
 
 
+async def async_handle_add_global_players_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    """Handle the add_global_players service call."""
+    players_data_list = service.data[FIELD_PLAYERS]  # List of "Name:XUID" strings
+
+    _LOGGER.info(
+        "Executing add_global_players service with data: %s", players_data_list
+    )
+
+    api_client: Optional[BedrockServerManagerApi] = None
+    manager_coordinator: Optional[ManagerDataCoordinator] = None
+
+    # This service acts on the manager instance, so find its API client and coordinator
+    # Assuming only one BSM manager is configured per HA instance for this global action
+    if hass.data.get(DOMAIN):
+        for entry_id_iter, entry_data_iter in hass.data[DOMAIN].items():
+            # Check if this entry has the 'api' and 'manager_coordinator'
+            # This assumes we will always have a manager_coordinator if the entry loaded
+            if entry_data_iter.get("api") and entry_data_iter.get(
+                "manager_coordinator"
+            ):
+                api_client = entry_data_iter["api"]
+                manager_coordinator = entry_data_iter["manager_coordinator"]
+                _LOGGER.debug(
+                    "Found API client and manager coordinator from entry: %s",
+                    entry_id_iter,
+                )
+                break  # Found the first (and likely only) manager instance
+
+    if not api_client:
+        _LOGGER.error("BSM API client not found. Cannot execute add_global_players.")
+        raise HomeAssistantError("BSM integration API client is not available.")
+
+    # Call the helper to perform the API action
+    await _async_handle_add_global_players(
+        api=api_client, players_data=players_data_list
+    )
+
+    # After successful API call, request a refresh of the ManagerDataCoordinator
+    if manager_coordinator:
+        _LOGGER.debug(
+            "Requesting refresh of ManagerDataCoordinator after adding global players."
+        )
+        await manager_coordinator.async_request_refresh()
+    else:
+        _LOGGER.warning(
+            "ManagerDataCoordinator not found. Global players sensor may not update immediately."
+        )
+
+
 # --- Service Registration Function ---
 async def async_register_services(hass: HomeAssistant):
     """Register the custom services for the integration."""
@@ -1819,6 +1908,20 @@ async def async_register_services(hass: HomeAssistant):
             schema=CONFIGURE_OS_SERVICE_SCHEMA,
         )
 
+        # --- Add Global Players Service ---
+    if not hass.services.has_service(DOMAIN, SERVICE_ADD_GLOBAL_PLAYERS):
+
+        async def add_global_players_wrapper(call: ServiceCall):
+            await async_handle_add_global_players_service(call, hass)
+
+        _LOGGER.debug("Registering service: %s.%s", DOMAIN, SERVICE_ADD_GLOBAL_PLAYERS)
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_ADD_GLOBAL_PLAYERS,
+            add_global_players_wrapper,
+            schema=ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
+        )
+
 
 # --- Service Removal Function ---
 async def async_remove_services(hass: HomeAssistant):
@@ -1839,6 +1942,7 @@ async def async_remove_services(hass: HomeAssistant):
             SERVICE_INSTALL_WORLD,
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
+            SERVICE_ADD_GLOBAL_PLAYERS,
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):

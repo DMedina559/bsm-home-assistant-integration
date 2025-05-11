@@ -43,7 +43,8 @@
           "options": {
             "update_credentials": "Update API Credentials",
             "select_servers": "Select Servers to Monitor",
-            "update_interval": "Update Polling Interval"
+            "update_server_interval": "Update Server Polling Interval",
+            "update_manager_interval": "Update Manager Polling Interval"
           }
         }
       },
@@ -62,16 +63,24 @@
           "servers": "Servers to Monitor"
         }
       },
-      "update_interval": {
-        "title": "Update Polling Interval",
-        "description": "Set how often Home Assistant should poll the manager API for status updates (for running servers). Lower values update faster but increase load.",
+      "update_server_interval": {
+        "title": "Update Server Polling Interval",
+        "description": "Set how often Home Assistant polls individual server status (Running, CPU, Memory, etc.).",
         "data": {
-          "scan_interval": "Update frequency (seconds)"
+          "scan_interval": "Server update frequency (seconds)"
+        }
+      },
+      "update_manager_interval": {
+        "title": "Update Manager Polling Interval",
+        "description": "Set how often Home Assistant polls global manager data (OS, Version, Global Players List). This is usually less frequent.",
+        "data": {
+          "manager_scan_interval": "Manager data update frequency (seconds)"
         }
       }
     },
     "error": {
       "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
+      "invalid_manager_scan_interval": "Manager data update frequency must be at least 60 seconds.",
       "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
       "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
       "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
@@ -84,21 +93,43 @@
   },
   "entity": {
     "button": {
-      "restart_server": { "name": "Restart" },
-      "update_server": { "name": "Update" },
-      "trigger_backup": { "name": "Backup" },
-      "export_world": { "name": "Export World" },
-      "prune_backups": { "name": "Prune Backups" },
-      "prune_downloads": { "name": "Prune Download Cache" },
-      "scan_players": { "name": "Scan Player Logs" }
+      "restart_server": {
+        "name": "Restart"
+      },
+      "update_server": {
+        "name": "Update"
+      },
+      "trigger_backup": {
+        "name": "Backup"
+      },
+      "export_world": {
+        "name": "Export World"
+      },
+      "prune_backups": {
+        "name": "Prune Backups"
+      },
+      "prune_downloads": {
+        "name": "Prune Download Cache"
+      },
+      "scan_players": {
+        "name": "Scan Player Logs"
+      }
     },
     "switch": {
-      "server_control": { "name": "Server" }
+      "server_control": {
+        "name": "Server"
+      }
     },
     "sensor": {
-      "status": { "name": "Status" },
-      "cpu_usage": { "name": "CPU Usage" },
-      "memory_usage": { "name": "Memory Usage" }
+      "status": {
+        "name": "Status"
+      },
+      "cpu_usage": {
+        "name": "CPU Usage"
+      },
+      "memory_usage": {
+        "name": "Memory Usage"
+      }
     }
   },
   "services": {

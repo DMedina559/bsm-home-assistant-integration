@@ -258,3 +258,14 @@ configure_os_service:
       example: true
       selector:
         boolean: {}
+
+add_global_players:
+  description: Adds or updates players in the manager's global player list (players.json). This is a global manager action, no specific server target needed.
+  # No target needed for this global service
+  fields:
+    players:
+      description: A list of player strings, each in "PlayerName:PlayerXUID" format (e.g., '["Steve:123", "Alex:456"]'). Input as YAML/JSON list.
+      required: true
+      example: '["NewPlayer:1234567890123456", "AnotherOne:9876543210987654"]'
+      selector:
+        object: {} # User will input YAML/JSON list of strings

@@ -18,6 +18,7 @@ from .api import (
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,3 +224,110 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 "Unexpected error fetching data for %s: %s", self.server_name, err
             )
             raise UpdateFailed(f"Unexpected error: {err}") from err
+
+
+class ManagerDataCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching global data from the Bedrock Server Manager API."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_client: BedrockServerManagerApi,
+        scan_interval: int,  # Use a separate scan interval for manager data if desired
+    ):
+        """Initialize the manager data coordinator."""
+        self.api = api_client
+        self._scan_interval = scan_interval
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} Manager Data Coordinator",
+            update_interval=timedelta(seconds=scan_interval),
+            # Consider request_refresh_debouncer if updates are frequent
+        )
+
+    async def _async_update_data(self) -> dict:
+        """Fetch global manager data from API endpoints."""
+        _LOGGER.debug("Manager Data Coordinator requesting update.")
+        # Initialize with default/error state, ensure all expected keys present
+        manager_data = {
+            "status": "error",
+            "message": "Manager data update failed",
+            "info": None,  # From /api/info
+            "global_players": None,  # From /api/players/get
+        }
+
+        try:
+            async with async_timeout.timeout(self._scan_interval - 3):
+                results = await asyncio.gather(
+                    self.api.async_get_manager_info(),
+                    self.api.async_get_global_players(),
+                    return_exceptions=True,
+                )
+
+            info_result, players_result = results
+            all_successful = True
+
+            # Process Manager Info
+            if isinstance(info_result, Exception):
+                _LOGGER.warning("Error fetching manager info: %s", info_result)
+                manager_data["message"] = (
+                    f"Manager info fetch failed: {type(info_result).__name__}"
+                )
+                all_successful = False  # Mark as partial failure
+            elif (
+                isinstance(info_result, dict) and info_result.get("status") == "success"
+            ):
+                manager_data["info"] = info_result.get(
+                    "data"
+                )  # Store the nested 'data' object
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for manager info: %s", info_result
+                )
+                manager_data["message"] = "Invalid manager info response"
+                all_successful = False
+
+            # Process Global Players
+            if isinstance(players_result, Exception):
+                _LOGGER.warning("Error fetching global players: %s", players_result)
+                if all_successful:  # Don't overwrite a more critical error message
+                    manager_data["message"] = (
+                        f"Global players fetch failed: {type(players_result).__name__}"
+                    )
+                all_successful = False
+            elif (
+                isinstance(players_result, dict)
+                and players_result.get("status") == "success"
+            ):
+                manager_data["global_players"] = players_result.get("players", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for global players: %s", players_result
+                )
+                if all_successful:
+                    manager_data["message"] = "Invalid global players response"
+                all_successful = False
+
+            if all_successful:
+                manager_data["status"] = "success"
+                manager_data["message"] = "Manager data fetched successfully."
+
+            return manager_data
+
+        # Handle top-level exceptions (AuthError less likely for /api/info if unauth)
+        except ConfigEntryAuthFailed:
+            raise  # Should not happen if /api/info is truly unauth
+        except UpdateFailed:
+            raise
+        except asyncio.TimeoutError as err:
+            _LOGGER.warning("Timeout fetching manager data")
+            raise UpdateFailed(
+                f"Timeout communicating with API for manager data: {err}"
+            ) from err
+        except Exception as err:
+            _LOGGER.exception("Unexpected error fetching manager data: %s", err)
+            raise UpdateFailed(
+                f"Unexpected error fetching manager data: {err}"
+            ) from err

@@ -42,7 +42,7 @@ from .const import (
 )
 
 # Import the specific Coordinator class
-from .coordinator import MinecraftBedrockCoordinator
+from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 
 # Import the services module for registration/removal
 from . import services
@@ -77,49 +77,81 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
 
     # --- Get options ---
-    # Server list comes from options now
     selected_servers = entry.options.get(CONF_SERVER_NAMES, [])
-    # Polling interval also comes from options (or default)
-    scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL_SECONDS)
+    # Use different scan intervals for manager data vs server data
+    manager_scan_interval_options_key = (
+        "manager_scan_interval"  # Potentially add to const.py
+    )
+    server_scan_interval_options_key = (
+        "scan_interval"  # Existing options key for servers
+    )
+
+    # Default for manager coordinator (e.g., less frequent)
+    manager_scan_interval = entry.options.get(
+        manager_scan_interval_options_key, 600
+    )  # Default 10 minutes
+    # Default for server coordinators (e.g., more frequent)
+    server_scan_interval = entry.options.get(
+        server_scan_interval_options_key, DEFAULT_SCAN_INTERVAL_SECONDS
+    )
 
     # --- Initialize Shared API Client ---
     session = async_get_clientsession(hass)
+    # Ensure you use the correct class name from your api.py
     api_client = BedrockServerManagerApi(host, port, username, password, session)
 
-    manager_os_type = "Unknown"  # Default
-    manager_app_version = "Unknown"
+    # --- Create and Refresh ManagerDataCoordinator FIRST ---
+    # This fetches /api/info and /api/players/get
+    manager_coordinator = ManagerDataCoordinator(
+        hass=hass, api_client=api_client, scan_interval=manager_scan_interval
+    )
     try:
-        info_response = await api_client.async_get_manager_info()  # Existing call
-        if (
-            info_response
-            and info_response.get("status") == "success"
-            and isinstance(info_response.get("data"), dict)
-        ):
-            manager_os_type = (
-                info_response["data"].get("os_type", manager_os_type).lower()
-            )  # Store lowercase
-            manager_app_version = info_response["data"].get(
-                "app_version", manager_app_version
-            )
-        else:
-            _LOGGER.warning("Failed to parse manager info: %s", info_response)
-    except Exception as err:
-        _LOGGER.warning("Error fetching manager info: %s. Using defaults.", err)
+        await manager_coordinator.async_config_entry_first_refresh()
+    except ConfigEntryAuthFailed:  # Let specific auth errors propagate for reauth flow
+        raise
+    except Exception as err:  # Catch other errors during first refresh
+        _LOGGER.error("Failed initial refresh for ManagerDataCoordinator: %s", err)
+        raise ConfigEntryNotReady(
+            f"Failed to initialize manager data coordinator: {err}"
+        ) from err
+
+    # --- Get manager OS/Version and Global Players from the ManagerDataCoordinator ---
+    manager_os_type = "Unknown"
+    manager_app_version = "Unknown"
+    global_players_list_data = []  # Default to empty list
+
+    if manager_coordinator.last_update_success and manager_coordinator.data:
+        manager_info_data = manager_coordinator.data.get("info")
+        if isinstance(manager_info_data, dict):
+            manager_os_type = manager_info_data.get("os_type", "Unknown").lower()
+            manager_app_version = manager_info_data.get("app_version", "Unknown")
+
+        global_players_data_from_coord = manager_coordinator.data.get("global_players")
+        if isinstance(global_players_data_from_coord, list):
+            global_players_list_data = global_players_data_from_coord
+        _LOGGER.debug(
+            "Manager Info from Coordinator: OS=%s, Version=%s, Global Players=%d",
+            manager_os_type,
+            manager_app_version,
+            len(global_players_list_data),
+        )
+    else:
+        _LOGGER.warning(
+            "ManagerDataCoordinator initial update failed or returned no data. Using defaults for manager info."
+        )
 
     # --- Create the Central "Manager" Device ---
-    # This device represents the BSM API endpoint itself
-    manager_host_port_id = f"{host}:{port}"  # Logical identifier value (string)
-    # Create the identifier tuple using the domain and the logical ID string
+    manager_host_port_id = f"{host}:{port}"
     manager_identifier = (DOMAIN, manager_host_port_id)
     device_registry = dr.async_get(hass)
     manager_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={manager_identifier},  # Pass the identifier tuple in a set
+        identifiers={manager_identifier},
         name=f"BSM @ {host}",
         manufacturer="Bedrock Server Manager",
         model=f"BSM-{manager_os_type.upper()}",
         sw_version=manager_app_version,
-        configuration_url=f"http://{host}:{port}",  # Link to the manager UI
+        configuration_url=f"http://{host}:{port}",
     )
     _LOGGER.debug(
         "Ensured manager device exists: ID=%s, Identifier=%s",
@@ -127,46 +159,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         manager_identifier,
     )
 
-    # --- Store API Client and Manager Identifier ---
-    # Store the identifier tuple for platforms to use for linking (via_device)
+    # --- Store API Client, Manager Coordinator, and other essential data ---
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
-        "manager_identifier": manager_identifier,  # Store identifier tuple
+        "manager_identifier": manager_identifier,
+        "manager_coordinator": manager_coordinator,  # Store the manager coordinator
         "manager_os_type": manager_os_type,
         "manager_app_version": manager_app_version,
-        "servers": {},  # Dictionary to hold data for each server instance
+        "global_players_list": global_players_list_data,  # Initial list for sensor setup
+        "servers": {},  # For server-specific coordinators
     }
 
-    # --- Create Coordinators for Selected Servers ---
+    # --- Create Server-Specific Coordinators ---
     if not selected_servers:
         _LOGGER.warning(
-            "No servers selected for manager %s. Integration will load but monitor no servers.",
+            "No servers selected for manager %s. Integration will load but monitor no individual servers.",
             manager_host_port_id,
         )
     else:
-        _LOGGER.info("Setting up coordinators for servers: %s", selected_servers)
+        _LOGGER.info("Setting up server coordinators for: %s", selected_servers)
         setup_tasks = []
         for server_name in selected_servers:
-            # Create a separate setup task for each server's coordinator
             setup_tasks.append(
                 _async_setup_server_coordinator(
-                    hass, entry, api_client, server_name, scan_interval
+                    hass, entry, api_client, server_name, server_scan_interval
                 )
             )
-
-        # Run coordinator setups concurrently
         results = await asyncio.gather(*setup_tasks, return_exceptions=True)
 
-        # Check for errors during individual coordinator setups
         successful_setups = 0
         for i, result in enumerate(results):
-            # Use the original list order to match results to server names
             server_name = selected_servers[i]
             if isinstance(result, Exception):
                 log_msg = (
                     f"Failed to set up coordinator for server '{server_name}': {result}"
                 )
-                # Log full traceback only for truly unexpected errors
                 if not isinstance(
                     result,
                     (
@@ -181,24 +208,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                 else:
                     _LOGGER.error(log_msg, exc_info=False)
-                # Remove failed server entry from hass.data so platforms don't try to use it
                 if server_name in hass.data[DOMAIN][entry.entry_id]["servers"]:
                     del hass.data[DOMAIN][entry.entry_id]["servers"][server_name]
             else:
                 successful_setups += 1
 
-        # If ALL coordinator setups failed (and servers were selected), raise ConfigEntryNotReady
         if successful_setups == 0 and selected_servers:
             _LOGGER.error(
                 "All server coordinator setups failed for manager %s.",
                 manager_host_port_id,
             )
+            # Do not pop hass.data[DOMAIN][entry.entry_id] here, as manager_coordinator might be valid
             raise ConfigEntryNotReady(
-                f"Could not establish connection or initial update for any selected server on manager {manager_host_port_id}"
+                f"Could not initialize any selected server for manager {manager_host_port_id}"
             )
 
     # --- Forward Setup to Platforms ---
-    # Platforms will now look into hass.data[DOMAIN][entry.entry_id]["servers"]
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # --- Add listener for options flow updates ---
@@ -218,26 +243,22 @@ async def _async_setup_server_coordinator(
     scan_interval: int,
 ):
     """Helper function to set up coordinator for a single server."""
-    _LOGGER.debug("Setting up coordinator for server: %s", server_name)
+    _LOGGER.debug("Setting up server coordinator for: %s", server_name)
+    # Use the renamed MinecraftBedrockServerCoordinator
     coordinator = MinecraftBedrockCoordinator(
         hass=hass,
         api_client=api_client,
         server_name=server_name,
         scan_interval=scan_interval,
     )
-    # Perform initial refresh *for this specific coordinator*
-    # This might raise ConfigEntryAuthFailed or UpdateFailed (-> ConfigEntryNotReady)
-    # Let the exception propagate up to the gather call in async_setup_entry
     await coordinator.async_config_entry_first_refresh()
-
-    # Store the successful coordinator in hass.data
-    # Ensure the "servers" dict exists before trying to add to it
     hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})
     hass.data[DOMAIN][entry.entry_id]["servers"][server_name] = {
         "coordinator": coordinator,
-        # Static info will be fetched by platforms now if needed
+        # Static info can be stored here by platforms if needed after first fetch
+        # "world_name": None, "installed_version": None
     }
-    _LOGGER.debug("Successfully set up coordinator for server: %s", server_name)
+    _LOGGER.debug("Successfully set up server coordinator for: %s", server_name)
 
 
 async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry):

@@ -663,6 +663,23 @@ class BedrockServerManagerApi:
         _LOGGER.debug("Triggering player log scan")
         return await self._request("POST", "/players/scan", authenticated=True)
 
+    async def async_get_global_players(self) -> Dict[str, Any]:
+        """Gets the global list of known players. Calls GET /api/players/get."""
+        _LOGGER.debug("Fetching global player list from /api/players/get")
+        return await self._request(
+            method="GET", path="/players/get", authenticated=True
+        )
+
+    async def async_add_global_players(self, players_data: List[str]) -> Dict[str, Any]:
+        """Adds players to the global list. Calls POST /api/players/add.
+        players_data is a list of strings like "PlayerName:PlayerXUID".
+        """
+        _LOGGER.info("Adding/updating global players: %s", players_data)
+        payload = {"players": players_data}
+        return await self._request(
+            method="POST", path="/players/add", data=payload, authenticated=True
+        )
+
     async def async_prune_download_cache(
         self, directory: str, keep: Optional[int] = None
     ) -> Dict[str, Any]:
