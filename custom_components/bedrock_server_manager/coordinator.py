@@ -355,6 +355,8 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             "message": "Manager data update failed",
             "info": None,  # From /api/info
             "global_players": None,  # From /api/players/get
+            "available_worlds": None,
+            "available_addons": None,
         }
 
         try:
@@ -362,10 +364,12 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 results = await asyncio.gather(
                     self.api.async_get_manager_info(),
                     self.api.async_get_global_players(),
+                    self.api.async_list_available_worlds(),
+                    self.api.async_list_available_addons(),
                     return_exceptions=True,
                 )
 
-            info_result, players_result = results
+            info_result, players_result, worlds_result, addons_result = results
             all_successful = True
 
             # Process Manager Info
@@ -409,9 +413,66 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                     manager_data["message"] = "Invalid global players response"
                 all_successful = False
 
-            if all_successful:
+            # --- Process Available Worlds ---
+            if isinstance(worlds_result, Exception):
+                _LOGGER.warning("Error fetching available worlds: %s", worlds_result)
+                all_successful = (
+                    False  # Consider this non-critical for overall manager status
+                )
+            elif (
+                isinstance(worlds_result, dict)
+                and worlds_result.get("status") == "success"
+            ):
+                manager_data["available_worlds"] = worlds_result.get("files", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for available worlds: %s", worlds_result
+                )
+                all_successful = False
+
+            # --- Process Available Addons ---
+            if isinstance(addons_result, Exception):
+                _LOGGER.warning("Error fetching available addons: %s", addons_result)
+                all_successful = False
+            elif (
+                isinstance(addons_result, dict)
+                and addons_result.get("status") == "success"
+            ):
+                manager_data["available_addons"] = addons_result.get("files", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for available addons: %s", addons_result
+                )
+                all_successful = False
+
+            if (
+                all_successful
+                and manager_data["info"]
+                and manager_data["global_players"] is not None
+                and manager_data["available_worlds"] is not None
+                and manager_data["available_addons"] is not None
+            ):
                 manager_data["status"] = "success"
                 manager_data["message"] = "Manager data fetched successfully."
+            else:
+                # Construct a more detailed error message if any part failed
+                messages = []
+                if not manager_data["info"]:
+                    messages.append("manager info")
+                if manager_data["global_players"] is None:
+                    messages.append("global players")
+                if manager_data["available_worlds"] is None:
+                    messages.append("available worlds")
+                if manager_data["available_addons"] is None:
+                    messages.append("available addons")
+                if messages:
+                    manager_data["message"] = (
+                        f"Failed to fetch some manager data: {', '.join(messages)}."
+                    )
+                else:  # Should not happen if all_successful is false
+                    manager_data["message"] = (
+                        "Partial manager data fetched with unknown issues."
+                    )
 
             return manager_data
 

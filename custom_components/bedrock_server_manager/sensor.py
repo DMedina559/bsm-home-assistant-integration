@@ -34,10 +34,14 @@ from .const import (
     ATTR_SERVER_PROPERTIES,
     ATTR_CONFIG_BACKUPS_LIST,
     ATTR_WORLD_BACKUPS_LIST,
+    ATTR_AVAILABLE_ADDONS_LIST,
+    ATTR_AVAILABLE_WORLDS_LIST,
     KEY_GLOBAL_PLAYERS,
     KEY_SERVER_PERMISSIONS_COUNT,
     KEY_CONFIG_BACKUPS_COUNT,
     KEY_WORLD_BACKUPS_COUNT,
+    KEY_AVAILABLE_ADDONS_COUNT,
+    KEY_AVAILABLE_WORLDS_COUNT,
     ATTR_GLOBAL_PLAYERS_LIST,
     ATTR_SERVER_PERMISSIONS_LIST,
 )
@@ -79,13 +83,13 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_WORLD_BACKUPS_COUNT,
         name="World Backups",
-        icon="mdi:world-clock", # Example icon, find better one e.g. mdi:archive-arrow-down-outline
+        icon="mdi:world-box", 
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_CONFIG_BACKUPS_COUNT,
         name="Config Backups",
-        icon="mdi:file-cog", # Example icon, mdi:archive-cog-outline
+        icon="mdi:file-cog",
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -96,6 +100,18 @@ MANAGER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         key=KEY_GLOBAL_PLAYERS,
         name="Global Players",
         icon="mdi:account-group",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_AVAILABLE_WORLDS_COUNT,
+        name="Available Worlds",
+        icon="mdi:earth-box", 
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_AVAILABLE_ADDONS_COUNT,
+        name="Available Addons",
+        icon="mdi:puzzle-outline", 
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -127,11 +143,11 @@ async def async_setup_entry(
     # --- Add Global Players Sensor for the Manager Device, using ManagerDataCoordinator ---
     for description in MANAGER_SENSOR_DESCRIPTIONS:
         entities_to_add.append(
-            GlobalPlayersSensor(
-                coordinator=manager_coordinator,  # Pass the manager's coordinator
+            ManagerInfoSensor(  # Use new class name
+                coordinator=manager_coordinator,
                 description=description,
                 manager_identifier=manager_identifier,
-                entry_id=entry.entry_id,  # For unique ID construction
+                entry_id=entry.entry_id,  # Keep for unique ID construction
             )
         )
 
@@ -349,63 +365,99 @@ class MinecraftServerSensor(
         elif sensor_key == KEY_WORLD_BACKUPS_COUNT:
             if self.coordinator.data and isinstance(self.coordinator.data, dict):
                 backups_list = self.coordinator.data.get("world_backups", [])
-                attrs[ATTR_WORLD_BACKUPS_LIST] = backups_list if isinstance(backups_list, list) else []
+                attrs[ATTR_WORLD_BACKUPS_LIST] = (
+                    backups_list if isinstance(backups_list, list) else []
+                )
         elif sensor_key == KEY_CONFIG_BACKUPS_COUNT:
             if self.coordinator.data and isinstance(self.coordinator.data, dict):
                 backups_list = self.coordinator.data.get("config_backups", [])
-                attrs[ATTR_CONFIG_BACKUPS_LIST] = backups_list if isinstance(backups_list, list) else []
+                attrs[ATTR_CONFIG_BACKUPS_LIST] = (
+                    backups_list if isinstance(backups_list, list) else []
+                )
         return attrs if attrs else None
 
 
-# --- New Global Players Sensor Class ---
-class GlobalPlayersSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity):
-    """Representation of a sensor for the global player list count."""
+class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity):
+    """Representation of a sensor for global manager information."""
 
-    _attr_has_entity_name = True  # Use description.name as base
+    _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: ManagerDataCoordinator,  # Use the Manager's coordinator
+        coordinator: ManagerDataCoordinator,
         description: SensorEntityDescription,
-        manager_identifier: tuple,  # To link to manager device
-        entry_id: str,  # For unique ID construction if needed
+        manager_identifier: tuple,
+        entry_id: str,
     ):
-        """Initialize the global players sensor."""
-        super().__init__(coordinator)  # Pass the manager's coordinator
+        """Initialize the manager info sensor."""
+        super().__init__(coordinator)
         self.entity_description = description
         self._manager_identifier = manager_identifier
-
-        # Unique ID based on manager + sensor key
-        manager_id_str = manager_identifier[1]  # Get the "host:port" part
+        # Unique ID based on manager "host:port" string + sensor key
+        manager_id_str = manager_identifier[1]
         self._attr_unique_id = f"{DOMAIN}_{manager_id_str}_{description.key}"
-
-        # Link to the Manager device
-        self._attr_device_info = DeviceInfo(
-            identifiers={self._manager_identifier},  # Identifies the Manager device
-        )
-
-    # No async_added_to_hass or signal handler needed; coordinator handles updates.
+        self._attr_device_info = DeviceInfo(identifiers={self._manager_identifier})
 
     @property
-    def native_value(self) -> int:
-        """Return the state of the sensor (count of global players)."""
-        if self.coordinator.last_update_success and self.coordinator.data:
-            players_list = self.coordinator.data.get("global_players", [])
-            return len(players_list if isinstance(players_list, list) else [])
-        return 0  # Or STATE_UNAVAILABLE if preferred when coordinator fails
+    def native_value(self) -> Optional[int]:  # State will be a count
+        """Return the state of the sensor."""
+        if not self.coordinator.last_update_success or not self.coordinator.data:
+            return None  # Or 0 if preferred for count on error
+
+        sensor_key = self.entity_description.key
+        data_list = []
+
+        if sensor_key == KEY_GLOBAL_PLAYERS:
+            data_list = self.coordinator.data.get("global_players", [])
+        elif sensor_key == KEY_AVAILABLE_WORLDS_COUNT:
+            data_list = self.coordinator.data.get("available_worlds", [])
+        elif sensor_key == KEY_AVAILABLE_ADDONS_COUNT:
+            data_list = self.coordinator.data.get("available_addons", [])
+        else:
+            _LOGGER.warning(
+                "Unhandled manager sensor key for native_value: %s", sensor_key
+            )
+            return None
+
+        return len(data_list if isinstance(data_list, list) else [])
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
-        """Return entity specific state attributes (the list of players)."""
-        if self.coordinator.last_update_success and self.coordinator.data:
+        """Return entity specific state attributes."""
+        if not self.coordinator.last_update_success or not self.coordinator.data:
+            return None
+
+        sensor_key = self.entity_description.key
+        attrs = {}
+
+        if sensor_key == KEY_GLOBAL_PLAYERS:
             players_list = self.coordinator.data.get("global_players", [])
-            # Return the raw list of player objects from the API
-            return {
-                ATTR_GLOBAL_PLAYERS_LIST: (
-                    players_list if isinstance(players_list, list) else []
-                )
-            }
-        return {ATTR_GLOBAL_PLAYERS_LIST: []}  # Return empty list on error/no data
+            attrs[ATTR_GLOBAL_PLAYERS_LIST] = (
+                players_list if isinstance(players_list, list) else []
+            )
+        elif sensor_key == KEY_AVAILABLE_WORLDS_COUNT:
+            worlds_list = self.coordinator.data.get("available_worlds", [])
+            attrs[ATTR_AVAILABLE_WORLDS_LIST] = (
+                worlds_list if isinstance(worlds_list, list) else []
+            )
+        elif sensor_key == KEY_AVAILABLE_ADDONS_COUNT:
+            addons_list = self.coordinator.data.get("available_addons", [])
+            attrs[ATTR_AVAILABLE_ADDONS_LIST] = (
+                addons_list if isinstance(addons_list, list) else []
+            )
+        else:
+            _LOGGER.warning(
+                "Unhandled manager sensor key for attributes: %s", sensor_key
+            )
+
+        # Add manager OS and App Version as attributes to ALL manager sensors for convenience
+        # if self.coordinator.data.get("info"):
+        #    manager_info = self.coordinator.data["info"]
+        #    if isinstance(manager_info, dict):
+        #        attrs["manager_os_type"] = manager_info.get("os_type")
+        #        attrs["manager_app_version"] = manager_info.get("app_version")
+
+        return attrs if attrs else None
 
     @property
     def available(self) -> bool:

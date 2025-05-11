@@ -43,11 +43,16 @@ ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"
 ATTR_SERVER_PERMISSIONS_LIST = "server_permissions"
 ATTR_WORLD_BACKUPS_LIST = "world_backups_list"
 ATTR_CONFIG_BACKUPS_LIST = "config_backups_list"
+ATTR_AVAILABLE_WORLDS_LIST = "available_worlds_list"
+ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"
+
 
 KEY_GLOBAL_PLAYERS = "global_players_count"
 KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
 KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
 KEY_CONFIG_BACKUPS_COUNT = "config_backups_count"
+KEY_AVAILABLE_WORLDS_COUNT = "available_worlds_count"
+KEY_AVAILABLE_ADDONS_COUNT = "available_addons_count"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
@@ -125,9 +130,14 @@ JS_MODULES = [
         "version": INTEGRATION_VERSION,  # Link to integration version
         "name": "Permissions Card",  # Friendly name for logging
     },
-        {
+    {
         "filename": "bsm-restore-card.js",
         "version": INTEGRATION_VERSION,  # Link to integration version
         "name": "Restore Card",  # Friendly name for logging
+    },
+    {
+        "filename": "bsm-content-card.js",
+        "version": INTEGRATION_VERSION,  # Link to integration version
+        "name": "Content Installer Card",  # Friendly name for logging
     },
 ]

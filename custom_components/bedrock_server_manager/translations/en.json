@@ -138,6 +138,12 @@
       },
       "config_backups_count": {
         "name": "Config Backups"
+      },
+      "available_worlds_count": {
+        "name": "Available Worlds"
+      },
+      "available_addons_count": {
+        "name": "Available Addons"
       }
     }
   },

@@ -430,6 +430,20 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    async def async_list_available_worlds(self) -> Dict[str, Any]:
+        """Lists available .mcworld files. Calls GET /api/content/worlds."""
+        _LOGGER.debug("Fetching available world files from /api/content/worlds")
+        return await self._request(
+            method="GET", path="/content/worlds", authenticated=True
+        )
+
+    async def async_list_available_addons(self) -> Dict[str, Any]:
+        """Lists available .mcpack/.mcaddon files. Calls GET /api/content/addons."""
+        _LOGGER.debug("Fetching available addon files from /api/content/addons")
+        return await self._request(
+            method="GET", path="/content/addons", authenticated=True
+        )
+
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""
