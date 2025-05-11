@@ -41,9 +41,13 @@ ATTR_ALLOWLISTED_PLAYERS = "allowed_players"
 ATTR_SERVER_PROPERTIES = "server_properties"
 ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"
 ATTR_SERVER_PERMISSIONS_LIST = "server_permissions"
+ATTR_WORLD_BACKUPS_LIST = "world_backups_list"
+ATTR_CONFIG_BACKUPS_LIST = "config_backups_list"
 
 KEY_GLOBAL_PLAYERS = "global_players_count"
 KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
+KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
+KEY_CONFIG_BACKUPS_COUNT = "config_backups_count"
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"

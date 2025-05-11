@@ -56,6 +56,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "allowlist": None,
             "properties": None,
             "server_permissions": None,
+            "world_backups": None,
+            "config_backups": None,
         }
 
         try:
@@ -66,6 +68,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_get_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
                     self.api.async_get_server_permissions_data(self.server_name),
+                    self.api.async_list_backups(self.server_name, "world"),
+                    self.api.async_list_backups(self.server_name, "config"),
                     return_exceptions=True,  # Return exceptions instead of raising immediately
                 )
 
@@ -74,6 +78,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             allowlist_result = results[1]
             properties_result = results[2]
             permissions_result = results[3]
+            world_backups_result = results[4]
+            config_backups_result = results[5]
 
             # Handle status info result
             if isinstance(status_info_result, Exception):
@@ -222,6 +228,47 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     permissions_result,
                 )
 
+            # --- Process World Backups Result ---
+            if isinstance(world_backups_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching world backups for %s: %s",
+                    self.server_name,
+                    world_backups_result,
+                )
+            elif (
+                isinstance(world_backups_result, dict)
+                and world_backups_result.get("status") == "success"
+            ):
+                coordinator_data["world_backups"] = world_backups_result.get(
+                    "backups", []
+                )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for world backups: %s",
+                    world_backups_result,
+                )
+
+            # --- Process Config Backups Result ---
+            if isinstance(config_backups_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching config backups for %s: %s",
+                    self.server_name,
+                    config_backups_result,
+                )
+            elif (
+                isinstance(config_backups_result, dict)
+                and config_backups_result.get("status") == "success"
+            ):
+                coordinator_data["config_backups"] = config_backups_result.get(
+                    "backups", []
+                )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for config backups: %s",
+                    config_backups_result,
+                )
+            # --- End Process Backup Lists ---
+
             # Determine overall success (if all critical fetches were okay)
             if not isinstance(status_info_result, Exception) and (
                 isinstance(status_info_result, dict)
@@ -250,6 +297,16 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     and permissions_result.get("status") == "error"
                 ):
                     coordinator_data["message"] += " (Server Permissions fetch failed)"
+                if isinstance(world_backups_result, Exception) or (
+                    isinstance(world_backups_result, dict)
+                    and world_backups_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (World backups error)"
+                if isinstance(config_backups_result, Exception) or (
+                    isinstance(config_backups_result, dict)
+                    and config_backups_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Config backups error)"
 
             return coordinator_data
 

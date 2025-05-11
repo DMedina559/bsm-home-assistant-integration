@@ -132,6 +132,12 @@
       },
       "server_permissions_count": {
         "name": "Permissioned Players"
+      },
+      "world_backups_count": {
+        "name": "World Backups"
+      },
+      "config_backups_count": {
+        "name": "Config Backups"
       }
     }
   },

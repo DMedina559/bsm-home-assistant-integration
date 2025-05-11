@@ -32,8 +32,12 @@ from .const import (
     ATTR_INSTALLED_VERSION,
     ATTR_ALLOWLISTED_PLAYERS,
     ATTR_SERVER_PROPERTIES,
+    ATTR_CONFIG_BACKUPS_LIST,
+    ATTR_WORLD_BACKUPS_LIST,
     KEY_GLOBAL_PLAYERS,
     KEY_SERVER_PERMISSIONS_COUNT,
+    KEY_CONFIG_BACKUPS_COUNT,
+    KEY_WORLD_BACKUPS_COUNT,
     ATTR_GLOBAL_PLAYERS_LIST,
     ATTR_SERVER_PERMISSIONS_LIST,
 )
@@ -70,6 +74,18 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         key=KEY_SERVER_PERMISSIONS_COUNT,
         name="Permissioned Players",
         icon="mdi:account-key",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_WORLD_BACKUPS_COUNT,
+        name="World Backups",
+        icon="mdi:world-clock", # Example icon, find better one e.g. mdi:archive-arrow-down-outline
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_CONFIG_BACKUPS_COUNT,
+        name="Config Backups",
+        icon="mdi:file-cog", # Example icon, mdi:archive-cog-outline
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -275,6 +291,12 @@ class MinecraftServerSensor(
         if sensor_key == KEY_SERVER_PERMISSIONS_COUNT:
             permissions_list = self.coordinator.data.get("server_permissions", [])
             return len(permissions_list if isinstance(permissions_list, list) else [])
+        if sensor_key == KEY_WORLD_BACKUPS_COUNT:
+            backups_list = self.coordinator.data.get("world_backups", [])
+            return len(backups_list if isinstance(backups_list, list) else [])
+        if sensor_key == KEY_CONFIG_BACKUPS_COUNT:
+            backups_list = self.coordinator.data.get("config_backups", [])
+            return len(backups_list if isinstance(backups_list, list) else [])
         _LOGGER.warning("Sensor state for unhandled key: %s", sensor_key)
         return None
 
@@ -324,6 +346,14 @@ class MinecraftServerSensor(
                 attrs[ATTR_SERVER_PERMISSIONS_LIST] = (
                     permissions_list if isinstance(permissions_list, list) else []
                 )
+        elif sensor_key == KEY_WORLD_BACKUPS_COUNT:
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                backups_list = self.coordinator.data.get("world_backups", [])
+                attrs[ATTR_WORLD_BACKUPS_LIST] = backups_list if isinstance(backups_list, list) else []
+        elif sensor_key == KEY_CONFIG_BACKUPS_COUNT:
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                backups_list = self.coordinator.data.get("config_backups", [])
+                attrs[ATTR_CONFIG_BACKUPS_LIST] = backups_list if isinstance(backups_list, list) else []
         return attrs if attrs else None
 
 

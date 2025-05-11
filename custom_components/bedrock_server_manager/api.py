@@ -405,6 +405,31 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    async def async_list_backups(
+        self, server_name: str, backup_type: str
+    ) -> Dict[str, Any]:
+        """Lists backup filenames for a server and type.
+        Calls GET /api/server/{server_name}/list_backups/{backup_type}.
+        """
+        if backup_type not in ["world", "config"]:
+            _LOGGER.error(
+                "Invalid backup_type '%s' requested for listing backups.", backup_type
+            )
+            # Or raise ValueError to be caught by caller
+            return {
+                "status": "error",
+                "message": "Invalid backup_type provided to API client.",
+            }
+
+        _LOGGER.debug(
+            "Fetching '%s' backups list for server '%s'", backup_type, server_name
+        )
+        return await self._request(
+            method="GET",
+            path=f"/server/{server_name}/list_backups/{backup_type}",
+            authenticated=True,
+        )
+
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""
