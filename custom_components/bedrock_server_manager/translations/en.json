@@ -144,6 +144,12 @@
       },
       "available_addons_count": {
         "name": "Available Addons"
+      },
+      "level_name": {
+        "name": "Level Name"
+      },
+      "allowlist_count": {
+        "name": "Allowlist Count"
       }
     }
   },

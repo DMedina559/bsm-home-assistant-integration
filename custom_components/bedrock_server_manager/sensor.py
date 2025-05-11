@@ -37,6 +37,8 @@ from .const import (
     ATTR_AVAILABLE_ADDONS_LIST,
     ATTR_AVAILABLE_WORLDS_LIST,
     KEY_GLOBAL_PLAYERS,
+    KEY_LEVEL_NAME,
+    KEY_ALLOWLIST_COUNT,
     KEY_SERVER_PERMISSIONS_COUNT,
     KEY_CONFIG_BACKUPS_COUNT,
     KEY_WORLD_BACKUPS_COUNT,
@@ -83,13 +85,25 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_WORLD_BACKUPS_COUNT,
         name="World Backups",
-        icon="mdi:world-box", 
+        icon="mdi:earth-box", 
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_CONFIG_BACKUPS_COUNT,
         name="Config Backups",
         icon="mdi:file-cog",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_LEVEL_NAME,
+        name="Level Name", # e.g., "Commu Level Name"
+        icon="mdi:map-legend",
+        # No state_class as it's a string
+    ),
+    SensorEntityDescription(
+        key=KEY_ALLOWLIST_COUNT,
+        name="Allowlist Count", # e.g., "Commu Allowlist Count"
+        icon="mdi:format-list-checks",
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -290,6 +304,10 @@ class MinecraftServerSensor(
                         )
                     )
                 return "Unknown"
+            if self.entity_description.key == KEY_LEVEL_NAME:
+                return "Unknown" # Default for string state
+            if self.entity_description.key == KEY_ALLOWLIST_COUNT:
+                return 0 # Default for count
             return None
         process_info = self.coordinator.data.get("process_info")
         sensor_key = self.entity_description.key
@@ -313,6 +331,12 @@ class MinecraftServerSensor(
         if sensor_key == KEY_CONFIG_BACKUPS_COUNT:
             backups_list = self.coordinator.data.get("config_backups", [])
             return len(backups_list if isinstance(backups_list, list) else [])
+        if sensor_key == KEY_LEVEL_NAME:
+            server_props = self.coordinator.data.get("properties", {})
+            return server_props.get("level-name", "Unknown") if isinstance(server_props, dict) else "Unknown"
+        if sensor_key == KEY_ALLOWLIST_COUNT:
+            allowlist = self.coordinator.data.get("allowlist", [])
+            return len(allowlist if isinstance(allowlist, list) else [])
         _LOGGER.warning("Sensor state for unhandled key: %s", sensor_key)
         return None
 
@@ -321,34 +345,8 @@ class MinecraftServerSensor(
         attrs = {}
         sensor_key = self.entity_description.key
         if sensor_key == "status":
-            if self._world_name:
-                attrs[ATTR_WORLD_NAME] = self._world_name
-            if self._installed_version:
-                attrs[ATTR_INSTALLED_VERSION] = self._installed_version
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                allowlist = self.coordinator.data.get("allowlist")
-                attrs[ATTR_ALLOWLISTED_PLAYERS] = (
-                    [
-                        p.get("name")
-                        for p in allowlist
-                        if isinstance(p, dict) and p.get("name")
-                    ]
-                    if isinstance(allowlist, list)
-                    else []
-                )
-                server_props = self.coordinator.data.get("properties")
-                attrs[ATTR_SERVER_PROPERTIES] = (
-                    server_props if isinstance(server_props, dict) else {}
-                )
-                process_info = self.coordinator.data.get("process_info")
-                if isinstance(process_info, dict):
-                    pid = process_info.get("pid")
-                    uptime = process_info.get("uptime")
-                    attrs[ATTR_PID] = pid
-                    attrs[ATTR_UPTIME] = uptime
-                else:
-                    attrs[ATTR_PID] = None
-                    attrs[ATTR_UPTIME] = None
+            if self._world_name: attrs[ATTR_WORLD_NAME] = self._world_name # Keep as it's fetched once
+            if self._installed_version: attrs[ATTR_INSTALLED_VERSION] = self._installed_version # Keep as it's fetched once
         elif sensor_key == ATTR_CPU_PERCENT:
             if self.coordinator.data and isinstance(self.coordinator.data, dict):
                 process_info = self.coordinator.data.get("process_info")
@@ -374,6 +372,19 @@ class MinecraftServerSensor(
                 attrs[ATTR_CONFIG_BACKUPS_LIST] = (
                     backups_list if isinstance(backups_list, list) else []
                 )
+        elif sensor_key == KEY_LEVEL_NAME:
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                server_props = self.coordinator.data.get("properties", {})
+                # The main state IS the level-name, so all other properties go here
+                attrs[ATTR_SERVER_PROPERTIES] = server_props if isinstance(server_props, dict) else {}
+
+        elif sensor_key == KEY_ALLOWLIST_COUNT:
+            if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                allowlist = self.coordinator.data.get("allowlist", [])
+                # The main state IS the count, so the list of player objects/names goes here
+                attrs[ATTR_ALLOWLISTED_PLAYERS] = [
+                    p.get("name") for p in allowlist if isinstance(p, dict) and p.get("name")
+                ] if isinstance(allowlist, list) else [] # Or store full objects if preferred
         return attrs if attrs else None
 
 

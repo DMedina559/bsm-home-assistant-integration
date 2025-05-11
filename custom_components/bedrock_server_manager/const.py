@@ -53,6 +53,8 @@ KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
 KEY_CONFIG_BACKUPS_COUNT = "config_backups_count"
 KEY_AVAILABLE_WORLDS_COUNT = "available_worlds_count"
 KEY_AVAILABLE_ADDONS_COUNT = "available_addons_count"
+KEY_LEVEL_NAME = "level_name"            
+KEY_ALLOWLIST_COUNT = "allowlist_count"  
 
 # Service names
 SERVICE_SEND_COMMAND = "send_command"
