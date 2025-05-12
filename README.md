@@ -6,7 +6,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration)](https://github.com/dmedina559/bsm-home-assistant-integration/releases/latest)
-[![License](https://img.shields.io/github/license/dmedina559/bsm-home-assistant-integration)](LICENSE)
+[![License](https://img.shields.io/github/license/dmedina559/bsm-home-assistant-integration)](https://raw.githubusercontent.com/DMedina559/bsm-home-assistant-integration/refs/heads/main/LICENSE)
 
 This Home Assistant integration connects to your self-hosted [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) API. It allows you to monitor server status, resource usage, and control a wide range of server actions directly from your Home Assistant dashboards and automations. Manage installations, backups, restores, properties, allowlists, permissions, and send console commands with ease.
 
