@@ -9,23 +9,62 @@ const _LOGGER = {
     error: (...args) => console.error("BSM_PERM_CARD:", ...args),
 };
 
+// Helper function to fire events
+const fireEvent = (node, type, detail = {}, options = {}) => {
+  const event = new Event(type, {
+    bubbles: options.bubbles === undefined ? true : options.bubbles,
+    cancelable: Boolean(options.cancelable),
+    composed: options.composed === undefined ? true : options.composed,
+  });
+  event.detail = detail;
+  node.dispatchEvent(event);
+  return event;
+};
+
+
 class BsmPermissionsCard extends LitElement {
+
+  // --- START: UI CONFIG METHODS ---
+  static async getConfigElement() {
+    // Editor element is defined below in this file
+    return document.createElement("bsm-permissions-card-editor");
+  }
+
+  static getStubConfig(hass) {
+      let defaultGlobalPlayerSensor = "";
+      if (hass) {
+          const potentialSensors = Object.keys(hass.states).filter(
+              (eid) => eid.startsWith("sensor.") &&
+                       hass.states[eid].attributes?.integration === DOMAIN &&
+                       (eid.includes("known_players") || eid.includes("global_players"))
+          );
+          if (potentialSensors.length > 0) {
+              defaultGlobalPlayerSensor = potentialSensors[0];
+              _LOGGER.debug(`StubConfig: Found potential default global players sensor: ${defaultGlobalPlayerSensor}`);
+          } else {
+              _LOGGER.debug("StubConfig: Could not find a default global players sensor heuristically.");
+          }
+      }
+      return {
+        title: "Server Permissions Manager",
+        global_players_entity: defaultGlobalPlayerSensor
+      };
+  }
+  // --- END: UI CONFIG METHODS ---
+
 
   static get properties() {
     return {
-      hass: { type: Object },
+      hass: { type: Object }, // Custom setter/getter used
       config: { type: Object },
       _selectedServerPermsEntityId: { state: true },
-      _currentServerPermissions: { state: true }, // List: [{xuid, name, permission_level}]
-      _globalPlayers: { state: true },         // List: [{name, xuid, ...}]
-      _editData: { state: true }, // Object to stage changes: { "xuid": "level" }
-
-      // For adding a new player/permission
+      _currentServerPermissions: { state: true },
+      _globalPlayers: { state: true },
+      _editData: { state: true },
       _newPlayerSelectedXUID: { state: true },
       _newPlayerManualXUID: { state: true },
       _newPlayerManualName: { state: true },
       _newPlayerPermissionLevel: { state: true },
-
       _isLoading: { state: true },
       _error: { state: true },
       _feedback: { state: true },
@@ -33,43 +72,70 @@ class BsmPermissionsCard extends LitElement {
   }
 
   __hass;
+  get hass() { return this.__hass; }
   set hass(hass) {
     const oldHass = this.__hass;
     this.__hass = hass;
 
+    let updateNeeded = false;
+
     if (!hass) {
-        this.requestUpdate('_hass', oldHass);
+        if (oldHass) updateNeeded = true;
+        if (updateNeeded) this.requestUpdate('hass', oldHass);
         return;
     }
 
-    // Reload global players if the global_players_entity state has changed.
-    if (hass && this.config?.global_players_entity) {
-        const globalStateObj = hass.states[this.config.global_players_entity];
-        const oldGlobalStateObj = oldHass?.states[this.config.global_players_entity];
+    if (hass !== oldHass) updateNeeded = true;
+
+    // Global Players Update Logic
+    const globalPlayersEntityId = this.config?.global_players_entity;
+    if (globalPlayersEntityId) {
+        const globalStateObj = hass.states[globalPlayersEntityId];
+        const oldGlobalStateObj = oldHass?.states[globalPlayersEntityId];
         if (globalStateObj && globalStateObj !== oldGlobalStateObj) {
+            const oldGlobalPlayers = this._globalPlayers;
             this._loadGlobalPlayers(globalStateObj);
+            if (JSON.stringify(oldGlobalPlayers) !== JSON.stringify(this._globalPlayers)) {
+                updateNeeded = true;
+            }
+        } else if (!globalStateObj && oldGlobalStateObj) {
+            _LOGGER.warn(`Global players entity ${globalPlayersEntityId} became unavailable.`);
+            this._globalPlayers = [];
+            updateNeeded = true;
         }
+    } else if (this._globalPlayers?.length > 0) {
+        _LOGGER.warn("Global players entity not configured, clearing existing global players list.");
+        this._globalPlayers = [];
+        updateNeeded = true;
     }
 
-    // Reload server permissions if the selected server's permissions entity state has changed.
+    // Server Permissions Update Logic
     if (this._selectedServerPermsEntityId) {
       const serverStateObj = hass.states[this._selectedServerPermsEntityId];
       const oldServerStateObj = oldHass?.states[this._selectedServerPermsEntityId];
-      const currentAttr = serverStateObj?.attributes?.server_permissions;
-      const oldAttr = oldServerStateObj?.attributes?.server_permissions;
-
-      // Check if state object reference changed or if the 'server_permissions' attribute content changed.
-      if (serverStateObj && (serverStateObj !== oldServerStateObj || JSON.stringify(currentAttr) !== JSON.stringify(oldAttr))) {
-        this._loadServerPermissions(serverStateObj);
-      } else if (!serverStateObj && oldServerStateObj) {
-         // Handle if the selected entity becomes unavailable
+      if (serverStateObj) {
+          const currentAttr = serverStateObj.attributes?.server_permissions;
+          const oldAttr = oldServerStateObj?.attributes?.server_permissions;
+          if (serverStateObj !== oldServerStateObj || JSON.stringify(currentAttr ?? null) !== JSON.stringify(oldAttr ?? null)) {
+            const oldServerPerms = this._currentServerPermissions;
+            this._loadServerPermissions(serverStateObj);
+            if (JSON.stringify(oldServerPerms) !== JSON.stringify(this._currentServerPermissions)) {
+                updateNeeded = true;
+            }
+          }
+      } else if (oldServerStateObj) {
+         _LOGGER.warn(`Selected server permissions entity ${this._selectedServerPermsEntityId} became unavailable.`);
          this._handleServerEntitySelection(null);
-         this._error = `Server permissions entity ${this._selectedServerPermsEntityId} not found.`;
+         this._error = `Server permissions entity ${this._selectedServerPermsEntityId} is no longer available.`;
+         updateNeeded = true;
       }
     }
-    this.requestUpdate('_hass', oldHass);
+
+    if (updateNeeded) {
+        this.requestUpdate('hass', oldHass);
+    }
   }
-  get hass() { return this.__hass; }
+
 
   constructor() {
     super();
@@ -79,223 +145,308 @@ class BsmPermissionsCard extends LitElement {
     this._newPlayerSelectedXUID = "";
     this._newPlayerManualXUID = "";
     this._newPlayerManualName = "";
-    this._newPlayerPermissionLevel = VALID_PERMISSIONS[0]; // Default to 'visitor'
+    this._newPlayerPermissionLevel = VALID_PERMISSIONS[0];
     this._isLoading = false;
     this._error = null;
     this._selectedServerPermsEntityId = null;
     this._feedback = "Select a server's permission sensor.";
+    _LOGGER.debug("BSM Permissions Card constructor finished.");
   }
 
   setConfig(config) {
-    if (!config.global_players_entity || !config.global_players_entity.startsWith("sensor.")) {
-      throw new Error("Please define a valid 'global_players_entity' (e.g., sensor.bsm_manager_known_players).");
+    _LOGGER.debug("setConfig called with:", config);
+    if (!config) {
+        _LOGGER.error("No configuration provided.");
+        throw new Error("Invalid configuration: Config object is missing.");
     }
-    this.config = config;
-    if (this.hass && this.hass.states[this.config.global_players_entity]) {
-        this._loadGlobalPlayers(this.hass.states[this.config.global_players_entity]);
+    if (!config.global_players_entity || typeof config.global_players_entity !== 'string' || !config.global_players_entity.includes('.')) {
+      _LOGGER.error("Invalid configuration: 'global_players_entity' is missing or invalid.", config);
+      throw new Error("Invalid configuration: 'global_players_entity' is required. Please configure this in the UI editor.");
     }
-    // No need for `this.requestUpdate()` here if LitElement handles config changes appropriately,
-    // but it's safe to keep if there are downstream effects of config not tied to a reactive property.
-    // Since _loadGlobalPlayers might change _globalPlayers (reactive), Lit will update.
+
+    const oldConfig = this.config;
+    this.config = { ...config };
+
+    if (oldConfig?.global_players_entity !== this.config.global_players_entity) {
+        _LOGGER.debug(`Global players entity changed from ${oldConfig?.global_players_entity} to ${this.config.global_players_entity}. Reloading.`);
+        this._globalPlayers = [];
+        if (this.hass && this.hass.states[this.config.global_players_entity]) {
+            this._loadGlobalPlayers(this.hass.states[this.config.global_players_entity]);
+        } else if (this.hass) {
+             _LOGGER.warn(`Configured global players entity ${this.config.global_players_entity} not found in current hass state.`);
+        } else {
+             _LOGGER.debug("Hass not available yet, global players will load when hass updates.");
+        }
+    }
+    this.requestUpdate('config', oldConfig);
   }
 
-    _loadGlobalPlayers(stateObj) {
-    if (stateObj && stateObj.attributes) {
+  _loadGlobalPlayers(stateObj) {
+    if (!stateObj?.attributes) {
+        _LOGGER.warn(`Global players entity ${stateObj?.entity_id || this.config?.global_players_entity} is missing attributes.`);
+        this._globalPlayers = [];
+        this.requestUpdate("_globalPlayers");
+        return;
+    }
     const players = stateObj.attributes.global_players_list;
+    let newPlayers = [];
     if (players && Array.isArray(players)) {
-    this._globalPlayers = [...players].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    _LOGGER.debug("Global players loaded:", this._globalPlayers);
+        newPlayers = players
+            .filter(p => p && typeof p === 'object' && p.xuid && p.name)
+            .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        if (newPlayers.length !== players.length) {
+             _LOGGER.warn("Some items in 'global_players_list' attribute were filtered out due to missing 'xuid' or 'name'.", players);
+        }
     } else {
-    _LOGGER.warn("Global players attribute 'global_players_list' missing or not an array.");
-    this._globalPlayers = [];
+        _LOGGER.warn(`Global players attribute 'global_players_list' missing or not an array on ${stateObj.entity_id}.`);
     }
+    if (JSON.stringify(newPlayers) !== JSON.stringify(this._globalPlayers)) {
+        this._globalPlayers = newPlayers;
+        _LOGGER.debug("Global players list updated:", this._globalPlayers.length);
+        this.requestUpdate("_globalPlayers");
     } else {
-    _LOGGER.warn("Global players entity or its attributes missing.");
-    this._globalPlayers = [];
+         _LOGGER.debug("Global players list unchanged.");
     }
-    this.requestUpdate("_globalPlayers");
-    }
+  }
 
   _handleServerEntitySelection(entityId) {
-    if (entityId === this._selectedServerPermsEntityId && entityId !== null) return; // No change or already handled initial null
-
-    if (!entityId || !this.hass) {
-      this._selectedServerPermsEntityId = null;
-      this._currentServerPermissions = [];
-      this._editData = {};
-      this._error = null;
+    _LOGGER.debug(`_handleServerEntitySelection called with entityId: ${entityId}`);
+    if (entityId === this._selectedServerPermsEntityId) {
+        _LOGGER.debug("Server entity selection unchanged.");
+        return;
+    }
+    this._selectedServerPermsEntityId = entityId || null;
+    this._currentServerPermissions = [];
+    this._editData = {};
+    this._error = null;
+    if (!this._selectedServerPermsEntityId) {
+      _LOGGER.debug("Server entity deselected.");
       this._feedback = "Select a server's permission sensor.";
-      this.requestUpdate(); // Ensure UI resets
+      this.requestUpdate();
       return;
     }
-
-    this._selectedServerPermsEntityId = entityId;
     this._feedback = "Loading server permissions...";
-    this._error = null;
-    this._currentServerPermissions = [];
-    this._editData = {}; // Clear edits for previous server
-
-    const stateObj = this.hass.states[this._selectedServerPermsEntityId];
-    if (stateObj) {
-        this._loadServerPermissions(stateObj);
-        this._feedback = ""; // Clear loading message if successful
+    if (this.hass && this.hass.states[this._selectedServerPermsEntityId]) {
+        this._loadServerPermissions(this.hass.states[this._selectedServerPermsEntityId]);
     } else {
-        this._error = `Selected entity ${this._selectedServerPermsEntityId} not found.`;
-        this._feedback = ""; // Clear loading message
+        _LOGGER.warn(`Selected server entity ${this._selectedServerPermsEntityId} not found in hass states immediately.`);
+        this._feedback = "Waiting for server sensor data...";
     }
-    this.requestUpdate(); // Update UI with new selection results
+    this.requestUpdate();
   }
 
   _loadServerPermissions(stateObj) {
      if (!stateObj?.attributes) {
-        this._error = "Selected server permissions entity has no attributes.";
+        const entityId = stateObj?.entity_id || this._selectedServerPermsEntityId;
+        this._error = `Selected server permissions entity (${entityId}) has no attributes.`;
+        _LOGGER.warn(this._error, "State Object:", stateObj);
         this._currentServerPermissions = [];
         this._editData = {};
+        this._feedback = "";
         this.requestUpdate();
         return;
      }
      const permissions = stateObj.attributes.server_permissions;
+     let newPermissions = [];
      if (permissions && Array.isArray(permissions)) {
-         // Only update and clear edits if the permissions data has actually changed
-         if (JSON.stringify(permissions) !== JSON.stringify(this._currentServerPermissions)) {
-             _LOGGER.debug("Loading new server permissions data:", permissions.length);
-             this._currentServerPermissions = [...permissions]; // New array for reactivity
-             this._editData = {}; // Clear pending edits when server permissions refresh from source
-             this._error = null;
-             this.requestUpdate(); // Update UI with new permissions
+         newPermissions = permissions.filter(p => p && typeof p === 'object' && p.xuid && VALID_PERMISSIONS.includes(p.permission_level));
+         if (newPermissions.length !== permissions.length) {
+             _LOGGER.warn("Some items in 'server_permissions' attribute were filtered out due to missing/invalid fields.", permissions);
          }
      } else {
-        _LOGGER.warn("'server_permissions' attribute missing or invalid.");
-        this._error = "'server_permissions' attribute missing or invalid.";
-        this._currentServerPermissions = [];
-        this._editData = {};
-        this.requestUpdate(); // Update UI with error/empty state
+        _LOGGER.warn(`'server_permissions' attribute missing or not an array on ${stateObj.entity_id}.`);
+        this._error = `'server_permissions' attribute missing or invalid on ${stateObj.entity_id}.`;
+        this._feedback = "";
+     }
+     if (JSON.stringify(newPermissions) !== JSON.stringify(this._currentServerPermissions)) {
+         _LOGGER.debug(`Loading new server permissions data for ${stateObj.entity_id}:`, newPermissions.length);
+         this._currentServerPermissions = newPermissions;
+         this._editData = {};
+         this._error = null;
+         this._feedback = "";
+         this.requestUpdate();
+     } else {
+        _LOGGER.debug(`Server permissions for ${stateObj.entity_id} unchanged.`);
+        if (this._feedback === "Loading server permissions...") this._feedback = "";
+        this.requestUpdate();
      }
   }
 
   _handlePermissionLevelChange(xuid, newLevel) {
-    // Reassign _editData to ensure LitElement detects the change for this complex object
+    _LOGGER.debug(`Staging permission change for XUID ${xuid} to ${newLevel}`);
+    if (!VALID_PERMISSIONS.includes(newLevel)) {
+        _LOGGER.warn(`Invalid permission level selected: ${newLevel}`);
+        return;
+    }
     this._editData = { ...this._editData, [xuid]: newLevel };
     this._feedback = ""; this._error = null;
-    // Reassigning reactive properties _editData, _feedback, _error will trigger an update.
-    // An explicit this.requestUpdate() is generally not needed here but doesn't hurt.
+    this.requestUpdate('_editData');
   }
 
-  _handleNewPlayerSelectedXUIDChange(ev) { this._newPlayerSelectedXUID = ev.target.value; }
-  _handleNewPlayerManualXUIDChange(ev) { this._newPlayerManualXUID = ev.target.value.trim(); }
-  _handleNewPlayerManualNameChange(ev) { this._newPlayerManualName = ev.target.value; }
-  _handleNewPlayerPermissionLevelChange(ev) { this._newPlayerPermissionLevel = ev.target.value; }
+  _handleNewPlayerSelectedXUIDChange(ev) {
+      this._newPlayerSelectedXUID = ev.target.value;
+      if (this._newPlayerSelectedXUID) {
+          this._newPlayerManualXUID = "";
+          this._newPlayerManualName = "";
+      }
+      this.requestUpdate();
+  }
+  _handleNewPlayerManualXUIDChange(ev) {
+      this._newPlayerManualXUID = ev.target.value.trim();
+      if (this._newPlayerManualXUID) {
+          this._newPlayerSelectedXUID = "";
+      }
+       this.requestUpdate();
+  }
+  _handleNewPlayerManualNameChange(ev) {
+      this._newPlayerManualName = ev.target.value;
+      if (this._newPlayerManualName && this._newPlayerSelectedXUID) {
+           this._newPlayerSelectedXUID = "";
+      }
+      this.requestUpdate();
+  }
+  _handleNewPlayerPermissionLevelChange(ev) {
+      this._newPlayerPermissionLevel = ev.target.value;
+      this.requestUpdate();
+  }
 
   _stageNewPlayerPermission() {
-    let xuidToAdd = this._newPlayerSelectedXUID;
+    let xuidToAdd = "";
     let nameForDisplay = "";
-
     if (this._newPlayerSelectedXUID) {
-        const player = this._globalPlayers.find(p => p.xuid === this._newPlayerSelectedXUID);
-        nameForDisplay = player ? player.name : "Unknown (from global)";
-        this._newPlayerManualXUID = ""; // Clear manual XUID if global is selected
+        xuidToAdd = this._newPlayerSelectedXUID;
+        const player = this._globalPlayers.find(p => p.xuid === xuidToAdd);
+        nameForDisplay = player ? player.name : `XUID: ${xuidToAdd}`;
     } else if (this._newPlayerManualXUID) {
         xuidToAdd = this._newPlayerManualXUID;
-        nameForDisplay = this._newPlayerManualName || `XUID: ${xuidToAdd}`;
+        if (!xuidToAdd) {
+            this._error = "Manual XUID cannot be empty.";
+            this.requestUpdate(); return;
+        }
+        nameForDisplay = this._newPlayerManualName.trim() || `XUID: ${xuidToAdd}`;
     } else {
-        this._error = "Please select a known player or enter an XUID.";
+        this._error = "Please select a known player OR enter a manual XUID.";
         this.requestUpdate(); return;
     }
-
-    if (!xuidToAdd) { this._error = "XUID is required."; this.requestUpdate(); return; }
-    if (!VALID_PERMISSIONS.includes(this._newPlayerPermissionLevel)) { this._error = "Invalid permission level."; this.requestUpdate(); return; }
-
+    if (!VALID_PERMISSIONS.includes(this._newPlayerPermissionLevel)) {
+        this._error = "Invalid permission level selected.";
+        this.requestUpdate(); return;
+    }
+    if (this._currentServerPermissions.some(p => p.xuid === xuidToAdd) || this._editData.hasOwnProperty(xuidToAdd)) {
+        this._error = `Player with XUID ${xuidToAdd} already has permissions defined or staged for this server. Edit the existing entry instead.`;
+        this.requestUpdate(); return;
+    }
     this._editData = { ...this._editData, [xuidToAdd]: this._newPlayerPermissionLevel };
-    this._feedback = `Staged permission for ${nameForDisplay} (${xuidToAdd}) to ${this._newPlayerPermissionLevel}. Click 'Save Changes'.`;
+    this._feedback = `Staged permission for ${nameForDisplay} (${xuidToAdd}) to ${this._newPlayerPermissionLevel}. Click 'Save Changes' to apply.`;
     this._error = null;
-
-    // Clear add fields for next entry
     this._newPlayerSelectedXUID = "";
     this._newPlayerManualXUID = "";
     this._newPlayerManualName = "";
-    // Optionally reset _newPlayerPermissionLevel or keep last used:
-    // this._newPlayerPermissionLevel = VALID_PERMISSIONS[0];
-    this.requestUpdate(); // Update UI with staged changes and cleared fields
+    this._newPlayerPermissionLevel = VALID_PERMISSIONS[0];
+    this.requestUpdate();
   }
-
 
   async _savePermissions() {
     if (!this._selectedServerPermsEntityId) {
-        this._error = "No server selected."; this.requestUpdate(); return;
+        this._error = "Error: No server selected."; this.requestUpdate(); return;
     }
     if (Object.keys(this._editData).length === 0) {
-        this._error = "No changes to save."; this.requestUpdate(); return;
+        this._error = "Error: No changes are staged for saving."; this.requestUpdate(); return;
     }
-
-    // Get device_id for the service call.
-    // The device_id should be associated with the selected server's permissions entity.
+    this._isLoading = true; this._error = null; this._feedback = "Saving permissions changes...";
+    this.requestUpdate();
     let targetDeviceId = null;
-    const entityState = this.hass.states[this._selectedServerPermsEntityId];
-
-    // Attempt 1: Try to get device_id from the entity's state attributes
-    if (entityState?.attributes?.device_id) {
-        targetDeviceId = entityState.attributes.device_id;
+    try {
+        const entityReg = await this.hass.callWS({ type: "config/entity_registry/get", entity_id: this._selectedServerPermsEntityId });
+        targetDeviceId = entityReg?.device_id;
+        _LOGGER.debug("Device ID from Entity Registry:", targetDeviceId);
+    } catch (e) {
+         _LOGGER.warn(`Could not get entity registry info for ${this._selectedServerPermsEntityId}:`, e);
+         const entityState = this.hass?.states[this._selectedServerPermsEntityId];
+         targetDeviceId = entityState?.attributes?.device_id;
+         _LOGGER.debug("Device ID fallback from state attributes:", targetDeviceId);
     }
-    // Attempt 2: Fallback to entity registry if not found in state attributes
-    if (!targetDeviceId && this.hass.entities) {
-        const entityRegEntry = this.hass.entities[this._selectedServerPermsEntityId];
-        if (entityRegEntry?.device_id) {
-            targetDeviceId = entityRegEntry.device_id;
-        }
-    }
-
     if (!targetDeviceId) {
-        this._error = `Could not determine device ID for server entity ${this._selectedServerPermsEntityId}. Cannot save permissions.`;
+        this._error = `Error: Could not determine the target Device ID for the selected server entity (${this._selectedServerPermsEntityId}). Cannot save permissions. Check entity configuration.`;
+        this._isLoading = false;
+        this._feedback = "";
         this.requestUpdate();
         return;
     }
-
-    this._isLoading = true; this._error = null; this._feedback = "Saving permissions...";
-    this.requestUpdate();
-
     try {
-        _LOGGER.debug(`Calling ${DOMAIN}.set_permissions for device_id: ${targetDeviceId} with data:`, this._editData);
-        await this.hass.callService(DOMAIN, "set_permissions", {
-            // Service data requires target, and within target, the device_id
+        const serviceData = {
             device_id: targetDeviceId,
-            permissions: this._editData // Send the staged changes
-        });
-        this._feedback = "Permissions update requested. List will refresh on next data poll from the server.";
-        this._editData = {}; // Clear staged edits after successful save request
+            permissions: this._editData
+        };
+        _LOGGER.debug(`Calling ${DOMAIN}.set_permissions for device_id: ${targetDeviceId} with data:`, serviceData);
+        await this.hass.callService(DOMAIN, "set_permissions", serviceData);
+        this._feedback = "Permissions update successfully requested. The list will refresh automatically when the server reports the changes.";
+        this._editData = {};
     } catch (err) {
         _LOGGER.error("Error calling set_permissions service:", err);
-        this._error = `Error saving permissions: ${err.message || "Unknown error. Check Home Assistant logs."}`;
+        let message = "An unknown error occurred. Check Home Assistant logs.";
+        if (err instanceof Error) {
+            message = err.message;
+        } else if (typeof err === 'object' && err !== null && err.error) {
+            message = err.error;
+        } else if (typeof err === 'object' && err !== null && err.message) {
+             message = err.message;
+        } else if (typeof err === 'string') {
+            message = err;
+        }
+        this._error = `Error saving permissions: ${message}`;
         this._feedback = "";
     } finally {
         this._isLoading = false;
-        this.requestUpdate(); // Ensure UI reflects final state (loading, feedback, error)
+        this.requestUpdate();
     }
   }
 
-
   render() {
-    if (!this.hass || !this.config) {
-      return html`<ha-card>Waiting for Home Assistant and configuration...</ha-card>`;
+    if (!this.hass) {
+      return html`<ha-card><div class="card-content">Waiting for Home Assistant...</div></ha-card>`;
     }
-
-    // Use a more specific selector type if possible, e.g., {entity: {integration: DOMAIN, device_class: "some_class_for_perms_sensor"}}
-    // For now, any sensor from the integration is fine as per original.
-    const entitySelectorConfig = { entity: { integration: DOMAIN, domain: "sensor" }};
-    const canInteract = this._selectedServerPermsEntityId && !this._isLoading; // Disable interaction while loading *data* or *saving*
+    if (!this.config?.global_players_entity) {
+         return html`<ha-card>
+             <div class="card-content error">
+                Configuration Error: 'Global Players Entity' is not set. Please configure this card.
+             </div>
+         </ha-card>`;
+    }
+    const cardTitle = this.config.title || "Server Permissions Manager";
+    const entitySelectorConfig = {
+        entity: { integration: DOMAIN, domain: "sensor" }
+    };
+    const isLoading = this._isLoading;
     const hasStagedChanges = Object.keys(this._editData).length > 0;
-
-    // Filter out players already in currentServerPermissions or _editData from the "Add New" dropdown
+    const canSave = hasStagedChanges && !isLoading;
+    const canAddPlayer = !isLoading && (!this._newPlayerSelectedXUID && !this._newPlayerManualXUID.trim() ? false : true);
     const existingXuids = new Set([
         ...this._currentServerPermissions.map(p => p.xuid),
         ...Object.keys(this._editData)
     ]);
     const availableGlobalPlayerOptions = this._globalPlayers
-        .filter(p => !existingXuids.has(p.xuid))
+        .filter(p => p.xuid && !existingXuids.has(p.xuid))
         .map(p => ({value: p.xuid, label: `${p.name || 'Unnamed Player'} (${p.xuid})`}));
-
+    const combinedPermissionsList = [
+        ...this._currentServerPermissions,
+        ...Object.keys(this._editData)
+            .filter(xuid => !this._currentServerPermissions.some(p => p.xuid === xuid))
+            .map(xuid => {
+                const globalPlayer = this._globalPlayers.find(gp => gp.xuid === xuid);
+                const manualName = (xuid === this._newPlayerManualXUID) ? this._newPlayerManualName : '';
+                return {
+                    xuid,
+                    name: globalPlayer?.name || manualName || `XUID: ${xuid}`,
+                    permission_level: this._editData[xuid],
+                    isNewStaged: true
+                };
+            })
+    ]
+    .sort((a,b) => (a.name || a.xuid).localeCompare(b.name || b.xuid));
 
     return html`
-      <ha-card header="${this.config.title || "Server Permissions Manager"}">
+      <ha-card header="${cardTitle}">
         <div class="card-content">
           <p>Select the 'Permissioned Players' sensor for the target server.</p>
           <ha-selector
@@ -304,89 +455,81 @@ class BsmPermissionsCard extends LitElement {
             .selector=${entitySelectorConfig}
             .value=${this._selectedServerPermsEntityId}
             @value-changed=${(ev) => this._handleServerEntitySelection(ev.detail.value)}
-            .disabled=${this._isLoading}
+            .disabled=${isLoading}
+            required
           ></ha-selector>
-
-          ${this._feedback ? html`<div class="feedback">${this._feedback}</div>` : ""}
-          ${this._error ? html`<div class="error">${this._error}</div>` : ""}
-          ${this._isLoading && !this._error ? html`<div class="loading"><ha-circular-progress indeterminate size="small"></ha-circular-progress> Loading data...</div>` : ""}
-
-
+          <div class="status-area">
+              ${this._feedback ? html`<div class="feedback">${this._feedback}</div>` : ""}
+              ${this._error ? html`<div class="error">${this._error}</div>` : ""}
+              ${isLoading ? html`<div class="loading"><ha-circular-progress indeterminate size="small"></ha-circular-progress> Processing...</div>` : ""}
+          </div>
           ${this._selectedServerPermsEntityId ? html`
-            <!-- Display/Edit Current Permissions -->
             <div class="section">
               <h4>Current Server Permissions:</h4>
-              ${this._currentServerPermissions.length === 0 && Object.keys(this._editData).filter(xuid => !this._currentServerPermissions.find(p=>p.xuid === xuid)).length === 0
-                ? html`<p>No permissions set for this server, or not yet loaded.</p>`
+              ${combinedPermissionsList.length === 0
+                ? html`<p class="info">No permissions currently set or staged for this server.</p>`
                 : ''
               }
-              ${[
-                ...this._currentServerPermissions,
-                ...Object.keys(this._editData)
-                    .filter(xuid => !this._currentServerPermissions.find(p => p.xuid === xuid))
-                    .map(xuid => {
-                        const globalPlayer = this._globalPlayers.find(gp => gp.xuid === xuid);
-                        return { xuid, name: globalPlayer?.name || this._newPlayerManualName || `XUID: ${xuid}`, permission_level: this._editData[xuid], isNewStaged: true };
-                    })
-              ]
-              .sort((a,b) => (a.name || a.xuid).localeCompare(b.name || b.xuid)) // Sort combined list
-              .map(p => {
+              ${combinedPermissionsList.map(p => {
                 const currentLevel = this._editData[p.xuid] || p.permission_level;
-                const originalLevel = this._currentServerPermissions.find(cp => cp.xuid === p.xuid)?.permission_level;
+                const originalPermission = this._currentServerPermissions.find(cp => cp.xuid === p.xuid);
+                const originalLevel = originalPermission?.permission_level;
                 const isModified = p.isNewStaged || (originalLevel && currentLevel !== originalLevel);
-
                 return html`
-                <div class="permission-entry ${isModified ? 'modified' : ''}">
-                  <span class="player-name" title="XUID: ${p.xuid}">${p.name || p.xuid}${p.isNewStaged ? ' (New)' : ''}</span>
-                  <ha-select
+                <div class="permission-entry ${isModified ? 'modified' : ''} ${p.isNewStaged ? 'new-staged' : ''}">
+                  <span class="player-name" title="XUID: ${p.xuid}">${p.name || p.xuid}${p.isNewStaged ? html` <span class="new-tag">(New - Staged)</span>` : ''}</span>
+                  <ha-select class="permission-select"
                     label="Level"
                     .value=${currentLevel}
                     @selected=${(ev) => this._handlePermissionLevelChange(p.xuid, ev.target.value)}
                     @closed=${(ev) => ev.stopPropagation()}
-                    fixedMenuPosition naturalMenuWidth
-                    .disabled=${this._isLoading}
+                    naturalMenuWidth
+                    .disabled=${isLoading}
                   >
                     ${VALID_PERMISSIONS.map(level => html`<mwc-list-item .value=${level} ?selected=${level === currentLevel}>${level}</mwc-list-item>`)}
                   </ha-select>
                 </div>
               `})}
             </div>
-
-            <!-- Add New Player Permission -->
-            <div class="section">
+            <div class="section add-player-section">
               <h4>Add Player Permission:</h4>
-              <p class="info">Select a known player OR manually enter XUID. Player name is optional if XUID is manually entered.</p>
+              <p class="info">Select a known player OR manually enter XUID. Player name is optional for manual XUID.</p>
               <ha-select
                 label="Select Known Player (not yet on this server)"
                 .value=${this._newPlayerSelectedXUID}
                 @selected=${this._handleNewPlayerSelectedXUIDChange}
                 @closed=${(ev) => ev.stopPropagation()}
-                fixedMenuPosition naturalMenuWidth
-                .disabled=${this._isLoading || !!this._newPlayerManualXUID}
+                naturalMenuWidth
+                .disabled=${isLoading || !!this._newPlayerManualXUID}
+                helper=${availableGlobalPlayerOptions.length === 0 ? "No available known players found" : ""}
+                ?helper-persistent=${availableGlobalPlayerOptions.length === 0}
               >
+                  <mwc-list-item value=""></mwc-list-item>
                   ${availableGlobalPlayerOptions.map(opt => html`<mwc-list-item .value=${opt.value}>${opt.label}</mwc-list-item>`)}
               </ha-select>
-              <ha-textfield
-                label="Player Name (Optional, for new XUID)"
-                .value=${this._newPlayerManualName}
-                @input=${this._handleNewPlayerManualNameChange}
-                .disabled=${this._isLoading || !!this._newPlayerSelectedXUID}
-              ></ha-textfield>
-              <ha-textfield
-                label="Player XUID (If not selected above)"
-                .value=${this._newPlayerManualXUID}
-                @input=${this._handleNewPlayerManualXUIDChange}
-                .disabled=${this._isLoading || !!this._newPlayerSelectedXUID}
-                helper="Required if not selecting a known player"
-                helperPersistent
-              ></ha-textfield>
+              <div class="manual-entry-row">
+                  <ha-textfield class="manual-name"
+                    label="Player Name (Optional)"
+                    .value=${this._newPlayerManualName}
+                    @input=${this._handleNewPlayerManualNameChange}
+                    .disabled=${isLoading || !!this._newPlayerSelectedXUID}
+                  ></ha-textfield>
+                  <ha-textfield class="manual-xuid"
+                    label="Player XUID (Manual)"
+                    .value=${this._newPlayerManualXUID}
+                    @input=${this._handleNewPlayerManualXUIDChange}
+                    .disabled=${isLoading || !!this._newPlayerSelectedXUID}
+                    helper="Required if not selecting known player"
+                    ?required=${!this._newPlayerSelectedXUID}
+                  ></ha-textfield>
+              </div>
               <ha-select
-                label="Permission Level"
+                label="Permission Level for New Player"
                 .value=${this._newPlayerPermissionLevel}
                 @selected=${this._handleNewPlayerPermissionLevelChange}
                 @closed=${(ev) => ev.stopPropagation()}
-                fixedMenuPosition naturalMenuWidth
-                .disabled=${this._isLoading}
+                naturalMenuWidth
+                .disabled=${isLoading}
               >
                   ${VALID_PERMISSIONS.map(level => html`<mwc-list-item .value=${level} ?selected=${level === this._newPlayerPermissionLevel}>${level}</mwc-list-item>`)}
               </ha-select>
@@ -394,20 +537,20 @@ class BsmPermissionsCard extends LitElement {
                 label="Stage This Player"
                 @click=${this._stageNewPlayerPermission}
                 style="margin-top: 16px;"
-                .disabled=${this._isLoading || (!this._newPlayerSelectedXUID && !this._newPlayerManualXUID)}
-                raised
+                .disabled=${!canAddPlayer}
+                raised icon=""
               ></mwc-button>
             </div>
           ` : ''}
         </div>
-
         ${this._selectedServerPermsEntityId && hasStagedChanges ? html`
             <div class="card-actions">
-                <mwc-button
+                 <mwc-button
                     label="Save All Staged Changes"
-                    raised
-                    .disabled=${this._isLoading || !hasStagedChanges}
+                    raised icon=""
+                    .disabled=${!canSave}
                     @click=${this._savePermissions}
+                    title=${canSave ? "Saves all highlighted changes" : "No changes staged or currently processing"}
                 ></mwc-button>
             </div>
         ` : ''}
@@ -415,52 +558,180 @@ class BsmPermissionsCard extends LitElement {
     `;
   }
 
+  // --- START: CSS STYLES (with latest attempt) ---
   static get styles() {
     return css`
-      ha-card { display: flex; flex-direction: column; }
-      .card-content { padding: 16px; flex-grow: 1; }
+      :host {
+        display: block;
+        overflow: visible !important; /* <<< TRY FORCING HOST */
+      }
+      ha-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: visible !important; /* <<< TRY FORCING HA-CARD */
+      }
+      .card-content {
+        padding: 16px;
+        flex-grow: 1;
+        /* Keep this too, shouldn't hurt */
+        overflow: visible !important;
+      }
       .card-actions { border-top: 1px solid var(--divider-color); padding: 8px 16px; display: flex; justify-content: flex-end; }
       ha-selector, ha-textfield, ha-select { display: block; margin-bottom: 16px; width: 100%; }
-      h4 { margin: 24px 0 12px 0; padding-bottom: 4px; border-bottom: 1px solid var(--divider-color); font-weight: 500; font-size: 1.1em; }
-      .section { margin-bottom: 24px; }
-      .permission-entry { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color-light, var(--divider-color)); }
-      .permission-entry:last-child { border-bottom: none; }
-      .permission-entry.modified .player-name { font-weight: bold; color: var(--primary-color); }
-      .permission-entry .player-name { flex-grow: 1; margin-right: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .permission-entry ha-select { width: 150px; flex-shrink: 0; }
+      ha-select { --mdc-menu-min-width: calc(100% - 32px); /* Adjust if needed */ }
+      .status-area { margin-top: 16px; min-height: 1.2em; }
+      .loading, .error, .feedback { padding: 8px 0; text-align: left; }
+      .error { color: var(--error-color); font-weight: bold; word-wrap: break-word; }
+      .feedback { color: var(--secondary-text-color); font-size: 0.9em; word-wrap: break-word; }
       .info { font-size: 0.9em; color: var(--secondary-text-color); margin-bottom: 12px; }
-      .loading, .error, .feedback { padding: 8px 0; text-align: left; margin-top: 8px; }
-      .error { color: var(--error-color); font-weight: bold; }
-      .feedback { color: var(--secondary-text-color); font-size: 0.9em; }
-      .loading { display: flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
+      .loading { display: flex; align-items: center; justify-content: flex-start; color: var(--secondary-text-color); }
       .loading ha-circular-progress { margin-right: 8px; }
+
+      h4 { margin: 24px 0 12px 0; padding-bottom: 4px; border-bottom: 1px solid var(--divider-color); font-weight: 500; font-size: 1.1em; }
+      .section {
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px dashed var(--divider-color);
+        position: relative; /* <<< ADDED POSITIONING CONTEXT */
+      }
+      .section:last-of-type { border-bottom: none; }
+      .add-player-section p.info { margin-top: -4px; }
+
+      .permission-entry { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--divider-color-light, #eee); transition: background-color 0.2s ease-in-out; }
+      .permission-entry:last-child { border-bottom: none; }
+      .permission-entry:hover { background-color: rgba(var(--rgb-primary-text-color), 0.05); }
+      .permission-entry.modified { background-color: rgba(var(--rgb-primary-color), 0.08); border-left: 3px solid var(--primary-color); padding-left: 8px; margin-left: -11px; }
+      .permission-entry.new-staged { border-left: 3px solid var(--success-color); }
+      .permission-entry .player-name { flex-grow: 1; margin-right: 16px; font-size: 1.0em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .permission-entry .new-tag { font-size: 0.8em; color: var(--success-color); font-weight: bold; margin-left: 4px; }
+      .permission-entry .permission-select { width: 130px; flex-shrink: 0; flex-grow: 0; margin-bottom: 0; --mdc-theme-primary: var(--primary-text-color); }
+
+      .manual-entry-row { display: flex; gap: 16px; flex-wrap: wrap; }
+      .manual-entry-row .manual-name { flex: 1 1 50%; min-width: 150px; }
+      .manual-entry-row .manual-xuid { flex: 1 1 50%; min-width: 150px; }
+
       mwc-button[raised] { margin-top: 8px; }
-      ha-textfield[helperPersistent] { --mdc-text-field-helper-text-padding: 0 16px; }
+    `;
+  }
+  // --- END: CSS STYLES ---
+
+  getCardSize() {
+    let size = 2; // Base for title + server selector
+    if (this.config?.global_players_entity) {
+        size += 1; // Status area
+        if (this._selectedServerPermsEntityId) {
+            size += 1; // "Current Permissions" header
+            const combinedListLength = this._currentServerPermissions.length +
+                Object.keys(this._editData).filter(xuid => !this._currentServerPermissions.some(p => p.xuid === xuid)).length;
+            size += Math.ceil(combinedListLength * 0.6);
+            size += 3; // "Add Player" section
+            if (Object.keys(this._editData).length > 0) size +=1;
+        }
+    } else {
+        size = 2; // Just show config error
+    }
+    return Math.max(4, Math.ceil(size));
+  }
+}
+customElements.define("bsm-permissions-card", BsmPermissionsCard);
+
+// --- START: EDITOR ELEMENT DEFINITION ---
+class BsmPermissionsCardEditor extends LitElement {
+  static get properties() {
+    return {
+      hass: { type: Object },
+      _config: { type: Object, state: true },
+    };
+  }
+
+  setConfig(config) {
+    this._config = config;
+  }
+
+  _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
+    const target = ev.target;
+    const newConfig = { ...this._config };
+    const configKey = target.configValue;
+    if (target.value === "" && configKey === "title") {
+        delete newConfig[configKey];
+    } else {
+        newConfig[configKey] = target.value;
+    }
+    fireEvent(this, "config-changed", { config: newConfig });
+  }
+
+  _selectorChanged(ev) {
+     if (!this._config || !this.hass) return;
+     ev.stopPropagation();
+     const target = ev.target;
+     const configKey = target.configValue;
+     const newValue = ev.detail.value;
+     if (newValue !== this._config[configKey]) {
+        const newConfig = { ...this._config };
+        newConfig[configKey] = newValue;
+        fireEvent(this, "config-changed", { config: newConfig });
+     }
+  }
+
+  render() {
+    if (!this.hass || !this._config) {
+      return html``;
+    }
+    const globalPlayersSelectorConfig = {
+      entity: { integration: DOMAIN, domain: "sensor" }
+    };
+    const isGlobalPlayerEntityMissing = !this._config.global_players_entity;
+    return html`
+      <ha-textfield
+        label="Card Title (Optional)"
+        .value=${this._config.title || ""}
+        .configValue=${"title"}
+        @input=${this._valueChanged}
+        helper="Overrides the default card title"
+      ></ha-textfield>
+      <ha-selector
+        label="Global Players Sensor (Required)"
+        .hass=${this.hass}
+        .selector=${globalPlayersSelectorConfig}
+        .value=${this._config.global_players_entity || ""}
+        .configValue=${"global_players_entity"}
+        @value-changed=${this._selectorChanged}
+        helper="Sensor providing the list of global players"
+        required
+        ?invalid=${isGlobalPlayerEntityMissing}
+      ></ha-selector>
+      ${isGlobalPlayerEntityMissing ? html`<p class="error-text">This field is required for the card to function.</p>` : ""}
     `;
   }
 
-  getCardSize() {
-    let size = 2; // Base for selector + title
-    if (this._selectedServerPermsEntityId) {
-        size += 2; // For "Add Player" section base
-        size += 1; // For "Current Permissions" header
-        const combinedListLength = this._currentServerPermissions.length +
-            Object.keys(this._editData).filter(xuid => !this._currentServerPermissions.find(p => p.xuid === xuid)).length;
-        size += Math.ceil(combinedListLength / 2); // Approx 0.5 per item
-        if (Object.keys(this._editData).length > 0) size +=1; // For save button
-    }
-    return Math.max(3, Math.ceil(size));
+  static get styles() {
+    return css`
+      ha-textfield, ha-selector {
+        display: block;
+        margin-bottom: 16px;
+      }
+      .error-text {
+          color: var(--error-color);
+          font-size: 0.9em;
+          margin-top: -12px;
+          margin-bottom: 8px;
+      }
+      p { margin-top: 0; }
+    `;
   }
 }
+customElements.define("bsm-permissions-card-editor", BsmPermissionsCardEditor);
+// --- END: EDITOR ELEMENT DEFINITION ---
 
-customElements.define("bsm-permissions-card", BsmPermissionsCard);
-
+// --- START: WINDOW REGISTRATION ---
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "bsm-permissions-card",
-  name: "BSM Server Permissions Card",
+  name: "Server Permissions Card",
   description: "View and manage player permissions for a selected Bedrock server.",
-  preview: true, // Can be true if you have a default config or it can render without config
+  preview: true,
 });
-
-console.info(`%c BSM-PERMISSIONS-CARD %c UPDATED & LOADED %c`, "color: purple; font-weight: bold; background: black", "color: white; font-weight: bold; background: dimgray", "");
+_LOGGER.info(`%c BSM-PERMISSIONS-CARD %c LOADED (incl. editor) %c`, "color: purple; font-weight: bold; background: black", "color: white; font-weight: bold; background: dimgray", "");
+// --- END: WINDOW REGISTRATION ---
