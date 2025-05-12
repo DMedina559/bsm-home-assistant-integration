@@ -43,7 +43,7 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 ### Manual Installation
 
-1.  **Download:** Download the `bedrock_server_manager` folder from the `custom_components` directory of the latest [release](https://github.com/YOUR_USERNAME/YOUR_BSM_HA_INTEGRATION_REPO/releases) or the main branch of this repository.
+1.  **Download:** Download the `bedrock_server_manager` folder from the `custom_components` directory of the latest [release](https://github.com/dmedina559/bsm-home-assistant-integration/releases) or the main branch of this repository.
 2.  **Copy:** Copy the entire `bedrock_server_manager` folder into your Home Assistant `<config>/custom_components/` directory. If the `custom_components` directory doesn't exist, create it. The final path should be `<config>/custom_components/bedrock_server_manager/`.
 3.  **Restart Home Assistant:** As above.
 
