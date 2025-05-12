@@ -409,7 +409,7 @@ class BedrockServerManagerApi:
         self, server_name: str, backup_type: str
     ) -> Dict[str, Any]:
         """Lists backup filenames for a server and type.
-        Calls GET /api/server/{server_name}/list_backups/{backup_type}.
+        Calls GET /api/server/{server_name}/backups/list/{backup_type}.
         """
         if backup_type not in ["world", "config"]:
             _LOGGER.error(
@@ -426,7 +426,7 @@ class BedrockServerManagerApi:
         )
         return await self._request(
             method="GET",
-            path=f"/server/{server_name}/list_backups/{backup_type}",
+            path=f"/server/{server_name}/backups/list/{backup_type}",
             authenticated=True,
         )
 
