@@ -392,6 +392,58 @@ class BedrockServerManagerApi:
             authenticated=True,
         )
 
+    async def async_get_server_permissions_data(
+        self, server_name: str
+    ) -> Dict[str, Any]:
+        """Gets the permissions.json content for a server.
+        Calls GET /api/server/{server_name}/permissions_data.
+        """
+        _LOGGER.debug("Fetching server permissions data for server '%s'", server_name)
+        return await self._request(
+            method="GET",
+            path=f"/server/{server_name}/permissions_data",
+            authenticated=True,
+        )
+
+    async def async_list_backups(
+        self, server_name: str, backup_type: str
+    ) -> Dict[str, Any]:
+        """Lists backup filenames for a server and type.
+        Calls GET /api/server/{server_name}/backups/list/{backup_type}.
+        """
+        if backup_type not in ["world", "config"]:
+            _LOGGER.error(
+                "Invalid backup_type '%s' requested for listing backups.", backup_type
+            )
+            # Or raise ValueError to be caught by caller
+            return {
+                "status": "error",
+                "message": "Invalid backup_type provided to API client.",
+            }
+
+        _LOGGER.debug(
+            "Fetching '%s' backups list for server '%s'", backup_type, server_name
+        )
+        return await self._request(
+            method="GET",
+            path=f"/server/{server_name}/backups/list/{backup_type}",
+            authenticated=True,
+        )
+
+    async def async_list_available_worlds(self) -> Dict[str, Any]:
+        """Lists available .mcworld files. Calls GET /api/content/worlds."""
+        _LOGGER.debug("Fetching available world files from /api/content/worlds")
+        return await self._request(
+            method="GET", path="/content/worlds", authenticated=True
+        )
+
+    async def async_list_available_addons(self) -> Dict[str, Any]:
+        """Lists available .mcpack/.mcaddon files. Calls GET /api/content/addons."""
+        _LOGGER.debug("Fetching available addon files from /api/content/addons")
+        return await self._request(
+            method="GET", path="/content/addons", authenticated=True
+        )
+
     # --- Server Action Methods ---
     async def async_start_server(self, server_name: str) -> Dict[str, Any]:
         """Starts the server."""
@@ -662,6 +714,23 @@ class BedrockServerManagerApi:
         # Calls POST /api/players/scan
         _LOGGER.debug("Triggering player log scan")
         return await self._request("POST", "/players/scan", authenticated=True)
+
+    async def async_get_global_players(self) -> Dict[str, Any]:
+        """Gets the global list of known players. Calls GET /api/players/get."""
+        _LOGGER.debug("Fetching global player list from /api/players/get")
+        return await self._request(
+            method="GET", path="/players/get", authenticated=True
+        )
+
+    async def async_add_global_players(self, players_data: List[str]) -> Dict[str, Any]:
+        """Adds players to the global list. Calls POST /api/players/add.
+        players_data is a list of strings like "PlayerName:PlayerXUID".
+        """
+        _LOGGER.info("Adding/updating global players: %s", players_data)
+        payload = {"players": players_data}
+        return await self._request(
+            method="POST", path="/players/add", data=payload, authenticated=True
+        )
 
     async def async_prune_download_cache(
         self, directory: str, keep: Optional[int] = None

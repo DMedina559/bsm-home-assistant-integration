@@ -18,6 +18,7 @@ from .api import (
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +55,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "process_info": None,
             "allowlist": None,
             "properties": None,
+            "server_permissions": None,
+            "world_backups": None,
+            "config_backups": None,
         }
 
         try:
@@ -63,6 +67,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_get_server_status_info(self.server_name),
                     self.api.async_get_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
+                    self.api.async_get_server_permissions_data(self.server_name),
+                    self.api.async_list_backups(self.server_name, "world"),
+                    self.api.async_list_backups(self.server_name, "config"),
                     return_exceptions=True,  # Return exceptions instead of raising immediately
                 )
 
@@ -70,6 +77,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             status_info_result = results[0]
             allowlist_result = results[1]
             properties_result = results[2]
+            permissions_result = results[3]
+            world_backups_result = results[4]
+            config_backups_result = results[5]
 
             # Handle status info result
             if isinstance(status_info_result, Exception):
@@ -184,6 +194,81 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                         "properties", {}
                     )  # Default to empty dict
 
+            # --- Handle server prermissions result ---
+            if isinstance(permissions_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching server permissions for %s: %s",
+                    self.server_name,
+                    permissions_result,
+                )
+                # Non-critical, just note in message if others were okay
+            elif (
+                isinstance(permissions_result, dict)
+                and permissions_result.get("status") == "success"
+            ):
+                # The API returns {"status": "success", "data": {"permissions": [...]}}
+                # So we need to get data -> permissions
+                permissions_data_obj = permissions_result.get("data")
+                if isinstance(permissions_data_obj, dict):
+                    coordinator_data["server_permissions"] = permissions_data_obj.get(
+                        "permissions", []
+                    )
+                else:
+                    coordinator_data["server_permissions"] = (
+                        []
+                    )  # Default if 'data' key is missing/wrong type
+                    _LOGGER.warning(
+                        "Unexpected structure for server_permissions response for %s: 'data' key missing or not an object. Response: %s",
+                        self.server_name,
+                        permissions_result,
+                    )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for server permissions: %s",
+                    permissions_result,
+                )
+
+            # --- Process World Backups Result ---
+            if isinstance(world_backups_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching world backups for %s: %s",
+                    self.server_name,
+                    world_backups_result,
+                )
+            elif (
+                isinstance(world_backups_result, dict)
+                and world_backups_result.get("status") == "success"
+            ):
+                coordinator_data["world_backups"] = world_backups_result.get(
+                    "backups", []
+                )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for world backups: %s",
+                    world_backups_result,
+                )
+
+            # --- Process Config Backups Result ---
+            if isinstance(config_backups_result, Exception):
+                _LOGGER.warning(
+                    "Error fetching config backups for %s: %s",
+                    self.server_name,
+                    config_backups_result,
+                )
+            elif (
+                isinstance(config_backups_result, dict)
+                and config_backups_result.get("status") == "success"
+            ):
+                coordinator_data["config_backups"] = config_backups_result.get(
+                    "backups", []
+                )
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for config backups: %s",
+                    config_backups_result,
+                )
+            # --- End Process Backup Lists ---
+
             # Determine overall success (if all critical fetches were okay)
             if not isinstance(status_info_result, Exception) and (
                 isinstance(status_info_result, dict)
@@ -207,6 +292,21 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     and properties_result.get("status") == "error"
                 ):
                     coordinator_data["message"] += " (Properties fetch failed)"
+                if isinstance(permissions_result, Exception) or (
+                    isinstance(permissions_result, dict)
+                    and permissions_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Server Permissions fetch failed)"
+                if isinstance(world_backups_result, Exception) or (
+                    isinstance(world_backups_result, dict)
+                    and world_backups_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (World backups error)"
+                if isinstance(config_backups_result, Exception) or (
+                    isinstance(config_backups_result, dict)
+                    and config_backups_result.get("status") == "error"
+                ):
+                    coordinator_data["message"] += " (Config backups error)"
 
             return coordinator_data
 
@@ -223,3 +323,171 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 "Unexpected error fetching data for %s: %s", self.server_name, err
             )
             raise UpdateFailed(f"Unexpected error: {err}") from err
+
+
+class ManagerDataCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching global data from the Bedrock Server Manager API."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_client: BedrockServerManagerApi,
+        scan_interval: int,  # Use a separate scan interval for manager data if desired
+    ):
+        """Initialize the manager data coordinator."""
+        self.api = api_client
+        self._scan_interval = scan_interval
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} Manager Data Coordinator",
+            update_interval=timedelta(seconds=scan_interval),
+            # Consider request_refresh_debouncer if updates are frequent
+        )
+
+    async def _async_update_data(self) -> dict:
+        """Fetch global manager data from API endpoints."""
+        _LOGGER.debug("Manager Data Coordinator requesting update.")
+        # Initialize with default/error state, ensure all expected keys present
+        manager_data = {
+            "status": "error",
+            "message": "Manager data update failed",
+            "info": None,  # From /api/info
+            "global_players": None,  # From /api/players/get
+            "available_worlds": None,
+            "available_addons": None,
+        }
+
+        try:
+            async with async_timeout.timeout(self._scan_interval - 3):
+                results = await asyncio.gather(
+                    self.api.async_get_manager_info(),
+                    self.api.async_get_global_players(),
+                    self.api.async_list_available_worlds(),
+                    self.api.async_list_available_addons(),
+                    return_exceptions=True,
+                )
+
+            info_result, players_result, worlds_result, addons_result = results
+            all_successful = True
+
+            # Process Manager Info
+            if isinstance(info_result, Exception):
+                _LOGGER.warning("Error fetching manager info: %s", info_result)
+                manager_data["message"] = (
+                    f"Manager info fetch failed: {type(info_result).__name__}"
+                )
+                all_successful = False  # Mark as partial failure
+            elif (
+                isinstance(info_result, dict) and info_result.get("status") == "success"
+            ):
+                manager_data["info"] = info_result.get(
+                    "data"
+                )  # Store the nested 'data' object
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for manager info: %s", info_result
+                )
+                manager_data["message"] = "Invalid manager info response"
+                all_successful = False
+
+            # Process Global Players
+            if isinstance(players_result, Exception):
+                _LOGGER.warning("Error fetching global players: %s", players_result)
+                if all_successful:  # Don't overwrite a more critical error message
+                    manager_data["message"] = (
+                        f"Global players fetch failed: {type(players_result).__name__}"
+                    )
+                all_successful = False
+            elif (
+                isinstance(players_result, dict)
+                and players_result.get("status") == "success"
+            ):
+                manager_data["global_players"] = players_result.get("players", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for global players: %s", players_result
+                )
+                if all_successful:
+                    manager_data["message"] = "Invalid global players response"
+                all_successful = False
+
+            # --- Process Available Worlds ---
+            if isinstance(worlds_result, Exception):
+                _LOGGER.warning("Error fetching available worlds: %s", worlds_result)
+                all_successful = (
+                    False  # Consider this non-critical for overall manager status
+                )
+            elif (
+                isinstance(worlds_result, dict)
+                and worlds_result.get("status") == "success"
+            ):
+                manager_data["available_worlds"] = worlds_result.get("files", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for available worlds: %s", worlds_result
+                )
+                all_successful = False
+
+            # --- Process Available Addons ---
+            if isinstance(addons_result, Exception):
+                _LOGGER.warning("Error fetching available addons: %s", addons_result)
+                all_successful = False
+            elif (
+                isinstance(addons_result, dict)
+                and addons_result.get("status") == "success"
+            ):
+                manager_data["available_addons"] = addons_result.get("files", [])
+            else:
+                _LOGGER.warning(
+                    "Invalid or error response for available addons: %s", addons_result
+                )
+                all_successful = False
+
+            if (
+                all_successful
+                and manager_data["info"]
+                and manager_data["global_players"] is not None
+                and manager_data["available_worlds"] is not None
+                and manager_data["available_addons"] is not None
+            ):
+                manager_data["status"] = "success"
+                manager_data["message"] = "Manager data fetched successfully."
+            else:
+                # Construct a more detailed error message if any part failed
+                messages = []
+                if not manager_data["info"]:
+                    messages.append("manager info")
+                if manager_data["global_players"] is None:
+                    messages.append("global players")
+                if manager_data["available_worlds"] is None:
+                    messages.append("available worlds")
+                if manager_data["available_addons"] is None:
+                    messages.append("available addons")
+                if messages:
+                    manager_data["message"] = (
+                        f"Failed to fetch some manager data: {', '.join(messages)}."
+                    )
+                else:  # Should not happen if all_successful is false
+                    manager_data["message"] = (
+                        "Partial manager data fetched with unknown issues."
+                    )
+
+            return manager_data
+
+        # Handle top-level exceptions (AuthError less likely for /api/info if unauth)
+        except ConfigEntryAuthFailed:
+            raise  # Should not happen if /api/info is truly unauth
+        except UpdateFailed:
+            raise
+        except asyncio.TimeoutError as err:
+            _LOGGER.warning("Timeout fetching manager data")
+            raise UpdateFailed(
+                f"Timeout communicating with API for manager data: {err}"
+            ) from err
+        except Exception as err:
+            _LOGGER.exception("Unexpected error fetching manager data: %s", err)
+            raise UpdateFailed(
+                f"Unexpected error fetching manager data: {err}"
+            ) from err

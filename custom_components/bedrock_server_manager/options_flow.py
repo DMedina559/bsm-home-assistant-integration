@@ -24,7 +24,9 @@ from homeassistant.helpers import device_registry as dr  # For device removal
 from .const import (
     DOMAIN,
     CONF_SERVER_NAMES,
+    CONF_MANAGER_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL_SECONDS,
+    DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
 )
 
 # Import API definitions and exceptions
@@ -49,9 +51,11 @@ STEP_CREDENTIALS_SCHEMA = vol.Schema(
 )
 
 # Schema for polling interval step
-STEP_POLLING_SCHEMA = vol.Schema(
+STEP_SERVER_POLLING_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_SCAN_INTERVAL): selector.NumberSelector(
+        vol.Optional(
+            CONF_SCAN_INTERVAL
+        ): selector.NumberSelector(  # For server coordinators
             selector.NumberSelectorConfig(
                 min=5,
                 max=3600,
@@ -59,6 +63,20 @@ STEP_POLLING_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="seconds",
             )
+        ),
+    }
+)
+
+STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_MANAGER_SCAN_INTERVAL): selector.NumberSelector(  # New key
+            selector.NumberSelectorConfig(
+                min=60,
+                max=86400,
+                step=10,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="seconds",
+            )  # e.g., 1 min to 1 day
         ),
     }
 )
@@ -95,7 +113,12 @@ class BSMOptionsFlowHandler(
         manager_host = self.config_entry.data.get(CONF_HOST, "Unknown Host")
         return self.async_show_menu(
             step_id="init",
-            menu_options=["update_credentials", "select_servers", "update_interval"],
+            menu_options=[
+                "update_credentials",
+                "select_servers",
+                "update_server_interval",
+                "update_manager_interval",
+            ],
             description_placeholders={"host": manager_host},
         )
 
@@ -247,35 +270,60 @@ class BSMOptionsFlowHandler(
             step_id="select_servers", data_schema=select_schema, errors=errors
         )
 
-    async def async_step_update_interval(
+    async def async_step_update_server_interval(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
-        """Handle the step for updating the polling interval."""
+        """Handle updating the polling interval for individual SERVERS."""
         errors: Dict[str, str] = {}
         if user_input is not None:
-            scan_interval = user_input.get(CONF_SCAN_INTERVAL)
+            scan_interval = user_input.get(
+                CONF_SCAN_INTERVAL
+            )  # Key for server interval
             if scan_interval is not None and scan_interval < 5:
                 errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
             if not errors:
-                _LOGGER.debug(
-                    "Updating scan interval for entry %s to: %s seconds",
-                    self.config_entry.entry_id,
-                    scan_interval,
-                )
                 new_options_data = {
                     **self.config_entry.options,
                     CONF_SCAN_INTERVAL: scan_interval,
                 }
-                # Save updated options. Listener in __init__ will reload.
                 return self.async_create_entry(title="", data=new_options_data)
 
         current_scan_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
         )
         schema = self.add_suggested_values_to_schema(
-            STEP_POLLING_SCHEMA,
+            STEP_SERVER_POLLING_SCHEMA,
             suggested_values={CONF_SCAN_INTERVAL: current_scan_interval},
         )
         return self.async_show_form(
-            step_id="update_interval", data_schema=schema, errors=errors
+            step_id="update_server_interval", data_schema=schema, errors=errors
+        )
+
+    async def async_step_update_manager_interval(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.FlowResult:
+        """Handle updating the polling interval for the MANAGER data."""
+        errors: Dict[str, str] = {}
+        if user_input is not None:
+            manager_scan_interval = user_input.get(CONF_MANAGER_SCAN_INTERVAL)
+            if manager_scan_interval is not None and manager_scan_interval < 60:
+                errors[CONF_MANAGER_SCAN_INTERVAL] = "invalid_manager_scan_interval"
+            if not errors:
+                new_options_data = {
+                    **self.config_entry.options,
+                    CONF_MANAGER_SCAN_INTERVAL: manager_scan_interval,
+                }
+                return self.async_create_entry(title="", data=new_options_data)
+
+        current_manager_scan_interval = self.config_entry.options.get(
+            CONF_MANAGER_SCAN_INTERVAL, DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS
+        )
+        schema = self.add_suggested_values_to_schema(
+            STEP_MANAGER_POLLING_SCHEMA,
+            suggested_values={
+                CONF_MANAGER_SCAN_INTERVAL: current_manager_scan_interval
+            },
+        )
+        return self.async_show_form(
+            step_id="update_manager_interval", data_schema=schema, errors=errors
         )
