@@ -1,20 +1,22 @@
 ﻿<div style="text-align: center;">
-    <img src="https://github.com/DMedina559/bedrock-server-manager/blob/main/bedrock_server_manager/web/static/image/icon/favicon.svg" alt="ICON" width="200" height="200">
+    <img src="https://raw.githubusercontent.com/dmedina559/bedrock-server-manager/main/bedrock_server_manager/web/static/image/icon/favicon.svg" alt="BSM Logo" width="150">
 </div>
 
 # Bedrock Server Manager - Home Assistant Integration
 
-<!-- [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs) -->
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release](https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration)](https://github.com/dmedina559/bsm-home-assistant-integration/releases/latest)
+[![License](https://img.shields.io/github/license/dmedina559/bsm-home-assistant-integration)](LICENSE)
 
-Connect Home Assistant with your [Bedrock Server Manager](https://github.com/dmedina559/bedrock-server-manager). Monitor server status, resource usage, and control server actions like start, stop, restart, backups, restores, and send commands directly from Home Assistant dashboards and automations.
+This Home Assistant integration connects to your self-hosted [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) API. It allows you to monitor server status, resource usage, and control a wide range of server actions directly from your Home Assistant dashboards and automations. Manage installations, backups, restores, properties, allowlists, permissions, and send console commands with ease.
 
 ## Prerequisites
 
-*   Home Assistant installation (Version 2023.x or later recommended).
-*   A running instance of the Bedrock Server Manager (BSM) application.
-*   The BSM API must be accessible over the network from your Home Assistant instance (know the Host/IP address and Port).
-*   Credentials (Username and Password) configured for the BSM API.
-*   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant (Recommended installation method).
+*   Home Assistant installation (Version 2024.x or later recommended).
+*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) application.
+*   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
+*   API Credentials (Username and Password) configured for your BSM instance.
+*   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
 
 ## Installation
 
@@ -24,205 +26,158 @@ Connect Home Assistant with your [Bedrock Server Manager](https://github.com/dme
 
     [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
 
-1.  **Add Custom Repository:**
-    *   Open HACS in Home Assistant (usually in the sidebar).
+1.  **Ensure HACS is Installed:** If you don't have HACS, install it first from [hacs.xyz](https://hacs.xyz/).
+2.  **Add Custom Repository:**
+
+    *Manually add the custom repository to HACS if the button above doesn't work:*
+    *   Open HACS in Home Assistant.
     *   Go to "Integrations".
     *   Click the three dots menu (⋮) in the top right and select "Custom repositories".
-    *   In the "Repository" field, enter the URL `https://github.com/dmedina559/bsm-home-assistant-integration`
+    *   In the "Repository" field, enter the URL of this GitHub repository: `https://github.com/dmedina559/bsm-home-assistant-integration`.
     *   Select "Integration" as the category.
     *   Click "Add".
-2.  **Install:**
-    *   Close the custom repositories dialog.
-    *   Search for "Bedrock Server Manager"
-    *   Click "Install".
-    *   Follow the prompts to install the integration.
-3.  **Restart Home Assistant:** After installation via HACS, restart Home Assistant (Developer Tools -> Server Management -> Restart).
+3.  **Install Integration:**
+    *   The "Bedrock Server Manager" integration should now appear in your HACS integrations list (you might need to search for it).
+    *   Click "Install" and follow the HACS prompts.
+4.  **Restart Home Assistant:** After installation via HACS, a restart of Home Assistant is required (Developer Tools -> Server Management -> Restart, or Settings -> System -> Restart).
 
 ### Manual Installation
 
-1.  **Download:** Download the latest release or clone the repository.
-2.  **Copy:** Copy the entire `./custom_components/bedrock_server_manager` folder, into your Home Assistant `/config/custom_components/` directory. Create `custom_components` if it doesn't exist.
-3.  **Restart Home Assistant:** Restart Home Assistant (Developer Tools -> Server Management -> Restart).
+1.  **Download:** Download the `bedrock_server_manager` folder from the `custom_components` directory of the latest [release](https://github.com/YOUR_USERNAME/YOUR_BSM_HA_INTEGRATION_REPO/releases) or the main branch of this repository.
+2.  **Copy:** Copy the entire `bedrock_server_manager` folder into your Home Assistant `<config>/custom_components/` directory. If the `custom_components` directory doesn't exist, create it. The final path should be `<config>/custom_components/bedrock_server_manager/`.
+3.  **Restart Home Assistant:** As above.
 
 ## Configuration
 
-Configuration is done entirely through the Home Assistant UI after installation.
+Once installed and Home Assistant is restarted, configure the integration via the UI:
 
 1.  Go to **Settings -> Devices & Services**.
-2.  Click **+ Add Integration**.
+2.  Click the **+ Add Integration** button in the bottom right.
 3.  Search for "Bedrock Server Manager" and select it.
 4.  **Step 1: Connect to Manager**
-    *   Enter the **Host / IP Address** of your BSM instance.
-    *   Enter the **Port** the BSM API is listening on (defaults to 11325).
-    *   Enter the **API Username** configured for BSM.
-    *   Enter the **API Password** configured for BSM.
-    *   Click **Submit**. The integration will attempt to connect, authenticate, and discover manageable servers.
-5.  **Step 2: Select Initial Servers**
-    *   If the connection is successful, you will see a dropdown menu where you can select which Minecraft servers you want to add to Home Assistant.
-    *   Select the servers you wish to initially monitor and control from Home Assistant. You can select none initially and add (or remove) them later via the "Configure" option.
+    *   **Host / IP Address:** The address of your BSM instance.
+    *   **Port:** The port BSM API is listening on (defaults to 11325).
+    *   **API Username & Password:** Credentials for the BSM API.
     *   Click **Submit**.
-6.  The integration will be set up, creating devices and entities for the selected servers.
+5.  **Step 2: Select Initial Servers**
+    *   A list of Minecraft server instances discovered on your BSM will be shown.
+    *   Use the multi-select listbox to choose which servers you want Home Assistant to initially monitor. You can change this selection later via the **CONFIGURE** option on the integration card.
+    *   Click **Submit**.
+6.  The integration will set up a device for the BSM instance and child devices for each selected Minecraft server.
+
+## Lovelace Custom Cards
+
+This integration provides the backend entities and services. To create a more user-friendly interface in your dashboards, custom Lovelace cards are available:
+
+
+- ### Send Server Commands
+- ### Server Properties Manager
+- ### Server Allowlist Manager
+- ### Server Permissions Manager
+- ### Server Restore Card
+- ### Server Content Installer
 
 ## Features
 
-This integration creates devices in Home Assistant to represent your manager and servers:
-
 ### Devices
 
-*   **BSM @ {host}**: A central hub device representing the Bedrock Server Manager API instance itself. Global actions are linked here.
-*   **{server_name}**: A separate device for each Minecraft server instance you selected during setup or configuration. These are linked to the main BSM device.
+*   **Bedrock Server Manager @ {host}**: A central device representing the BSM API instance. Global actions and sensors are linked here.
+*   **Minecraft Server ({server_name})**: A separate device for each selected Minecraft server instance, linked to the Manager device via the "CONFIGURE" option.
 
 ### Entities
 
-Entities are linked to their corresponding **Server Device** unless otherwise noted:
+Entity IDs are typically `platform.server_name_entity_key` (e.g., `sensor.server_name_status`) or `platform.manager_id_entity_key` for global entities.
 
-*   **Sensor:**
-    *   `sensor.{server_name}_status`: Shows the current state (`Running`, `Stopped`, `Unknown`, `Not Found`).
-    *   `sensor.{server_name}_cpu_usage`: CPU percentage used by the server process (%). Requires `psutil` on manager host.
-    *   `sensor.{server_name}_memory_usage`: Memory used by the server process (MiB). Requires `psutil` on manager host.
-*   **Switch:**
-    *   `switch.{server_name}_server`: Allows starting (`turn_on`) and stopping (`turn_off`) the server. Reflects the running state.
-*   **Button (Server Specific):**
-    *   `button.{server_name}_restart`: Restarts the Minecraft server process.
-    *   `button.{server_name}_update`: Checks for and applies updates to the server based on manager config.
-    *   `button.{server_name}_backup`: Triggers a full backup (`backup_type: all`) for the server.
-    *   `button.{server_name}_export_world`: Exports the current server world to a `.mcworld` file.
-    *   `button.{server_name}_prune_backups`: Prunes old backups for this server based on manager settings.
-*   **Button (Manager Global - Linked to `BSM @ {host}` device):**
-    *   `button.bedrock_server_manager_{host_port_id}_scan_player_logs`: Triggers the manager to scan player logs.
+*   **Sensors (Per Server Device):**
+    *   **Status:** Current state (`Running`, `Stopped`, etc.). *Attributes:* World Name, Installed Version, Allowlisted Players (list of names), All Server Properties (dictionary), PID, Uptime (when running).
+    *   **CPU Usage:** CPU percentage (%). *Attributes:* PID, Uptime (when running).
+    *   **Memory Usage:** Memory usage (MiB).
+    *   **Permissioned Players:** Count of players in the server's `permissions.json`. *Attributes:* Full list of permissioned players with XUIDs and levels.
+    *   **World Backups:** Count of available world backups. *Attributes:* List of world backup filenames.
+    *   **Config Backups:** Count of available config backups. *Attributes:* List of config backup filenames.
+*   **Sensors (Manager Device):**
+    *   **Known Players:** Count of players in the global `players.json`. *Attributes:* Full list of global players with XUIDs and any stored notes.
+    *   **Available Worlds:** Count of `.mcworld` files in the manager's content directory. *Attributes:* List of available world filenames.
+    *   **Available Addons:** Count of `.mcpack`/`.mcaddon` files in the manager's content directory. *Attributes:* List of available addon filenames.
+*   **Switch (Per Server Device):**
+    *   **Server Control:** Start/Stop the server. Reflects running state.
+*   **Buttons (Per Server Device):**
+    *   **Restart:** Restarts the server.
+    *   **Update:** Initiates server update process.
+    *   **Backup:** Triggers a full backup (`backup_type: all`).
+    *   **Export World:** Exports the server's current world.
+    *   **Prune Backups:** Prunes old backups for this server.
+*   **Buttons (Manager Device):**
+    *   **Scan Player Logs:** Triggers manager to scan player logs.
 
 ### Services
 
-Services allow for more control via automations and scripts.
+All services use the domain `bedrock_server_manager`.
 
-*   **`bedrock_server_manager.send_command`**:
-    *   Sends a console command to specific server(s).
-    *   **Target:** Server device(s) or entity(s) (e.g., `entity_id: sensor.{server_name}_status`).
-    *   **Data:**
-        *   `command` (Required, string): The command to send (e.g., `say Hello`).
-
-*   **`bedrock_server_manager.prune_download_cache`**:
-    *   Prunes the global download cache on the manager host.
-    *   **Target:** None required (global action, targets the BSM instance itself).
-    *   **Data:**
-        *   `directory` (Required, string): Absolute path to the download cache directory on the manager host.
-        *   `keep` (Optional, integer): Number of newest files to keep (uses manager default if omitted).
-
-*   **`bedrock_server_manager.trigger_backup`**:
-    *   Triggers a specific type of backup for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `backup_type` (Required, string): `all`, `world`, or `config`.
-        *   `file_to_backup` (Optional, string): Relative path required only if `backup_type` is `config`.
-
-*   **`bedrock_server_manager.restore_backup`**:
-    *   Restores a specific backup file for target server(s). **CAUTION: Overwrites data.**
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `restore_type` (Required, string): `world` or `config`.
-        *   `backup_file` (Required, string): Full path to the backup file on the manager host.
-
-*   **`bedrock_server_manager.restore_latest_all`**:
-    *   Restores the latest full backup for target server(s). **CAUTION: Overwrites data.**
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:** None.
-
-*   **`bedrock_server_manager.add_to_allowlist`**:
-    *   Adds player(s) to the allowlist for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `players` (Required, list of strings): Gamertags to add.
-        *   `ignores_player_limit` (Optional, boolean, default `false`).
-
-*   **`bedrock_server_manager.remove_from_allowlist`**:
-    *   Removes a player from the allowlist for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `player_name` (Required, string): Gamertag to remove.
-
-*   **`bedrock_server_manager.set_permissions`**:
-    *   Sets permission levels for player(s) via XUID for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `permissions` (Required, dictionary): `{"XUID1": "level", "XUID2": "level", ...}`. Valid levels: `visitor`, `member`, `operator`.
-
-*   **`bedrock_server_manager.update_properties`**:
-    *   Updates allowed `server.properties` values for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `properties` (Required, dictionary): `{"property-key": "value", ...}`. See BSM docs for allowed keys.
-
-*   **`bedrock_server_manager.install_server`**:
-    *   Installs a new server instance via the manager.
-    *   **Target:** None required (global action).
-    *   **Data:**
-        *   `server_name` (Required, string): Desired unique name.
-        *   `server_version` (Required, string): `LATEST`, `PREVIEW`, or specific version `x.y.z`.
-        *   `overwrite` (Optional, boolean, default `false`).
-
-*   **`bedrock_server_manager.delete_server`**:
-    *   Permanently deletes ALL data for target server instance(s). **IRREVERSIBLE - USE EXTREME CAUTION.**
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `confirm_deletion` (Required, boolean: must be `true`).
-
-*   **`bedrock_server_manager.configure_os_service`**:
-    *   Configures OS-specific service settings for target server(s).
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `autoupdate` (Required, boolean): Enable/disable autoupdate.
-        *   `autostart` (Optional, boolean): (Linux Only) Enable/disable autostart via systemd user service.
-
-*   **`bedrock_server_manager.install_world`**:
-    *   Installs a `.mcworld` file into the target server, replacing the current world. **CAUTION: Overwrites data.**
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `filename` (Required, string): The `.mcworld` filename (e.g., `MyBackup.mcworld`) relative to the manager's `content/worlds` directory.
-
-*   **`bedrock_server_manager.install_addon`**:
-    *   Installs an `.mcaddon` or `.mcpack` file into the target server.
-    *   **Target:** Server device(s) or entity(s).
-    *   **Data:**
-        *   `filename` (Required, string): The `.mcaddon` or `.mcpack` filename (e.g., `MyAwesomeAddon.mcaddon`) relative to the manager's `content/addons` directory.
-
-### Custom Cards
-
-The Bedrock Server Manager integration comes with 3 custom cards to enhance your BSM experience in Home Assistant:
-
-#### Send Command:
-
-Select a server device and enter a command to send to the server. This card is useful for sending commands like `say Hello` or `give @p diamond`.
-
-#### Configure Allowlist:
-
-Select a server device and enter a player to add to the allowlist, or remove an existing player from the list. This card is useful for quickly adding or removing players.
-
-#### Configure Properties:
-
-Select a server device and modify a property you want to update from the list. This card is useful for changing server properties like `max-players` or `difficulty`.
+*   **`send_command`**: Sends a console command.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `command` (string, required).
+*   **`prune_download_cache`**: Prunes global download cache.
+    *   Target: None.
+    *   Data: `directory` (string, required), `keep` (integer, optional).
+*   **`trigger_backup`**: Triggers a specific backup type.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `backup_type` (string, required: `all`, `world`, `config`), `file_to_backup` (string, optional, required for `config` type).
+*   **`restore_backup`**: Restores a specific backup. **CAUTION: Overwrites data.**
+    *   Target: Server device(s)/entity(s).
+    *   Data: `restore_type` (string, required: `world`, `config`), `backup_file` (string, required: filename relative to server's backup folder).
+*   **`restore_latest_all`**: Restores latest full backup. **CAUTION: Overwrites data.**
+    *   Target: Server device(s)/entity(s).
+    *   Data: None.
+*   **`add_to_allowlist`**: Adds players to a server's allowlist.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `players` (list of strings, required), `ignores_player_limit` (boolean, optional).
+*   **`remove_from_allowlist`**: Removes a player from a server's allowlist.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `player_name` (string, required).
+*   **`set_permissions`**: Sets server-specific player permissions via XUID.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `permissions` (dictionary, required: `{"XUID": "level", ...}`).
+*   **`update_properties`**: Updates allowed `server.properties` values.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `properties` (dictionary, required: `{"key": "value", ...}`).
+*   **`install_server`**: Installs a new server instance via the manager.
+    *   Target: None.
+    *   Data: `server_name` (string, required), `server_version` (string, required), `overwrite` (boolean, optional).
+*   **`delete_server`**: Permanently deletes ALL data for a server. **IRREVERSIBLE.**
+    *   Target: Server device(s)/entity(s).
+    *   Data: `confirm_deletion` (boolean, required: must be `true`).
+*   **`configure_os_service`**: Configures OS service settings for a server.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `autoupdate` (boolean, required), `autostart` (boolean, optional, Linux only).
+*   **`install_world`**: Installs a `.mcworld` file to a server. **CAUTION: Overwrites current world.**
+    *   Target: Server device(s)/entity(s).
+    *   Data: `filename` (string, required: relative to manager's `content/worlds`).
+*   **`install_addon`**: Installs an `.mcpack`/`.mcaddon` to a server.
+    *   Target: Server device(s)/entity(s).
+    *   Data: `filename` (string, required: relative to manager's `content/addons`).
+*   **`add_global_players`**: Adds/updates players in the manager's global `players.json`.
+    *   Target: None.
+    *   Data: `players` (list of strings, required: `"PlayerName:PlayerXUID"` format).
 
 ## Options / Reconfiguration
 
-After adding the integration, you can change settings without removing and re-adding:
+After adding the integration, click **CONFIGURE** on its card in Devices & Services to:
+*   Update API Credentials.
+*   Select/Deselect Servers to Monitor by Home Assistant.
+*   Update Polling Interval for individual server status.
+*   Update Polling Interval for global manager data.
 
-1.  Go to **Settings -> Devices & Services**.
-2.  Find the "Bedrock Server Manager" integration entry.
-3.  Click **CONFIGURE**.
-4.  A menu will appear allowing you to:
-    *   **Update API Credentials:** Change the username and password used to connect to the BSM API.
-    *   **Select Servers to Monitor:** Add or remove servers from the list that Home Assistant monitors and creates entities for.
-    *   **Update Polling Interval:** Change how frequently Home Assistant polls the BSM API for the status of *running* servers.
-
-Changes typically require the integration to reload automatically.
+Changes trigger an automatic reload of the integration.
 
 ## Troubleshooting
 
-*   **Errors during Setup:** Check the Home Assistant logs (Settings -> System -> Logs -> Load Full Logs) for messages related to `bedrock_server_manager`, `config_flow`, or `api`. Ensure the BSM API is running and accessible from Home Assistant, and that credentials are correct.
-*   **Entities Unavailable:** If entities become unavailable, check the HA logs for connection errors or API errors reported by the coordinator. Verify the BSM application is running. The "Status" sensor might show "Unknown" or "Not Found" based on the error.
-*   **Debug Logging:** To enable detailed logging, add the following to your `configuration.yaml`:
+*   **Errors during Setup/Load:** Check Home Assistant logs (Settings -> System -> Logs) for messages related to `bedrock_server_manager`. Verify BSM API access, credentials, port, and domain name consistency (underscores only in code/directory). Ensure `/api/servers` and `/api/info` endpoints exist on your BSM.
+*   **Entities Unavailable:** Check HA logs for coordinator errors. Ensure BSM is running.
+*   **Custom Card Issues:** Clear browser cache thoroughly after updating card JS files or HA. Check browser's developer console (F12) for JavaScript errors.
+*   **Debug Logging:** Add to `configuration.yaml` and restart HA:
     ```yaml
     logger:
       logs:
         custom_components.bedrock_server_manager: debug
     ```
-    Then restart Home Assistant.
