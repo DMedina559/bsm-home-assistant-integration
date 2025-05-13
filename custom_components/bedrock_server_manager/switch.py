@@ -16,7 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .coordinator import MinecraftBedrockCoordinator
 from .const import DOMAIN
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -24,7 +24,7 @@ from pybedrock_server_manager import (
     CannotConnectError,
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -46,7 +46,7 @@ from .const import (
     ATTR_SERVER_PERMISSIONS_LIST,
 )
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -55,7 +55,7 @@ from pybedrock_server_manager import (
     ServerNotFoundError,
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 _LOGGER = logging.getLogger(__name__)
 

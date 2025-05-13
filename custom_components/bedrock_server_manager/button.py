@@ -20,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError  # Keep this
 from .coordinator import MinecraftBedrockCoordinator  # Keep coordinator import
 from .const import DOMAIN  # Removed CONF_SERVER_NAME as it's not directly used here
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -30,7 +30,7 @@ from pybedrock_server_manager import (
     ServerNotRunningError,  # Kept just in case
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 
 _LOGGER = logging.getLogger(__name__)

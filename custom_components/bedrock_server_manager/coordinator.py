@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -21,7 +21,7 @@ from pybedrock_server_manager import (
     ServerNotRunningError,
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 from .const import DOMAIN  # Keep local constant import
 

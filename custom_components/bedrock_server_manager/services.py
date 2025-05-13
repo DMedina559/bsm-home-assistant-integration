@@ -4,6 +4,9 @@
 import asyncio
 import logging
 from typing import cast, Dict, Optional, List, Any
+# Make sure functools is imported if you choose that path,
+# but for the lambda solution below, it's not strictly needed.
+# from functools import partial # Not strictly needed for the chosen solution
 
 import voluptuous as vol
 
@@ -55,7 +58,7 @@ from .const import (
     FIELD_AUTOSTART,
 )
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -65,7 +68,7 @@ from pybedrock_server_manager import (
     # ServerNotFoundError might be useful if a helper specifically needs to catch it
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 # --- IMPORT FROM LOCAL MODULES ---
 from .coordinator import ManagerDataCoordinator
@@ -73,6 +76,7 @@ from .coordinator import ManagerDataCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 # --- Service Schema Definitions ---
+# ... (schemas remain the same) ...
 SEND_COMMAND_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_COMMAND): cv.string,
@@ -193,6 +197,7 @@ ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA = vol.Schema(
 
 
 # --- Service Handler Helper Functions ---
+# ... (these functions remain the same) ...
 async def _base_api_call_handler(
     api_call_coro, error_message_prefix: str, server_name_for_log: Optional[str] = None
 ):
@@ -547,6 +552,48 @@ async def _resolve_server_targets(
                         device_id_str,
                     )
 
+    # Resolve Areas - NOTE: Area resolution typically means finding devices/entities in that area
+    # and then resolving them as above. This example assumes areas are already resolved to device/entity IDs by HA.
+    # If ATTR_AREA_ID is directly used, you'd need to iterate devices/entities in that area.
+    # For simplicity, this example assumes area_id in service.data is handled by HA upstream
+    # or that targeting by area implicitly means targeting all devices/entities of this integration in that area.
+    # If you need to manually resolve area_id to devices:
+    target_area_ids = service.data.get(ATTR_AREA_ID, [])
+    if isinstance(target_area_ids, str):
+        target_area_ids = [target_area_ids]
+
+    if target_area_ids:
+        all_devices = device_registry_instance.devices.values()
+        for area_id_str in target_area_ids:
+            for device_entry in all_devices:
+                if device_entry.area_id == area_id_str:
+                    # Now, process this device_entry like in the ATTR_DEVICE_ID section
+                    # to see if it belongs to our integration and extract server_name.
+                    # This part duplicates logic from the device_id loop; consider refactoring.
+                    our_entry_id = None
+                    for entry_id_for_dev in device_entry.config_entries:
+                        config_entry = hass.config_entries.async_get_entry(entry_id_for_dev)
+                        if config_entry and config_entry.domain == DOMAIN:
+                            our_entry_id = entry_id_for_dev
+                            break
+                    if our_entry_id:
+                        server_name_from_dev = None
+                        for identifier in device_entry.identifiers:
+                            if len(identifier) == 2 and identifier[0] == DOMAIN and ":" not in identifier[1]:
+                                server_name_from_dev = identifier[1]
+                                break
+                        if server_name_from_dev:
+                            if our_entry_id not in servers_to_target:
+                                servers_to_target[our_entry_id] = server_name_from_dev
+                            elif servers_to_target[our_entry_id] != server_name_from_dev:
+                                _LOGGER.warning(
+                                    "Config entry %s targeted via area/device/entity with different server names ('%s' vs '%s'). Using first.",
+                                    our_entry_id,
+                                    servers_to_target[our_entry_id],
+                                    server_name_from_dev,
+                                )
+
+
     if not servers_to_target:
         _LOGGER.error(
             "Service call for '%s.%s' did not resolve to any valid server targets.",
@@ -597,8 +644,12 @@ async def _execute_targeted_service(
         for i, result in enumerate(results):  # Basic error logging from gather
             if isinstance(result, Exception):
                 # More context could be added here if needed (e.g., which server failed)
+                # Find which server corresponds to this task result for better logging
+                # This assumes tasks are ordered the same as resolved_targets iteration
+                failed_target_server_name = list(resolved_targets.values())[i]
                 _LOGGER.error(
-                    "An error occurred executing a batched service call: %s", result
+                    "An error occurred executing service for server '%s': %s",
+                    failed_target_server_name, result
                 )
     elif not resolved_targets:  # Should be caught by _resolve_server_targets
         _LOGGER.error(
@@ -609,6 +660,8 @@ async def _execute_targeted_service(
 
 
 # --- Main Service Handlers ---
+# These functions (e.g., async_handle_send_command_service) are now correctly called
+# with both `service` and `hass` arguments due to the change in `async_register_services`.
 async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssistant):
     command_to_send = service.data[FIELD_COMMAND]
     await _execute_targeted_service(
@@ -622,14 +675,22 @@ async def async_handle_prune_downloads_service(
     directory = service.data[FIELD_DIRECTORY]
     keep = service.data.get(FIELD_KEEP)
     api_client: Optional[BedrockServerManagerApi] = None
+    # For non-targeted services, pick one API client (e.g., from the first loaded config entry)
+    # This assumes such services operate globally or it doesn't matter which API instance is used.
     if hass.data.get(DOMAIN):
         first_entry_id = next(iter(hass.data[DOMAIN]), None)
         if first_entry_id and hass.data[DOMAIN][first_entry_id].get("api"):
             api_client = hass.data[DOMAIN][first_entry_id]["api"]
         else:
-            raise HomeAssistantError("BSM API client missing.")
+            _LOGGER.error("No API client found for BSM integration.")
+            raise HomeAssistantError("BSM API client missing or integration not fully loaded.")
     else:
+        _LOGGER.error("BSM integration data not found.")
         raise HomeAssistantError("BSM integration not loaded.")
+    
+    if not api_client: # Should be caught above, but as a safeguard
+        raise HomeAssistantError("Failed to obtain BSM API client.")
+
     await _async_handle_prune_downloads(api=api_client, directory=directory, keep=keep)
 
 
@@ -639,7 +700,7 @@ async def async_handle_trigger_backup_service(
     backup_type = service.data[FIELD_BACKUP_TYPE]
     file_to_backup = service.data.get(FIELD_FILE_TO_BACKUP)
     if backup_type == "config" and not file_to_backup:
-        raise vol.Invalid(f"'{FIELD_FILE_TO_BACKUP}' required for 'config' backup.")
+        raise vol.Invalid(f"'{FIELD_FILE_TO_BACKUP}' required for 'config' backup type.")
     await _execute_targeted_service(
         service, hass, _async_handle_trigger_backup, backup_type, file_to_backup
     )
@@ -668,57 +729,79 @@ async def async_handle_install_server_service(
     sversion = service.data[FIELD_SERVER_VERSION]
     overwrite = service.data[FIELD_OVERWRITE]
     api_client: Optional[BedrockServerManagerApi] = None
+    # Similar to prune_downloads, install_server is likely a global manager operation
     if hass.data.get(DOMAIN):
-        fid = next(iter(hass.data[DOMAIN]), None)
-        if fid and hass.data[DOMAIN][fid].get("api"):
-            api_client = hass.data[DOMAIN][fid]["api"]
+        first_entry_id = next(iter(hass.data[DOMAIN]), None)
+        if first_entry_id and hass.data[DOMAIN][first_entry_id].get("api"):
+            api_client = hass.data[DOMAIN][first_entry_id]["api"]
         else:
-            raise HomeAssistantError("BSM API client missing.")
+            _LOGGER.error("No API client found for BSM integration.")
+            raise HomeAssistantError("BSM API client missing or integration not fully loaded.")
     else:
-        raise HomeAssistantError("BSM not loaded.")
+        _LOGGER.error("BSM integration data not found.")
+        raise HomeAssistantError("BSM integration not loaded.")
+
+    if not api_client: # Safeguard
+        raise HomeAssistantError("Failed to obtain BSM API client.")
+        
     await _async_handle_install_server(
         api=api_client, server_name=sname, server_version=sversion, overwrite=overwrite
     )
 
 
 async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
-    _LOGGER.warning("Executing delete_server service. CONFIRMATION PROVIDED!")
+    _LOGGER.warning("Executing delete_server service. CONFIRMATION PROVIDED VIA SCHEMA!")
     resolved_targets = await _resolve_server_targets(service, hass)
     tasks = []
+    # Keep track of config_entry_id and server_name for results processing
+    target_info_list = []
+
     for cid, sname in resolved_targets.items():
         if cid not in hass.data.get(DOMAIN, {}):
+            _LOGGER.warning(f"Config entry {cid} for server {sname} not loaded. Skipping delete.")
             continue
         try:
+            api_client = hass.data[DOMAIN][cid]["api"]
             tasks.append(
                 _async_handle_delete_server(
-                    hass, hass.data[DOMAIN][cid]["api"], sname, cid
+                    hass, api_client, sname, cid
                 )
             )
+            target_info_list.append({"cid": cid, "sname": sname})
         except Exception as e:
             _LOGGER.exception("Error queueing delete_server for %s: %s", sname, e)
+
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        removed, failed_api = [], []
+        removed_from_ha, api_delete_failed = [], []
         for i, res in enumerate(results):
-            sname_proc = resolved_targets.get(
-                list(resolved_targets.keys())[i], "unknown"
-            )
+            sname_proc = target_info_list[i]["sname"]
             if isinstance(res, Exception):
-                failed_api.append(sname_proc)
-            elif res is True:
-                removed.append(sname_proc)
+                api_delete_failed.append(sname_proc)
+                _LOGGER.error(f"Error during delete_server API call for '{sname_proc}': {res}")
+            elif res is True: # _async_handle_delete_server returns True if device removed from HA
+                removed_from_ha.append(sname_proc)
+            # If res is False or None, it means API call might have succeeded but device wasn't found/removed in HA, or API failed without exception
+            # The _async_handle_delete_server function should ideally raise exceptions for API failures.
+
         msg_parts = []
-        if removed:
-            msg_parts.append(f"Removed from HA: {', '.join(removed)}.")
-        if failed_api:
-            msg_parts.append(f"Failed API delete: {', '.join(failed_api)}.")
-        if not msg_parts:
-            msg_parts.append("Deletion status unclear.")
-        hass.components.persistent_notification.async_create(
-            " ".join(msg_parts),
-            title="BSM Deletion Results",
-            notification_id=f"bsm_delete_{service.context.id}",
-        )
+        if removed_from_ha:
+            msg_parts.append(f"Successfully removed from Home Assistant: {', '.join(removed_from_ha)}.")
+        if api_delete_failed:
+            msg_parts.append(f"Failed API deletion or subsequent HA removal for: {', '.join(api_delete_failed)}.")
+        
+        if not msg_parts and resolved_targets: # Targets existed, but no clear success/failure from tasks
+             msg_parts.append("Deletion attempted, but status unclear. Check logs for details.")
+        elif not resolved_targets: # Should be caught by _resolve_server_targets
+             msg_parts.append("No servers targeted for deletion.")
+
+
+        if msg_parts: # Only send notification if there's something to report
+            hass.components.persistent_notification.async_create(
+                " ".join(msg_parts),
+                title="BSM Server Deletion Results",
+                notification_id=f"bsm_delete_server_{service.context.id}",
+            )
 
 
 async def async_handle_add_to_allowlist_service(
@@ -776,29 +859,49 @@ async def async_handle_configure_os_service_service(
     service: ServiceCall, hass: HomeAssistant
 ):
     autoupdate_val = service.data[FIELD_AUTOUPDATE]
-    autostart_val = service.data.get(FIELD_AUTOSTART)
+    autostart_val = service.data.get(FIELD_AUTOSTART) # Optional
+    
     resolved_targets = await _resolve_server_targets(service, hass)
     tasks = []
     for cid, sname in resolved_targets.items():
         if cid not in hass.data.get(DOMAIN, {}):
+            _LOGGER.warning(f"Config entry {cid} for server {sname} not loaded for OS service config. Skipping.")
             continue
         try:
             entry_data = hass.data[DOMAIN][cid]
+            api_client = entry_data["api"]
             payload: Dict[str, bool] = {"autoupdate": autoupdate_val}
-            if (
-                entry_data.get("manager_os_type", "unknown").lower() == "linux"
-                and autostart_val is not None
-            ):
-                payload["autostart"] = autostart_val
+            
+            # Only include autostart if it was provided in the service call AND the OS is Linux
+            # Assuming 'manager_os_type' is stored in entry_data from the config entry or coordinator
+            manager_os_type = entry_data.get("manager_os_type", "unknown").lower()
+            if autostart_val is not None: # Check if autostart was passed in the service call
+                if manager_os_type == "linux":
+                    payload["autostart"] = autostart_val
+                else:
+                    _LOGGER.warning(
+                        "Autostart configuration is only supported for Linux-based managers. "
+                        f"Server '{sname}' manager OS type is '{manager_os_type}'. Ignoring autostart."
+                    )
+            elif manager_os_type == "linux" and FIELD_AUTOSTART not in service.data:
+                 _LOGGER.debug(f"Field '{FIELD_AUTOSTART}' not provided for Linux server '{sname}'. Autostart setting will not be changed.")
+
+
             tasks.append(
-                _async_handle_configure_os_service(entry_data["api"], sname, payload)
+                _async_handle_configure_os_service(api_client, sname, payload)
             )
+        except KeyError as e:
+            _LOGGER.error(f"Missing data for config entry {cid} (server {sname}) for OS service config: {e}")
         except Exception as e:
             _LOGGER.exception(
                 "Error queueing configure_os_service for %s: %s", sname, e
             )
     if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                sname_failed = list(resolved_targets.values())[i] # Approximate server name
+                _LOGGER.error(f"Error configuring OS service for server '{sname_failed}': {result}")
 
 
 async def async_handle_add_global_players_service(
@@ -807,25 +910,39 @@ async def async_handle_add_global_players_service(
     players_data_list = service.data[FIELD_PLAYERS]
     api_client: Optional[BedrockServerManagerApi] = None
     manager_coordinator: Optional[ManagerDataCoordinator] = None
+
+    # This service is global, so pick one API client and its manager_coordinator
+    # It's better if such global operations are tied to a "manager" device/entity if one exists,
+    # or clearly documented that it uses the first available BSM integration instance.
     if hass.data.get(DOMAIN):
-        for eid_iter, edata_iter in hass.data[DOMAIN].items():
-            if edata_iter.get("api") and edata_iter.get("manager_coordinator"):
-                api_client = edata_iter["api"]
-                manager_coordinator = edata_iter["manager_coordinator"]
-                break
+        for entry_id, entry_values in hass.data[DOMAIN].items():
+            if entry_values.get("api") and entry_values.get("manager_coordinator"): # Ensure both exist
+                api_client = entry_values["api"]
+                manager_coordinator = entry_values["manager_coordinator"]
+                _LOGGER.debug(f"Using API client and coordinator from config entry {entry_id} for add_global_players.")
+                break # Found a suitable entry
+    
     if not api_client:
+        _LOGGER.error("No BSM API client available for add_global_players service.")
         raise HomeAssistantError("BSM API client not available.")
+    
     await _async_handle_add_global_players(
         api=api_client, players_data=players_data_list
     )
+    
     if manager_coordinator:
+        _LOGGER.debug("Requesting refresh of ManagerDataCoordinator after adding global players.")
         await manager_coordinator.async_request_refresh()
     else:
-        _LOGGER.warning("ManagerDataCoordinator not found. Sensor may not update.")
+        _LOGGER.warning(
+            "ManagerDataCoordinator not found after adding global players. "
+            "Global player list sensor may not update immediately."
+        )
 
 
-# --- Service Registration/Removal (Unchanged logic) ---
+# --- Service Registration/Removal ---
 async def async_register_services(hass: HomeAssistant):
+    """Register services with Home Assistant."""
     service_map = {
         SERVICE_SEND_COMMAND: (
             async_handle_send_command_service,
@@ -888,13 +1005,34 @@ async def async_register_services(hass: HomeAssistant):
             ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
         ),
     }
-    for service_name, (handler, schema) in service_map.items():
+    for service_name, (handler_func_from_map, schema) in service_map.items(): # Renamed for clarity
         if not hass.services.has_service(DOMAIN, service_name):
-            hass.services.async_register(DOMAIN, service_name, handler, schema=schema)
+            
+            # The key is to pass handler_func_from_map as a default argument
+            # to the lambda or inner function. This binds the *current* value
+            # of handler_func_from_map at definition time.
+            async def service_wrapper(call: ServiceCall, _handler_to_call=handler_func_from_map):
+                """Async wrapper to call the actual service handler."""
+                _LOGGER.debug(
+                    "Service wrapper executing for service call to '%s', "
+                    "using actual handler: %s",
+                    call.service, # This shows what service HA *thinks* it called
+                    _handler_to_call.__name__ # This shows the handler bound at registration
+                )
+                await _handler_to_call(call, hass)
+
+            hass.services.async_register(
+                DOMAIN, service_name, service_wrapper, schema=schema
+            )
 
 
 async def async_remove_services(hass: HomeAssistant):
-    if not hass.data.get(DOMAIN):
+    """Remove services from Home Assistant."""
+    # This check ensures services are removed only if no config entries for this domain remain.
+    # This is standard behavior: services are registered once when the integration first loads
+    # any config entry, and removed when the last config entry for the integration unloads.
+    if not hass.data.get(DOMAIN) or not any(hass.data[DOMAIN].values()):
+        _LOGGER.info("Removing Bedrock Server Manager services as no configurations are loaded.")
         services_to_remove = [
             SERVICE_SEND_COMMAND,
             SERVICE_PRUNE_DOWNLOADS,
@@ -914,4 +1052,7 @@ async def async_remove_services(hass: HomeAssistant):
         ]
         for service_name in services_to_remove:
             if hass.services.has_service(DOMAIN, service_name):
+                _LOGGER.debug(f"Removing service: {DOMAIN}.{service_name}")
                 hass.services.async_remove(DOMAIN, service_name)
+    else:
+        _LOGGER.debug("Bedrock Server Manager services not removed as configurations are still loaded.")

@@ -28,7 +28,7 @@ from .const import (
     DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
 )
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -36,7 +36,7 @@ from pybedrock_server_manager import (
     CannotConnectError,
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 _LOGGER = logging.getLogger(__name__)
 

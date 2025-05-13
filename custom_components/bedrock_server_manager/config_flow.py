@@ -19,7 +19,7 @@ from .const import (
     CONF_SERVER_NAMES,
 )
 
-# --- IMPORT FROM THE NEW LIBRARY ---
+
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -27,7 +27,7 @@ from pybedrock_server_manager import (
     CannotConnectError,
 )
 
-# --- END IMPORT FROM NEW LIBRARY ---
+
 
 # Import the Options Flow Handler
 from .options_flow import (
