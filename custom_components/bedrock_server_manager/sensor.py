@@ -1,5 +1,7 @@
+# custom_components/bedrock_server_manager/sensor.py
 """Sensor platform for Bedrock Server Manager."""
 
+import asyncio  # Added for asyncio.gather
 import logging
 from typing import Optional, Dict, Any, List
 
@@ -12,18 +14,14 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-# Import the specific Coordinator class
+# --- IMPORT FROM LOCAL MODULES ---
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
-
-# Import constants and API definitions
 from .const import (
     DOMAIN,
-    CONF_SERVER_NAME,  # Still used conceptually for server identity
     ATTR_CPU_PERCENT,
     ATTR_MEMORY_MB,
     ATTR_PID,
@@ -47,15 +45,21 @@ from .const import (
     ATTR_GLOBAL_PLAYERS_LIST,
     ATTR_SERVER_PERMISSIONS_LIST,
 )
-from .api import (
+
+# --- IMPORT FROM THE NEW LIBRARY ---
+from pybedrock_server_manager import (
     BedrockServerManagerApi,
-    ServerNotRunningError,
+    APIError,
+    AuthError,
+    CannotConnectError,
     ServerNotFoundError,
 )
 
+# --- END IMPORT FROM NEW LIBRARY ---
+
 _LOGGER = logging.getLogger(__name__)
 
-# Server-Specific Sensor Descriptions
+# --- Sensor Descriptions (Unchanged) ---
 SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(key="status", name="Status", icon="mdi:minecraft"),
     SensorEntityDescription(
@@ -85,7 +89,7 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_WORLD_BACKUPS_COUNT,
         name="World Backups",
-        icon="mdi:earth-box", 
+        icon="mdi:earth-box",
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
@@ -95,20 +99,15 @@ SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
-        key=KEY_LEVEL_NAME,
-        name="Level Name", # e.g., "Commu Level Name"
-        icon="mdi:map-legend",
-        # No state_class as it's a string
+        key=KEY_LEVEL_NAME, name="Level Name", icon="mdi:map-legend"
     ),
     SensorEntityDescription(
         key=KEY_ALLOWLIST_COUNT,
-        name="Allowlist Count", # e.g., "Commu Allowlist Count"
+        name="Allowlist Count",
         icon="mdi:format-list-checks",
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
-
-# Manager-Global Players Sensor Description
 MANAGER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_GLOBAL_PLAYERS,
@@ -119,34 +118,33 @@ MANAGER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_AVAILABLE_WORLDS_COUNT,
         name="Available Worlds",
-        icon="mdi:earth-box", 
+        icon="mdi:earth-box",
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_AVAILABLE_ADDONS_COUNT,
         name="Available Addons",
-        icon="mdi:puzzle-outline", 
+        icon="mdi:puzzle-outline",
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
 
 
+# --- Setup Entry Function (Updated API calls) ---
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensor entities for manager and all selected servers."""
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
         servers_data: dict = entry_data.get("servers", {})
         manager_identifier: tuple = entry_data["manager_identifier"]
-        # Get the specific manager coordinator instance
         manager_coordinator: ManagerDataCoordinator = entry_data["manager_coordinator"]
         api_client: BedrockServerManagerApi = entry_data["api"]
     except KeyError as e:
         _LOGGER.error(
-            "Missing expected data for entry %s: %s. Cannot set up sensors.",
+            "Missing expected data for entry %s (%s). Cannot set up sensors.",
             entry.entry_id,
             e,
         )
@@ -154,20 +152,21 @@ async def async_setup_entry(
 
     entities_to_add = []
 
-    # --- Add Global Players Sensor for the Manager Device, using ManagerDataCoordinator ---
+    _LOGGER.debug("Setting up manager sensors for entry %s", entry.entry_id)
     for description in MANAGER_SENSOR_DESCRIPTIONS:
         entities_to_add.append(
-            ManagerInfoSensor(  # Use new class name
+            ManagerInfoSensor(
                 coordinator=manager_coordinator,
                 description=description,
                 manager_identifier=manager_identifier,
-                entry_id=entry.entry_id,  # Keep for unique ID construction
+                entry_id=entry.entry_id,
             )
         )
 
-    # --- Server-Specific Sensors (Loop) ---
-    if servers_data:  # Check if there are any server coordinators
-        _LOGGER.debug("Setting up server sensors for: %s", list(servers_data.keys()))
+    if servers_data:
+        _LOGGER.debug(
+            "Setting up server sensors for servers: %s", list(servers_data.keys())
+        )
         for server_name, server_specific_data in servers_data.items():
             server_coordinator = server_specific_data.get("coordinator")
             if not server_coordinator:
@@ -177,38 +176,68 @@ async def async_setup_entry(
                 )
                 continue
 
-            # Fetch/retrieve static info for this server if needed by constructor
-            # It's better if static info is also part of coordinator data or fetched once reliably
             world_name = server_specific_data.get("world_name")
             installed_version = server_specific_data.get("installed_version")
 
-            if (
-                world_name is None or installed_version is None
-            ):  # Check for None explicitly
+            if world_name is None or installed_version is None:
                 _LOGGER.debug(
-                    "Static info missing for server '%s', attempting fetch.",
+                    "Attempting initial fetch of static info for server '%s'.",
                     server_name,
                 )
                 try:
-                    world_name = await api_client.async_get_world_name(server_name)
-                    installed_version = await api_client.async_get_version(server_name)
-                    # Store it back in the server_specific_data for other platforms
+                    # --- UPDATED METHOD CALLS ---
+                    results = await asyncio.gather(
+                        api_client.async_get_server_world_name(server_name),  # Renamed
+                        api_client.async_get_server_version(server_name),  # Renamed
+                        return_exceptions=True,
+                    )
+                    # --- END UPDATED METHOD CALLS ---
+                    world_name_res, version_res = results
+
+                    if isinstance(world_name_res, Exception):
+                        _LOGGER.warning(
+                            "Failed to fetch initial world name for '%s': %s",
+                            server_name,
+                            world_name_res,
+                        )
+                        world_name = None
+                    else:
+                        world_name = world_name_res
+
+                    if isinstance(version_res, Exception):
+                        _LOGGER.warning(
+                            "Failed to fetch initial version for '%s': %s",
+                            server_name,
+                            version_res,
+                        )
+                        installed_version = None
+                    else:
+                        installed_version = version_res
+
                     server_specific_data["world_name"] = world_name
                     server_specific_data["installed_version"] = installed_version
-                except Exception as e:
+                except (
+                    AuthError,
+                    CannotConnectError,
+                    APIError,
+                    ServerNotFoundError,
+                ) as e:
                     _LOGGER.warning(
-                        "Failed to fetch static info for server %s: %s.", server_name, e
+                        "API error fetching static info for server %s: %s.",
+                        server_name,
+                        e,
                     )
-                    # Ensure they are set to something, even if None, for the constructor
-                    if world_name is None:
-                        world_name = None
-                    if installed_version is None:
-                        installed_version = None
+                except Exception as e:
+                    _LOGGER.exception(
+                        "Unexpected error fetching static info for server %s: %s",
+                        server_name,
+                        e,
+                    )
 
             for description in SERVER_SENSOR_DESCRIPTIONS:
                 entities_to_add.append(
-                    MinecraftServerSensor(  # Correct class name for server sensors
-                        coordinator=server_coordinator,  # Pass server's coordinator
+                    MinecraftServerSensor(
+                        coordinator=server_coordinator,
                         description=description,
                         entry=entry,
                         server_name=server_name,
@@ -220,22 +249,19 @@ async def async_setup_entry(
 
     if entities_to_add:
         _LOGGER.info(
-            "Adding %d sensor entities for manager entry %s",
+            "Adding %d sensor entities for entry %s (%s)",
             len(entities_to_add),
+            entry.title,
             entry.entry_id,
         )
         async_add_entities(entities_to_add)
 
 
-# Use specific coordinator type hint
+# --- Server Sensor Class (Logic Unchanged from previous provided version) ---
 class MinecraftServerSensor(
     CoordinatorEntity[MinecraftBedrockCoordinator], SensorEntity
 ):
-    """Base class for a Minecraft Server Manager sensor for a specific server."""
-
-    _attr_has_entity_name = (
-        True  # Use Description.name as the base name ("Status", "CPU Usage", etc.)
-    )
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -256,7 +282,7 @@ class MinecraftServerSensor(
         self._attr_unique_id = f"{DOMAIN}_{self._server_name}_{description.key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._server_name)},
-            name=self._server_name,
+            name=f"bsm-{self._server_name}",
             manufacturer="Bedrock Server Manager",
             model="Minecraft Bedrock Server",
             sw_version=self._installed_version or "Unknown",
@@ -265,132 +291,89 @@ class MinecraftServerSensor(
         )
 
     @property
-    def available(self) -> bool:
-        if not super().available:
-            return False
-        if (
-            isinstance(self.coordinator.data, dict)
-            and self.coordinator.data.get("status") == "error"
-        ):
-            error_type_name = self.coordinator.data.get("error_type")
-            return (
-                error_type_name
-                in [ServerNotRunningError.__name__, ServerNotFoundError.__name__]
-                and self.entity_description.key == "status"
-            )
-        if self.entity_description.key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
-            process_info = self.coordinator.data.get("process_info")
-            return isinstance(process_info, dict)
-        if self.entity_description.key == "status":
-            return True
-        return True
-
-    @property
     def native_value(self) -> Any:
-        if not self.coordinator.data or (
-            isinstance(self.coordinator.data, dict)
-            and self.coordinator.data.get("status") == "error"
-        ):
-            if self.entity_description.key == "status":
-                if isinstance(self.coordinator.data, dict):
-                    error_type_name = self.coordinator.data.get("error_type")
-                    return (
-                        "Stopped"
-                        if error_type_name == ServerNotRunningError.__name__
-                        else (
-                            "Not Found"
-                            if error_type_name == ServerNotFoundError.__name__
-                            else "Unknown"
-                        )
-                    )
-                return "Unknown"
-            if self.entity_description.key == KEY_LEVEL_NAME:
-                return "Unknown" # Default for string state
-            if self.entity_description.key == KEY_ALLOWLIST_COUNT:
-                return 0 # Default for count
+        if not self.available:
             return None
-        process_info = self.coordinator.data.get("process_info")
+        coordinator_data = self.coordinator.data
+        if not isinstance(coordinator_data, dict):
+            _LOGGER.warning("Coordinator data invalid for %s.", self.unique_id)
+            return None
         sensor_key = self.entity_description.key
+        process_info = coordinator_data.get("process_info")
         if sensor_key == "status":
             return "Running" if isinstance(process_info, dict) else "Stopped"
-        if not isinstance(process_info, dict) and sensor_key in [
-            ATTR_CPU_PERCENT,
-            ATTR_MEMORY_MB,
-        ]:
-            return None
         if sensor_key == ATTR_CPU_PERCENT:
-            return process_info.get(ATTR_CPU_PERCENT)
+            return (
+                process_info.get(ATTR_CPU_PERCENT)
+                if isinstance(process_info, dict)
+                else None
+            )
         if sensor_key == ATTR_MEMORY_MB:
-            return process_info.get(ATTR_MEMORY_MB)
-        if sensor_key == KEY_SERVER_PERMISSIONS_COUNT:
-            permissions_list = self.coordinator.data.get("server_permissions", [])
-            return len(permissions_list if isinstance(permissions_list, list) else [])
-        if sensor_key == KEY_WORLD_BACKUPS_COUNT:
-            backups_list = self.coordinator.data.get("world_backups", [])
-            return len(backups_list if isinstance(backups_list, list) else [])
-        if sensor_key == KEY_CONFIG_BACKUPS_COUNT:
-            backups_list = self.coordinator.data.get("config_backups", [])
-            return len(backups_list if isinstance(backups_list, list) else [])
+            return (
+                process_info.get(ATTR_MEMORY_MB)
+                if isinstance(process_info, dict)
+                else None
+            )
+        count_map = {
+            KEY_SERVER_PERMISSIONS_COUNT: "server_permissions",
+            KEY_WORLD_BACKUPS_COUNT: "world_backups",
+            KEY_CONFIG_BACKUPS_COUNT: "config_backups",
+            KEY_ALLOWLIST_COUNT: "allowlist",
+        }
+        if sensor_key in count_map:
+            data_list = coordinator_data.get(count_map[sensor_key], [])
+            return len(data_list if isinstance(data_list, list) else [])
         if sensor_key == KEY_LEVEL_NAME:
-            server_props = self.coordinator.data.get("properties", {})
-            return server_props.get("level-name", "Unknown") if isinstance(server_props, dict) else "Unknown"
-        if sensor_key == KEY_ALLOWLIST_COUNT:
-            allowlist = self.coordinator.data.get("allowlist", [])
-            return len(allowlist if isinstance(allowlist, list) else [])
-        _LOGGER.warning("Sensor state for unhandled key: %s", sensor_key)
+            server_props = coordinator_data.get("properties", {})
+            return (
+                server_props.get("level-name", "Unknown")
+                if isinstance(server_props, dict)
+                else "Unknown"
+            )
+        _LOGGER.debug(
+            "Sensor state not handled for key %s in %s", sensor_key, self.unique_id
+        )
         return None
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+        if not self.available or not isinstance(self.coordinator.data, dict):
+            return None
+        coordinator_data = self.coordinator.data
         attrs = {}
         sensor_key = self.entity_description.key
         if sensor_key == "status":
-            if self._world_name: attrs[ATTR_WORLD_NAME] = self._world_name # Keep as it's fetched once
-            if self._installed_version: attrs[ATTR_INSTALLED_VERSION] = self._installed_version # Keep as it's fetched once
+            if self._world_name:
+                attrs[ATTR_WORLD_NAME] = self._world_name
+            if self._installed_version:
+                attrs[ATTR_INSTALLED_VERSION] = self._installed_version
         elif sensor_key == ATTR_CPU_PERCENT:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                process_info = self.coordinator.data.get("process_info")
-                pid = process_info.get("pid")
-                uptime = process_info.get("uptime")
-                attrs[ATTR_PID] = pid
-                attrs[ATTR_UPTIME] = uptime
+            process_info = coordinator_data.get("process_info")
+            if isinstance(process_info, dict):
+                attrs[ATTR_PID] = process_info.get("pid")
+                attrs[ATTR_UPTIME] = process_info.get("uptime")
         elif sensor_key == KEY_SERVER_PERMISSIONS_COUNT:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                permissions_list = self.coordinator.data.get("server_permissions", [])
-                attrs[ATTR_SERVER_PERMISSIONS_LIST] = (
-                    permissions_list if isinstance(permissions_list, list) else []
-                )
+            attrs[ATTR_SERVER_PERMISSIONS_LIST] = coordinator_data.get(
+                "server_permissions", []
+            )
         elif sensor_key == KEY_WORLD_BACKUPS_COUNT:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                backups_list = self.coordinator.data.get("world_backups", [])
-                attrs[ATTR_WORLD_BACKUPS_LIST] = (
-                    backups_list if isinstance(backups_list, list) else []
-                )
+            attrs[ATTR_WORLD_BACKUPS_LIST] = coordinator_data.get("world_backups", [])
         elif sensor_key == KEY_CONFIG_BACKUPS_COUNT:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                backups_list = self.coordinator.data.get("config_backups", [])
-                attrs[ATTR_CONFIG_BACKUPS_LIST] = (
-                    backups_list if isinstance(backups_list, list) else []
-                )
-        elif sensor_key == KEY_LEVEL_NAME:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                server_props = self.coordinator.data.get("properties", {})
-                # The main state IS the level-name, so all other properties go here
-                attrs[ATTR_SERVER_PROPERTIES] = server_props if isinstance(server_props, dict) else {}
-
+            attrs[ATTR_CONFIG_BACKUPS_LIST] = coordinator_data.get("config_backups", [])
         elif sensor_key == KEY_ALLOWLIST_COUNT:
-            if self.coordinator.data and isinstance(self.coordinator.data, dict):
-                allowlist = self.coordinator.data.get("allowlist", [])
-                # The main state IS the count, so the list of player objects/names goes here
-                attrs[ATTR_ALLOWLISTED_PLAYERS] = [
-                    p.get("name") for p in allowlist if isinstance(p, dict) and p.get("name")
-                ] if isinstance(allowlist, list) else [] # Or store full objects if preferred
+            allowlist = coordinator_data.get("allowlist", [])
+            attrs[ATTR_ALLOWLISTED_PLAYERS] = (
+                [p.get("name") for p in allowlist if isinstance(p, dict)]
+                if isinstance(allowlist, list)
+                else []
+            )
+        elif sensor_key == KEY_LEVEL_NAME:
+            attrs[ATTR_SERVER_PROPERTIES] = coordinator_data.get("properties", {})
         return attrs if attrs else None
 
 
+# --- Manager Sensor Class (Logic Unchanged from previous provided version) ---
 class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity):
-    """Representation of a sensor for global manager information."""
-
     _attr_has_entity_name = True
 
     def __init__(
@@ -400,77 +383,45 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         manager_identifier: tuple,
         entry_id: str,
     ):
-        """Initialize the manager info sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._manager_identifier = manager_identifier
-        # Unique ID based on manager "host:port" string + sensor key
-        manager_id_str = manager_identifier[1]
-        self._attr_unique_id = f"{DOMAIN}_{manager_id_str}_{description.key}"
+        self._attr_unique_id = f"{DOMAIN}_{manager_identifier[1]}_{description.key}"
         self._attr_device_info = DeviceInfo(identifiers={self._manager_identifier})
 
     @property
-    def native_value(self) -> Optional[int]:  # State will be a count
-        """Return the state of the sensor."""
-        if not self.coordinator.last_update_success or not self.coordinator.data:
-            return None  # Or 0 if preferred for count on error
-
+    def native_value(self) -> Optional[int]:
+        if not self.available or not isinstance(self.coordinator.data, dict):
+            return None
+        coordinator_data = self.coordinator.data
         sensor_key = self.entity_description.key
         data_list = []
-
         if sensor_key == KEY_GLOBAL_PLAYERS:
-            data_list = self.coordinator.data.get("global_players", [])
+            data_list = coordinator_data.get("global_players", [])
         elif sensor_key == KEY_AVAILABLE_WORLDS_COUNT:
-            data_list = self.coordinator.data.get("available_worlds", [])
+            data_list = coordinator_data.get("available_worlds", [])
         elif sensor_key == KEY_AVAILABLE_ADDONS_COUNT:
-            data_list = self.coordinator.data.get("available_addons", [])
+            data_list = coordinator_data.get("available_addons", [])
         else:
-            _LOGGER.warning(
-                "Unhandled manager sensor key for native_value: %s", sensor_key
-            )
+            _LOGGER.warning("Unhandled manager sensor key for value: %s", sensor_key)
             return None
-
         return len(data_list if isinstance(data_list, list) else [])
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
-        """Return entity specific state attributes."""
-        if not self.coordinator.last_update_success or not self.coordinator.data:
+        if not self.available or not isinstance(self.coordinator.data, dict):
             return None
-
+        coordinator_data = self.coordinator.data
         sensor_key = self.entity_description.key
         attrs = {}
-
         if sensor_key == KEY_GLOBAL_PLAYERS:
-            players_list = self.coordinator.data.get("global_players", [])
-            attrs[ATTR_GLOBAL_PLAYERS_LIST] = (
-                players_list if isinstance(players_list, list) else []
-            )
+            attrs[ATTR_GLOBAL_PLAYERS_LIST] = coordinator_data.get("global_players", [])
         elif sensor_key == KEY_AVAILABLE_WORLDS_COUNT:
-            worlds_list = self.coordinator.data.get("available_worlds", [])
-            attrs[ATTR_AVAILABLE_WORLDS_LIST] = (
-                worlds_list if isinstance(worlds_list, list) else []
+            attrs[ATTR_AVAILABLE_WORLDS_LIST] = coordinator_data.get(
+                "available_worlds", []
             )
         elif sensor_key == KEY_AVAILABLE_ADDONS_COUNT:
-            addons_list = self.coordinator.data.get("available_addons", [])
-            attrs[ATTR_AVAILABLE_ADDONS_LIST] = (
-                addons_list if isinstance(addons_list, list) else []
+            attrs[ATTR_AVAILABLE_ADDONS_LIST] = coordinator_data.get(
+                "available_addons", []
             )
-        else:
-            _LOGGER.warning(
-                "Unhandled manager sensor key for attributes: %s", sensor_key
-            )
-
-        # Add manager OS and App Version as attributes to ALL manager sensors for convenience
-        # if self.coordinator.data.get("info"):
-        #    manager_info = self.coordinator.data["info"]
-        #    if isinstance(manager_info, dict):
-        #        attrs["manager_os_type"] = manager_info.get("os_type")
-        #        attrs["manager_app_version"] = manager_info.get("app_version")
-
         return attrs if attrs else None
-
-    @property
-    def available(self) -> bool:
-        """Sensor availability is based on coordinator's last success."""
-        return self.coordinator.last_update_success

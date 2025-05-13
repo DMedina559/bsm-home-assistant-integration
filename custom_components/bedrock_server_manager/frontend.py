@@ -1,3 +1,4 @@
+# custom_components/bedrock_server_manager/frontend.py
 """Frontend registration for BSM Manager."""
 
 import logging

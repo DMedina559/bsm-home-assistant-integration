@@ -1,3 +1,4 @@
+# custom_components/bedrock_server_manager/services.yaml
 # Defines the actions provided by the Bedrock Server Manager integration.
 
 send_command:
