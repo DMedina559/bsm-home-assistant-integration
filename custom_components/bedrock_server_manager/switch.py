@@ -25,7 +25,6 @@ from pybedrock_server_manager import (
 )
 
 
-
 _LOGGER = logging.getLogger(__name__)
 
 SWITCH_DESCRIPTION = SwitchEntityDescription(

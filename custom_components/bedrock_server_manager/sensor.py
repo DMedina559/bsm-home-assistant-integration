@@ -1,7 +1,7 @@
 # custom_components/bedrock_server_manager/sensor.py
 """Sensor platform for Bedrock Server Manager."""
 
-import asyncio  # Added for asyncio.gather
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 
@@ -56,10 +56,9 @@ from pybedrock_server_manager import (
 )
 
 
-
 _LOGGER = logging.getLogger(__name__)
 
-# --- Sensor Descriptions (Unchanged) ---
+# --- Sensor Descriptions ---
 SERVER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(key="status", name="Status", icon="mdi:minecraft"),
     SensorEntityDescription(
@@ -130,7 +129,7 @@ MANAGER_SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
 )
 
 
-# --- Setup Entry Function (Updated API calls) ---
+# --- Setup Entry Function ---
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,

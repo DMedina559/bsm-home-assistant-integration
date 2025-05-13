@@ -28,7 +28,6 @@ from pybedrock_server_manager import (
 )
 
 
-
 # Import the Options Flow Handler
 from .options_flow import (
     BSMOptionsFlowHandler,
@@ -36,7 +35,7 @@ from .options_flow import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# --- Schema Definition (Unchanged) ---
+# --- Schema Definition ---
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
@@ -53,7 +52,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-# --- Custom Internal Config Flow Exceptions (Unchanged) ---
+# --- Custom Internal Config Flow Exceptions ---
 class CannotConnect(exceptions.HomeAssistantError):
     def __init__(self, error_key="cannot_connect", error_details=None):
         super().__init__(f"Cannot connect: {error_key} {error_details or ''}")

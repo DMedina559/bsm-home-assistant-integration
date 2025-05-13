@@ -27,7 +27,6 @@ from .coordinator import (
 from pybedrock_server_manager import BedrockServerManagerApi
 
 
-
 _LOGGER = logging.getLogger(__name__)  # Added
 
 TO_REDACT_CONFIG = {

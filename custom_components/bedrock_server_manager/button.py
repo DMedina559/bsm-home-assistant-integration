@@ -31,11 +31,9 @@ from pybedrock_server_manager import (
 )
 
 
-
-
 _LOGGER = logging.getLogger(__name__)
 
-# --- Descriptions for Server-Specific Buttons (Unchanged) ---
+# --- Descriptions for Server-Specific Buttons ---
 SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
         key="restart_server",
@@ -66,7 +64,7 @@ SERVER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ),  # Key updated
 )
 
-# --- Descriptions for Manager-Global Buttons (Unchanged) ---
+# --- Descriptions for Manager-Global Buttons ---
 MANAGER_BUTTON_DESCRIPTIONS: tuple[ButtonEntityDescription, ...] = (
     ButtonEntityDescription(
         key="scan_players",

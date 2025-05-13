@@ -37,10 +37,9 @@ from pybedrock_server_manager import (
 )
 
 
-
 _LOGGER = logging.getLogger(__name__)
 
-# --- Schemas (Unchanged) ---
+# --- Schemas ---
 STEP_CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,

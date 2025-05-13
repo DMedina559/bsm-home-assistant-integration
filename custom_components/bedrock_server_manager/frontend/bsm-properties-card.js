@@ -63,7 +63,7 @@ class BsmPropertiesCard extends LitElement {
     };
   }
 
-  // --- STYLES (Unchanged) ---
+  // --- STYLES ---
   static get styles() {
     return css`
       :host { display: block; }
@@ -196,7 +196,7 @@ class BsmPropertiesCard extends LitElement {
   }
   // --- END setConfig ---
 
-  // --- _resetSelectionRelatedState (Unchanged) ---
+  // --- _resetSelectionRelatedState ---
   _resetSelectionRelatedState(feedbackMessage = "", error = null) {
     _LOGGER.debug("Resetting selection-related state. Feedback:", feedbackMessage, "Error:", error);
     this._currentProperties = {};
@@ -424,7 +424,7 @@ class BsmPropertiesCard extends LitElement {
   }
   // --- END REVERTED render ---
 
-  // --- _getTargetDeviceId (Unchanged) ---
+  // --- _getTargetDeviceId ---
   _getTargetDeviceId() {
     if (!this.hass || !this._selectedStatusEntityId) {
         _LOGGER.warn("_getTargetDeviceId: HASS object or selected entity ID is not available.");
@@ -448,7 +448,7 @@ class BsmPropertiesCard extends LitElement {
   }
   // --- END _getTargetDeviceId ---
 
-  // --- _callService (Unchanged) ---
+  // --- _callService ---
   async _callService(serviceName, serviceData, operationFeedback) {
     this._isLoading = true; this._error = null; this._feedback = "";
     this.requestUpdate();
@@ -472,7 +472,7 @@ class BsmPropertiesCard extends LitElement {
   }
   // --- END _callService ---
 
-  // --- _saveProperties (Unchanged) ---
+  // --- _saveProperties ---
   async _saveProperties() {
     const targetDeviceId = this._getTargetDeviceId();
     if (!targetDeviceId) {
@@ -506,7 +506,7 @@ class BsmPropertiesCard extends LitElement {
   }
   // --- END _saveProperties ---
 
-  // --- getCardSize (Unchanged) ---
+  // --- getCardSize ---
   getCardSize() {
     let numPropsRendered = 0;
     if (this._selectedStatusEntityId && !this._error && Object.keys(this._currentProperties ?? {}).length > 0) {
@@ -520,7 +520,7 @@ class BsmPropertiesCard extends LitElement {
 customElements.define("bsm-properties-card", BsmPropertiesCard);
 
 
-// --- EDITOR ELEMENT DEFINITION (Unchanged) ---
+// --- EDITOR ELEMENT DEFINITION ---
 class BsmPropertiesCardEditor extends LitElement {
   static get properties() { return { hass: { type: Object }, _config: { type: Object, state: true } }; }
   setConfig(config) { this._config = config; }
@@ -550,7 +550,7 @@ customElements.define("bsm-properties-card-editor", BsmPropertiesCardEditor);
 // --- END EDITOR ELEMENT DEFINITION ---
 
 
-// --- WINDOW REGISTRATION (Unchanged) ---
+// --- WINDOW REGISTRATION ---
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "bsm-properties-card",
