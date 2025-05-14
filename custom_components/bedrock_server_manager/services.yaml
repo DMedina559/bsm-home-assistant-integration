@@ -19,6 +19,12 @@ send_command:
 
 prune_download_cache:
   description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
   fields:
     directory:
       description: The absolute path on the manager host where download files (.zip) are stored.
@@ -100,6 +106,12 @@ restore_latest_all:
 
 install_server:
   description: "Installs a new Minecraft Bedrock server instance via the manager. Does NOT prompt for overwrite confirmation - set 'overwrite: true' explicitly if needed."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
   fields:
     server_name:
       description: Desired unique name for the new server (valid directory name characters only).
@@ -262,7 +274,12 @@ configure_os_service:
 
 add_global_players:
   description: Adds or updates players in the manager's global player list (players.json). This is a global manager action, no specific server target needed.
-  # No target needed for this global service
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_managere
   fields:
     players:
       description: A list of player strings, each in "PlayerName:PlayerXUID" format (e.g., '["Steve:123", "Alex:456"]'). Input as YAML/JSON list.

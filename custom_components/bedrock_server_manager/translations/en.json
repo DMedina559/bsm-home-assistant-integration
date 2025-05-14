@@ -39,13 +39,11 @@
       "init": {
         "title": "Bedrock Server Manager Options",
         "description": "Choose which settings to modify for the manager at {host}.",
-        "menu": {
-          "options": {
-            "update_credentials": "Update API Credentials",
-            "select_servers": "Select Servers to Monitor",
-            "update_server_interval": "Update Server Polling Interval",
-            "update_manager_interval": "Update Manager Polling Interval"
-          }
+        "menu_options": {
+          "update_credentials": "Update API Credentials",
+          "select_servers": "Select Servers to Monitor",
+          "update_server_interval": "Update Server Polling Interval",
+          "update_manager_interval": "Update Manager Polling Interval"
         }
       },
       "update_credentials": {
@@ -58,7 +56,7 @@
       },
       "select_servers": {
         "title": "Select Servers to Monitor",
-        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.",
+        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.{fetch_error}",
         "data": {
           "servers": "Servers to Monitor"
         }
@@ -99,17 +97,17 @@
       "update_server": {
         "name": "Update"
       },
-      "trigger_backup": {
-        "name": "Backup"
+      "trigger_server_backup_all": {
+        "name": "Backup All"
       },
-      "export_world": {
+      "export_server_world": {
         "name": "Export World"
       },
-      "prune_backups": {
+      "prune_server_backups": {
         "name": "Prune Backups"
       },
       "prune_downloads": {
-        "name": "Prune Download Cache"
+        "name": "Prune Downloads"
       },
       "scan_players": {
         "name": "Scan Player Logs"
@@ -150,6 +148,9 @@
       },
       "allowlist_count": {
         "name": "Allowlist Count"
+      },
+      "global_players_count": {
+        "name": "Global Players Count"
       }
     }
   },
@@ -313,6 +314,16 @@
         "autostart": {
           "name": "Enable Autostart (Linux Only)",
           "description": "(Optional) Set to true to enable the server to start automatically on system boot (via systemd user service on Linux)."
+        }
+      }
+    },
+    "add_global_players": {
+      "name": "Add global players",
+      "description": "Adds one or more players to the global player database on the BSM manager.",
+      "fields": {
+        "players": {
+          "name": "Players",
+          "description": "List of player Gamertags (and optional XUIDs like 'PlayerName:12345') to add/update."
         }
       }
     }

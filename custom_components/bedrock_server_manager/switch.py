@@ -2,15 +2,16 @@
 """Switch platform for Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Tuple
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 
 # --- IMPORT FROM LOCAL MODULES ---
 from .coordinator import MinecraftBedrockCoordinator
@@ -22,6 +23,8 @@ from pybedrock_server_manager import (
     APIError,
     AuthError,
     CannotConnectError,
+    ServerNotFoundError,
+    ServerNotRunningError,
 )
 
 
@@ -41,11 +44,11 @@ async def async_setup_entry(
 ) -> None:
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
-        servers_data: dict = entry_data["servers"]
-        manager_identifier: tuple = entry_data["manager_identifier"]
+        servers_data: dict = entry_data.get("servers", {})
+        manager_identifier: Tuple[str, str] = entry_data["manager_identifier"]
     except KeyError as e:
         _LOGGER.error(
-            "Missing expected data for entry %s (%s). Cannot set up switches.",
+            "Missing expected data for entry %s (Key: %s). Cannot set up switches.",
             entry.entry_id,
             e,
         )
@@ -53,28 +56,47 @@ async def async_setup_entry(
 
     if not servers_data:
         _LOGGER.debug(
-            "No servers found for entry %s. Skipping switch setup.", entry.entry_id
+            "No servers found for entry %s (Manager ID: %s). Skipping switch setup.",
+            entry.entry_id,
+            manager_identifier[1],
         )
         return
 
-    _LOGGER.debug("Setting up switches for servers: %s", list(servers_data.keys()))
+    _LOGGER.debug(
+        "Setting up switches for servers: %s (Manager ID: %s)",
+        list(servers_data.keys()),
+        manager_identifier[1],
+    )
     switches_to_add = []
-    for server_name, server_data in servers_data.items():
-        coordinator = server_data.get("coordinator")
+    for (
+        server_name,
+        server_data_dict,
+    ) in servers_data.items():
+        coordinator = server_data_dict.get("coordinator")
         if not coordinator:
             _LOGGER.warning(
-                "Coordinator missing for server '%s'. Skipping switch.", server_name
+                "Coordinator missing for server '%s' (Manager ID: %s). Skipping its switch.",
+                server_name,
+                manager_identifier[1],
             )
             continue
-        switches_to_add.append(
-            MinecraftServerSwitch(
-                coordinator=coordinator,
-                description=SWITCH_DESCRIPTION,
-                entry=entry,
-                server_name=server_name,
-                manager_identifier=manager_identifier,
+
+        if coordinator.last_update_success and coordinator.data:
+            switches_to_add.append(
+                MinecraftServerSwitch(
+                    coordinator=coordinator,
+                    description=SWITCH_DESCRIPTION,
+                    server_name=server_name,
+                    manager_identifier=manager_identifier,
+                )
             )
-        )
+        else:
+            _LOGGER.warning(
+                "Coordinator for server '%s' (Manager ID: %s) has no data or last update failed; skipping its switch.",
+                server_name,
+                manager_identifier[1],
+            )
+
     if switches_to_add:
         _LOGGER.info(
             "Adding %d switch entities for entry %s (%s)",
@@ -83,6 +105,10 @@ async def async_setup_entry(
             entry.entry_id,
         )
         async_add_entities(switches_to_add)
+    else:
+        _LOGGER.debug(
+            "No switch entities to add for entry %s (%s)", entry.title, entry.entry_id
+        )
 
 
 class MinecraftServerSwitch(
@@ -94,36 +120,73 @@ class MinecraftServerSwitch(
         self,
         coordinator: MinecraftBedrockCoordinator,
         description: SwitchEntityDescription,
-        entry: ConfigEntry,
         server_name: str,
-        manager_identifier: tuple,
+        manager_identifier: Tuple[str, str],
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._entry = entry
         self._server_name = server_name
-        self._attr_unique_id = f"{DOMAIN}_{self._server_name}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._server_name)},
-            name=f"bsm-{self._server_name}",
+        self._manager_host_port_id = manager_identifier[1]
+
+        self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}"
+        _LOGGER.debug(
+            "ServerSwitch Unique ID for %s (%s): %s for key %s",
+            self._server_name,
+            self._manager_host_port_id,
+            self._attr_unique_id,
+            description.key,
+        )
+
+        # --- CRITICAL CHANGE FOR DEVICE IDENTIFIER ---
+        server_device_unique_part = f"{self._manager_host_port_id}_{self._server_name}"
+        self._attr_device_info = dr.DeviceInfo(
+            identifiers={
+                (DOMAIN, server_device_unique_part)
+            },  # Globally unique server device ID
+            name=f"BSM {self._server_name} ({self._manager_host_port_id})",  # Descriptive device name
+            manufacturer="Bedrock Server Manager (Server)",  # Or your main manufacturer
+            model="Minecraft Server",  # Or "Minecraft Bedrock Server"
+            sw_version=(
+                coordinator.data.get("server_version")
+                if coordinator.data
+                else "Unknown"
+            ),
             via_device=manager_identifier,
+            configuration_url=f"http://{coordinator.config_entry.data[CONF_HOST]}:{int(coordinator.config_entry.data[CONF_PORT])}",
         )
 
     @property
-    def is_on(self) -> Optional[bool]:
-        if not self.available:
-            return None
-        coordinator_data = self.coordinator.data
-        if not isinstance(coordinator_data, dict):
-            _LOGGER.warning("Coordinator data invalid for %s.", self.unique_id)
-            return None
-        process_info = coordinator_data.get("process_info")
-        return isinstance(process_info, dict)
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def is_on(self) -> bool:
+        if not self.coordinator.last_update_success or not self.coordinator.data:
+            _LOGGER.debug(
+                "Coordinator data unavailable for %s, switch state unknown (reporting off)",
+                self.unique_id,
+            )
+            return False
+        server_status = self.coordinator.data.get("status")
+        if server_status == "Running":
+            return True
+        if server_status == "Stopped":
+            return False
+        process_info = self.coordinator.data.get("process_info")
+        is_running = isinstance(process_info, dict) and bool(process_info)
+        _LOGGER.debug(
+            "Switch %s is_on based on process_info: %s", self.unique_id, is_running
+        )
+        return is_running
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         api_client: BedrockServerManagerApi = self.coordinator.api
         server_name = self._server_name
-        _LOGGER.info("Attempting to turn ON server '%s'", server_name)
+        _LOGGER.info(
+            "Attempting to turn ON server '%s' (Manager: %s)",
+            server_name,
+            self._manager_host_port_id,
+        )
         try:
             await api_client.async_start_server(server_name)
             await self.coordinator.async_request_refresh()
@@ -139,10 +202,17 @@ class MinecraftServerSwitch(
             raise HomeAssistantError(
                 f"Could not connect to manager to start {server_name}."
             ) from err
+        except ServerNotFoundError as err:
+            _LOGGER.error(
+                "Server not found error starting server %s: %s", server_name, err
+            )
+            raise HomeAssistantError(
+                f"Server {server_name} not found by manager."
+            ) from err
         except APIError as err:
             _LOGGER.error("API error starting server %s: %s", server_name, err)
             raise HomeAssistantError(
-                f"Failed to start server {server_name}: {getattr(err, 'message', err)}"
+                f"Failed to start server {server_name}: {err}"
             ) from err
         except Exception as err:
             _LOGGER.exception(
@@ -155,7 +225,11 @@ class MinecraftServerSwitch(
     async def async_turn_off(self, **kwargs: Any) -> None:
         api_client: BedrockServerManagerApi = self.coordinator.api
         server_name = self._server_name
-        _LOGGER.info("Attempting to turn OFF server '%s'", server_name)
+        _LOGGER.info(
+            "Attempting to turn OFF server '%s' (Manager: %s)",
+            server_name,
+            self._manager_host_port_id,
+        )
         try:
             await api_client.async_stop_server(server_name)
             await self.coordinator.async_request_refresh()
@@ -171,18 +245,33 @@ class MinecraftServerSwitch(
             raise HomeAssistantError(
                 f"Could not connect to manager to stop {server_name}."
             ) from err
+        except ServerNotFoundError as err:
+            _LOGGER.error(
+                "Server not found error stopping server %s: %s", server_name, err
+            )
+            await self.coordinator.async_request_refresh()
+            return
+        except ServerNotRunningError as err:
+            _LOGGER.warning(
+                "Attempted to stop server %s, but it was already stopped or not running: %s",
+                server_name,
+                err,
+            )
+            await self.coordinator.async_request_refresh()
+            return
         except APIError as err:
-            msg = str(getattr(err, "message", err)).lower()
+            msg = str(err).lower()
             if "not running" in msg or "already stopped" in msg:
                 _LOGGER.warning(
-                    "Attempted to stop server %s, but it was already stopped.",
+                    "Attempted to stop server %s, API indicated it was not running: %s",
                     server_name,
+                    msg,
                 )
                 await self.coordinator.async_request_refresh()
                 return
             _LOGGER.error("API error stopping server %s: %s", server_name, err)
             raise HomeAssistantError(
-                f"Failed to stop server {server_name}: {getattr(err, 'message', err)}"
+                f"Failed to stop server {server_name}: {err}"
             ) from err
         except Exception as err:
             _LOGGER.exception(

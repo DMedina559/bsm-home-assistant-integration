@@ -78,7 +78,7 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        """Initialize BSM options flow."""
         self._discovered_servers: Optional[List[str]] = None
 
     async def _get_api_client(
@@ -160,25 +160,43 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         errors: Dict[str, str] = {}
         current_options = self.config_entry.options
-        old_selected_servers = set(current_options.get(CONF_SERVER_NAMES, []))
+        # Ensure old_selected_servers is always a list of strings
+        old_selected_servers_from_options = current_options.get(CONF_SERVER_NAMES, [])
+        if not isinstance(old_selected_servers_from_options, list):
+            old_selected_servers_from_options = []  # Default to empty list if malformed
+        old_selected_servers_set = set(
+            str(s) for s in old_selected_servers_from_options if isinstance(s, str)
+        )
 
         if self._discovered_servers is None:
             try:
                 api_client = await self._get_api_client()
-                await api_client.authenticate()  # Method name OK
-                # --- UPDATED METHOD CALL ---
+                # It's good practice to re-authenticate if there's any doubt or if token might expire
+                # However, for options flow, if initial config succeeded, it might be okay.
+                # For robustness, especially if credentials could change or sessions expire:
+                # await api_client.authenticate()
                 self._discovered_servers = await api_client.async_get_servers()
-                # --- END UPDATED METHOD CALL ---
                 _LOGGER.debug(
                     "Fetched server list for options flow: %s", self._discovered_servers
                 )
+                if not isinstance(self._discovered_servers, list):  # Ensure it's a list
+                    _LOGGER.warning(
+                        "Discovered servers is not a list: %s. Resetting.",
+                        self._discovered_servers,
+                    )
+                    self._discovered_servers = []
+                else:  # Ensure all items are strings
+                    self._discovered_servers = [
+                        str(s) for s in self._discovered_servers if isinstance(s, str)
+                    ]
+
             except AuthError as err:
                 _LOGGER.error(
                     "Authentication error fetching server list for options flow: %s",
                     err,
                 )
                 errors["base"] = "invalid_auth"
-                self._discovered_servers = []
+                self._discovered_servers = []  # Ensure it's an empty list on error
             except CannotConnectError as err:
                 _LOGGER.error(
                     "Connection error fetching server list for options flow: %s", err
@@ -187,7 +205,9 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 self._discovered_servers = []
             except APIError as err:
                 _LOGGER.error(
-                    "API error fetching server list for options flow: %s", err
+                    "API error fetching server list for options flow: %s. Details: %s",
+                    err,
+                    err.args[0] if err.args else "No details",
                 )
                 errors["base"] = "fetch_servers_failed"
                 self._discovered_servers = []
@@ -199,15 +219,24 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 self._discovered_servers = []
 
         if user_input is not None and not errors:
-            newly_selected_servers_list = user_input.get(CONF_SERVER_NAMES, [])
+            newly_selected_servers_list_raw = user_input.get(CONF_SERVER_NAMES, [])
+            # Ensure it's a list of strings
+            newly_selected_servers_list = [
+                str(s)
+                for s in newly_selected_servers_list_raw
+                if isinstance(s, (str, int, float))
+            ]  # Allow numbers to be cast
             newly_selected_servers_set = set(newly_selected_servers_list)
+
             _LOGGER.debug(
-                "Updating server selection. Old: %s, New: %s",
-                old_selected_servers,
+                "Updating server selection. Old from options: %s, New from UI: %s",
+                old_selected_servers_set,  # This was from options before API call
                 newly_selected_servers_set,
             )
 
-            servers_to_disassociate = old_selected_servers - newly_selected_servers_set
+            servers_to_disassociate = (
+                old_selected_servers_set - newly_selected_servers_set
+            )
             if servers_to_disassociate:
                 device_registry = dr.async_get(self.hass)
                 for server_name_to_remove in servers_to_disassociate:
@@ -216,16 +245,27 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                         identifiers={device_identifier}
                     )
                     if device_entry:
-                        _LOGGER.info(
-                            "Disassociating device for deselected server '%s' (ID: %s) from entry %s",
-                            server_name_to_remove,
-                            device_entry.id,
-                            self.config_entry.entry_id,
-                        )
-                        device_registry.async_update_device(
-                            device_entry.id,
-                            remove_config_entry_id=self.config_entry.entry_id,
-                        )
+                        # Check if the device is still associated with THIS config entry
+                        if self.config_entry.entry_id in device_entry.config_entries:
+                            _LOGGER.info(
+                                "Disassociating device for deselected server '%s' (ID: %s) from entry %s",
+                                server_name_to_remove,
+                                device_entry.id,
+                                self.config_entry.entry_id,
+                            )
+                            # This call removes the config entry from the device's list of config entries.
+                            # If it's the last config entry, the device might be removed if no other integrations use it.
+                            device_registry.async_update_device(
+                                device_entry.id,
+                                remove_config_entry_id=self.config_entry.entry_id,
+                            )
+                        else:
+                            _LOGGER.debug(
+                                "Device for server '%s' (ID: %s) found but not associated with current config entry %s. No action needed.",
+                                server_name_to_remove,
+                                device_entry.id,
+                                self.config_entry.entry_id,
+                            )
                     else:
                         _LOGGER.warning(
                             "Could not find device for deselected server '%s' to disassociate.",
@@ -234,21 +274,40 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
             new_options_data = {
                 **current_options,
-                CONF_SERVER_NAMES: newly_selected_servers_list,
+                CONF_SERVER_NAMES: newly_selected_servers_list,  # Store the list from UI
             }
             return self.async_create_entry(title="", data=new_options_data)
 
-        available_servers = (
-            self._discovered_servers if self._discovered_servers is not None else []
+        # Ensure available_servers is a list of strings, even if discovery failed
+        available_servers_for_selector = (
+            self._discovered_servers
+            if isinstance(self._discovered_servers, list)
+            else []
         )
-        current_selection_list = list(old_selected_servers)
+        available_servers_set_for_filtering = set(available_servers_for_selector)
+
+        # Filter the current selection: only include servers that are still available
+        filtered_current_selection = [
+            s
+            for s in old_selected_servers_set
+            if s in available_servers_set_for_filtering
+        ]
+        _LOGGER.debug(
+            "Available servers for selector: %s", available_servers_for_selector
+        )
+        _LOGGER.debug("Old selection from options: %s", old_selected_servers_set)
+        _LOGGER.debug(
+            "Filtered current selection for default: %s", filtered_current_selection
+        )
+
         select_schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_SERVER_NAMES, default=current_selection_list
+                    CONF_SERVER_NAMES,
+                    default=filtered_current_selection,  # Use the filtered list
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=available_servers,
+                        options=available_servers_for_selector,
                         multiple=True,
                         mode=selector.SelectSelectorMode.LIST,
                         sort=True,
@@ -259,12 +318,24 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         placeholders = {}
         if "base" in errors and errors["base"] == "fetch_servers_failed":
             placeholders["fetch_error"] = (
-                "Could not fetch server list. Check manager status/logs."
+                "Could not fetch the list of available servers from the BSM manager. "
+                "Please check the BSM manager's status and logs. "
+                "You can still proceed if you know the server names, but selection will be manual."
             )
+            # If fetch fails, we might allow custom input or show an empty list.
+            # For now, options will be empty if _discovered_servers is empty.
         elif "base" in errors and errors["base"] in ["cannot_connect", "invalid_auth"]:
             placeholders["fetch_error"] = (
-                "Could not connect or authenticate to fetch server list."
+                "Could not connect or authenticate with the BSM manager to fetch the server list."
             )
+        elif (
+            not available_servers_for_selector and not errors
+        ):  # No servers discovered but no error
+            placeholders["fetch_error"] = (
+                "No Minecraft servers were found on this BSM manager instance. "
+                "If you have servers, ensure they are properly configured in BSM."
+            )
+
         return self.async_show_form(
             step_id="select_servers",
             data_schema=select_schema,
