@@ -1,3 +1,4 @@
+// custom_components/bedrock_server_manager/frontend/bsm-content-card.js
 import { LitElement, html, css } from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
 
 const _LOGGER = {

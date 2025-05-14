@@ -24,7 +24,7 @@
       "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
       "invalid_auth": "Invalid username or password provided. Please check your credentials.",
       "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager.",
-      "server_validation_failed": "Failed to validate the selected server '{server_name}' with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
+      "server_validation_failed": "Failed to validate the selected server {server_name} with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
       "unknown_validation_error": "An unexpected error occurred during validation.",
       "api_error": "An API error occurred while communicating with the manager: {error_details}"
@@ -39,13 +39,11 @@
       "init": {
         "title": "Bedrock Server Manager Options",
         "description": "Choose which settings to modify for the manager at {host}.",
-        "menu": {
-          "options": {
-            "update_credentials": "Update API Credentials",
-            "select_servers": "Select Servers to Monitor",
-            "update_server_interval": "Update Server Polling Interval",
-            "update_manager_interval": "Update Manager Polling Interval"
-          }
+        "menu_options": {
+          "update_credentials": "Update API Credentials",
+          "select_servers": "Select Servers to Monitor",
+          "update_server_interval": "Update Server Polling Interval",
+          "update_manager_interval": "Update Manager Polling Interval"
         }
       },
       "update_credentials": {
@@ -58,7 +56,7 @@
       },
       "select_servers": {
         "title": "Select Servers to Monitor",
-        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.",
+        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.{fetch_error}",
         "data": {
           "servers": "Servers to Monitor"
         }
@@ -99,17 +97,17 @@
       "update_server": {
         "name": "Update"
       },
-      "trigger_backup": {
-        "name": "Backup"
+      "trigger_server_backup_all": {
+        "name": "Backup All"
       },
-      "export_world": {
+      "export_server_world": {
         "name": "Export World"
       },
-      "prune_backups": {
+      "prune_server_backups": {
         "name": "Prune Backups"
       },
       "prune_downloads": {
-        "name": "Prune Download Cache"
+        "name": "Prune Downloads"
       },
       "scan_players": {
         "name": "Scan Player Logs"
@@ -150,6 +148,9 @@
       },
       "allowlist_count": {
         "name": "Allowlist Count"
+      },
+      "global_players_count": {
+        "name": "Global Players Count"
       }
     }
   },
@@ -313,6 +314,16 @@
         "autostart": {
           "name": "Enable Autostart (Linux Only)",
           "description": "(Optional) Set to true to enable the server to start automatically on system boot (via systemd user service on Linux)."
+        }
+      }
+    },
+    "add_global_players": {
+      "name": "Add global players",
+      "description": "Adds one or more players to the global player database on the BSM manager.",
+      "fields": {
+        "players": {
+          "name": "Players",
+          "description": "List of player Gamertags (and optional XUIDs like 'PlayerName:12345') to add/update."
         }
       }
     }

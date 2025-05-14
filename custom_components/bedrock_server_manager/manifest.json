@@ -1,15 +1,25 @@
 {
   "domain": "bedrock_server_manager",
   "name": "Bedrock Server Manager",
-  "version": "0.6.0",
-  "documentation": "https://github.com/dmedina559/bsm-home-assistant-integration",
-  "issue_tracker": "https://github.com/dmedina559/bsm-home-assistant-integration",
+  "after_dependencies": [],
   "codeowners": [ "@DMedina559" ],
-  "requirements": [],
-  "dependencies": [],
-  "integration_type": "hub",
   "config_flow": true,
-  "diagnostics": true,
+  "dependencies": [
+    "http",
+    "lovelace",
+    "persistent_notification"
+  ],
+  "documentation": "https://github.com/dmedina559/bsm-home-assistant-integration",
+  "integration_type": "hub",
   "iot_class": "local_polling",
-  "loggers": [ "custom_components.bedrock_server_manager" ]
+  "issue_tracker": "https://github.com/dmedina559/bsm-home-assistant-integration/issues",
+  "loggers": [
+    "pybedrock_server_manager"
+  ],
+  "requirements": [
+    "pybedrock_server_manager>=0.1.0,<0.2.0",
+    "aiohttp>=3.8.0",
+    "packaging>=20.0"
+  ],
+  "version": "0.8.0"
 }
