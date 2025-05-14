@@ -24,7 +24,7 @@
       "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
       "invalid_auth": "Invalid username or password provided. Please check your credentials.",
       "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager.",
-      "server_validation_failed": "Failed to validate the selected server '{server_name}' with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
+      "server_validation_failed": "Failed to validate the selected server {server_name} with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
       "unknown_validation_error": "An unexpected error occurred during validation.",
       "api_error": "An API error occurred while communicating with the manager: {error_details}"
