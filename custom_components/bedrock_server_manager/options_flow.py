@@ -2,7 +2,7 @@
 """Options flow for Bedrock Server Manager integration."""
 
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, cast
 
 import voluptuous as vol
 
@@ -12,9 +12,9 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
-    CONF_SCAN_INTERVAL,
+    # CONF_SCAN_INTERVAL, # This is used as a key, defined below
 )
-from homeassistant.core import callback
+from homeassistant.core import callback  # Required for async_get_options_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
@@ -24,10 +24,11 @@ from .const import (
     DOMAIN,
     CONF_SERVER_NAMES,
     CONF_MANAGER_SCAN_INTERVAL,
+    CONF_SERVER_SCAN_INTERVAL,  # Defined as CONF_SCAN_INTERVAL in HA const, but can be custom
+    CONF_USE_SSL,  # Assuming this is in your const.py
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
 )
-
 
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
@@ -35,7 +36,6 @@ from pybedrock_server_manager import (
     AuthError,
     CannotConnectError,
 )
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,14 +46,17 @@ STEP_CREDENTIALS_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): selector.TextSelector(
             selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
         ),
+        # Optionally, if you want to allow changing SSL during credential update
+        # vol.Optional(CONF_USE_SSL): bool,
     }
 )
+# Use CONF_SERVER_SCAN_INTERVAL for clarity if it's a custom constant
 STEP_SERVER_POLLING_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_SCAN_INTERVAL): selector.NumberSelector(
+        vol.Optional(CONF_SERVER_SCAN_INTERVAL): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=5,
-                max=3600,
+                min=10,  # Increased min from 5 for realism
+                max=3600,  # 1 hour
                 step=1,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="seconds",
@@ -65,8 +68,8 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MANAGER_SCAN_INTERVAL): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=60,
-                max=86400,
+                min=60,  # 1 minute
+                max=86400,  # 24 hours
                 step=10,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="seconds",
@@ -77,25 +80,66 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 
 
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle Bedrock Server Manager options."""
+
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize BSM options flow."""
-        self._discovered_servers: Optional[List[str]] = None
+        self.config_entry = config_entry
+        self._discovered_servers: Optional[List[str]] = (
+            None  # Store fetched server names
+        )
+        # Store a short-lived API client instance if needed across steps within this flow instance
+        self._api_client_instance: Optional[BedrockServerManagerApi] = None
 
     async def _get_api_client(
         self, data_override: Optional[Dict[str, Any]] = None
     ) -> BedrockServerManagerApi:
-        data_source = data_override if data_override else self.config_entry.data
-        host = data_source[CONF_HOST]
-        port = int(data_source[CONF_PORT])
-        username = data_source[CONF_USERNAME]
-        password = data_source[CONF_PASSWORD]
+        """Get an API client instance, potentially with overridden data for validation."""
+        # Use existing instance if available and no override, otherwise create new
+        if self._api_client_instance and not data_override:
+            # Check if credentials match, if they could have changed (not typical in options flow for this)
+            # For simplicity, we might just always create a new one if data_override is present.
+            pass  # Consider if re-using is safe or always create new with overrides
+
+        # Effective data combines current entry data with any overrides
+        current_data = self.config_entry.data
+        effective_data = {**current_data, **(data_override or {})}
+
+        host = effective_data[CONF_HOST]
+        port = int(effective_data[CONF_PORT])
+        username = effective_data[CONF_USERNAME]
+        password = effective_data[CONF_PASSWORD]
+        use_ssl = effective_data.get(CONF_USE_SSL, False)
+
+        # Always create a new session for short-lived validation/option tasks
+        # to avoid issues with closed sessions if the main integration's session is closed.
         session = async_get_clientsession(self.hass)
-        return BedrockServerManagerApi(host, port, username, password, session)
+
+        # Store the created client if it's for general use in this flow instance
+        # If only for one-off validation, no need to store on self.
+        api_client = BedrockServerManagerApi(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            session=session,
+            use_ssl=use_ssl,
+        )
+        if not data_override:  # Store if it's using the main config for multiple steps
+            self._api_client_instance = api_client
+        return api_client
+
+    async def _close_api_client_if_created(self):
+        """Close the API client if it was created by this flow instance."""
+        if self._api_client_instance:
+            await self._api_client_instance.close()
+            self._api_client_instance = None
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
-        manager_host = self.config_entry.data.get(CONF_HOST, "Unknown Host")
+        """Manage the options menu."""
+        manager_host = self.config_entry.data.get(CONF_HOST, "Unknown BSM Host")
         return self.async_show_menu(
             step_id="init",
             menu_options=[
@@ -110,287 +154,404 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_update_credentials(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
+        """Handle updating credentials."""
         errors: Dict[str, str] = {}
+        description_placeholders: Optional[Dict[str, str]] = None
+
         if user_input is not None:
-            validation_data = self.config_entry.data.copy()
-            validation_data.update(user_input)
+            # Create a temporary data dict for validation, including existing host/port/ssl
+            validation_data = {
+                CONF_HOST: self.config_entry.data[CONF_HOST],
+                CONF_PORT: self.config_entry.data[CONF_PORT],
+                CONF_USE_SSL: self.config_entry.data.get(CONF_USE_SSL, False),
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            temp_api_client = None
             try:
-                api_client = await self._get_api_client(data_override=validation_data)
-                await api_client.authenticate()  # Method name OK
+                temp_api_client = await self._get_api_client(
+                    data_override=validation_data
+                )
+                # authenticate() raises AuthError or other connection errors on failure
+                await temp_api_client.authenticate()
                 _LOGGER.info(
-                    "New credentials validated successfully for %s.",
+                    "New credentials validated successfully for BSM: %s",
                     self.config_entry.title,
                 )
+                # Persist the new credentials along with existing non-credential data
+                new_data = {**self.config_entry.data, **user_input}
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry, data={**self.config_entry.data, **user_input}
+                    self.config_entry, data=new_data
                 )
+                # Abort to close the flow and indicate success. HA will reload the entry.
                 return self.async_abort(reason="credentials_updated")
-            except AuthError:
+            except AuthError as err:
                 _LOGGER.warning(
-                    "Failed to authenticate with new credentials for %s.",
+                    "Failed to authenticate with new credentials for BSM %s: %s",
                     self.config_entry.title,
+                    err.api_message or err,
                 )
                 errors["base"] = "invalid_auth"
+                description_placeholders = {
+                    "error_details": err.api_message or str(err)
+                }
             except CannotConnectError as err:
-                _LOGGER.error("Connection error validating new credentials: %s", err)
+                _LOGGER.error(
+                    "Connection error validating new credentials for BSM %s: %s",
+                    self.config_entry.title,
+                    err.args[0] if err.args else err,
+                )
                 errors["base"] = "cannot_connect"
-            except APIError as err:
-                _LOGGER.error("API error validating new credentials: %s", err)
-                errors["base"] = "api_error"
-            except Exception as err:
+                description_placeholders = {
+                    "error_details": err.args[0] if err.args else str(err)
+                }
+            except APIError as err:  # Catch other API errors
+                _LOGGER.error(
+                    "API error validating new credentials for BSM %s: %s",
+                    self.config_entry.title,
+                    err.api_message or err,
+                )
+                errors["base"] = (
+                    "api_error"  # Or a more generic key like "unknown_error"
+                )
+                description_placeholders = {
+                    "error_details": err.api_message or str(err)
+                }
+            except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.exception(
-                    "Unexpected error validating new credentials: %s", err
+                    "Unexpected error validating new credentials for BSM %s",
+                    self.config_entry.title,
                 )
                 errors["base"] = "unknown_error"
+                description_placeholders = {"error_details": str(err)}
+            finally:
+                if temp_api_client:
+                    await temp_api_client.close()
 
+        # Show form
         current_data = self.config_entry.data
-        schema = self.add_suggested_values_to_schema(
+        schema_with_suggestions = self.add_suggested_values_to_schema(
             STEP_CREDENTIALS_SCHEMA,
-            suggested_values={CONF_USERNAME: current_data.get(CONF_USERNAME)},
+            suggested_values={
+                CONF_USERNAME: current_data.get(CONF_USERNAME, ""),
+                # Do not pre-fill password
+            },
         )
         return self.async_show_form(
             step_id="update_credentials",
-            data_schema=schema,
+            data_schema=schema_with_suggestions,
             errors=errors,
-            description_placeholders={"host": current_data.get(CONF_HOST)},
+            description_placeholders=description_placeholders
+            or {"host": current_data.get(CONF_HOST)},
         )
 
     async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
+        """Handle server selection."""
         errors: Dict[str, str] = {}
-        current_options = self.config_entry.options
-        # Ensure old_selected_servers is always a list of strings
-        old_selected_servers_from_options = current_options.get(CONF_SERVER_NAMES, [])
-        if not isinstance(old_selected_servers_from_options, list):
-            old_selected_servers_from_options = []  # Default to empty list if malformed
-        old_selected_servers_set = set(
-            str(s) for s in old_selected_servers_from_options if isinstance(s, str)
-        )
+        description_placeholders: Optional[Dict[str, str]] = None
 
+        # Fetch server list if not already fetched in this flow instance
         if self._discovered_servers is None:
+            api_client_for_list = None
             try:
-                api_client = await self._get_api_client()
-                # It's good practice to re-authenticate if there's any doubt or if token might expire
-                # However, for options flow, if initial config succeeded, it might be okay.
-                # For robustness, especially if credentials could change or sessions expire:
-                # await api_client.authenticate()
-                self._discovered_servers = await api_client.async_get_servers()
+                api_client_for_list = await self._get_api_client()
+
+                self._discovered_servers = (
+                    await api_client_for_list.async_get_server_names()
+                )  # Returns List[str]
                 _LOGGER.debug(
-                    "Fetched server list for options flow: %s", self._discovered_servers
+                    "Fetched server names for options flow of BSM %s: %s",
+                    self.config_entry.title,
+                    self._discovered_servers,
                 )
-                if not isinstance(self._discovered_servers, list):  # Ensure it's a list
+                if not isinstance(self._discovered_servers, list):
                     _LOGGER.warning(
-                        "Discovered servers is not a list: %s. Resetting.",
-                        self._discovered_servers,
+                        "Discovered servers from API is not a list: %s. Resetting to empty.",
+                        type(self._discovered_servers),
                     )
                     self._discovered_servers = []
-                else:  # Ensure all items are strings
-                    self._discovered_servers = [
-                        str(s) for s in self._discovered_servers if isinstance(s, str)
-                    ]
+                else:  # Ensure all items are strings for the selector
+                    self._discovered_servers = sorted(
+                        [str(s) for s in self._discovered_servers if isinstance(s, str)]
+                    )
 
             except AuthError as err:
                 _LOGGER.error(
-                    "Authentication error fetching server list for options flow: %s",
-                    err,
+                    "Auth error fetching server list for BSM %s options: %s",
+                    self.config_entry.title,
+                    err.api_message or err,
                 )
                 errors["base"] = "invalid_auth"
-                self._discovered_servers = []  # Ensure it's an empty list on error
+                description_placeholders = {
+                    "fetch_error": f"Authentication failed: {err.api_message or str(err)}"
+                }
+                self._discovered_servers = []
             except CannotConnectError as err:
                 _LOGGER.error(
-                    "Connection error fetching server list for options flow: %s", err
+                    "Connection error fetching server list for BSM %s options: %s",
+                    self.config_entry.title,
+                    err.args[0] if err.args else err,
                 )
                 errors["base"] = "cannot_connect"
+                description_placeholders = {
+                    "fetch_error": f"Connection failed: {err.args[0] if err.args else str(err)}"
+                }
                 self._discovered_servers = []
             except APIError as err:
                 _LOGGER.error(
-                    "API error fetching server list for options flow: %s. Details: %s",
-                    err,
-                    err.args[0] if err.args else "No details",
+                    "API error fetching server list for BSM %s options: %s",
+                    self.config_entry.title,
+                    err.api_message or err,
                 )
-                errors["base"] = "fetch_servers_failed"
+                errors["base"] = (
+                    "fetch_servers_failed"  # Custom error key for strings.json
+                )
+                description_placeholders = {
+                    "fetch_error": f"API error: {err.api_message or str(err)}"
+                }
                 self._discovered_servers = []
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.exception(
-                    "Unexpected error fetching server list for options flow: %s", err
+                    "Unexpected error fetching server list for BSM %s options",
+                    self.config_entry.title,
                 )
                 errors["base"] = "unknown_error"
+                description_placeholders = {
+                    "fetch_error": f"An unexpected error occurred: {str(err)}"
+                }
                 self._discovered_servers = []
+            finally:
+                if api_client_for_list:  # Close client if created just for this step
+                    await api_client_for_list.close()
 
-        if user_input is not None and not errors:
-            newly_selected_servers_list_raw = user_input.get(CONF_SERVER_NAMES, [])
-            # Ensure it's a list of strings
-            newly_selected_servers_list = [
-                str(s)
-                for s in newly_selected_servers_list_raw
-                if isinstance(s, (str, int, float))
-            ]  # Allow numbers to be cast
-            newly_selected_servers_set = set(newly_selected_servers_list)
+        if (
+            user_input is not None and not errors
+        ):  # Process selection if form submitted and no fetch errors
+            newly_selected_servers = user_input.get(CONF_SERVER_NAMES, [])
+            if not isinstance(
+                newly_selected_servers, list
+            ):  # Should be a list from selector
+                newly_selected_servers = []
+
+            current_options = self.config_entry.options
+            old_selected_servers_raw = current_options.get(CONF_SERVER_NAMES, [])
+            old_selected_servers = set(
+                str(s) for s in old_selected_servers_raw if isinstance(s, str)
+            )
+
+            newly_selected_servers_set = set(
+                str(s) for s in newly_selected_servers if isinstance(s, str)
+            )
 
             _LOGGER.debug(
-                "Updating server selection. Old from options: %s, New from UI: %s",
-                old_selected_servers_set,  # This was from options before API call
+                "Updating server selection for BSM %s. Old: %s, New: %s",
+                self.config_entry.title,
+                old_selected_servers,
                 newly_selected_servers_set,
             )
 
-            servers_to_disassociate = (
-                old_selected_servers_set - newly_selected_servers_set
-            )
+            # Device disassociation logic
+            servers_to_disassociate = old_selected_servers - newly_selected_servers_set
             if servers_to_disassociate:
-                device_registry = dr.async_get(self.hass)
+                dev_reg = dr.async_get(self.hass)
+                # --- Construct manager_id_suffix based on how server devices are identified ---
+                manager_host = self.config_entry.data[CONF_HOST]
+                manager_port = self.config_entry.data[CONF_PORT]
+                manager_host_port_id = f"{manager_host}:{manager_port}"
+                # --- End suffix construction ---
+
                 for server_name_to_remove in servers_to_disassociate:
-                    device_identifier = (DOMAIN, server_name_to_remove)
-                    device_entry = device_registry.async_get_device(
-                        identifiers={device_identifier}
+                    # Adjust identifier construction if your server devices are identified differently
+                    server_device_identifier_value = (
+                        f"{server_name_to_remove}_{manager_host_port_id}"
                     )
-                    if device_entry:
-                        # Check if the device is still associated with THIS config entry
-                        if self.config_entry.entry_id in device_entry.config_entries:
-                            _LOGGER.info(
-                                "Disassociating device for deselected server '%s' (ID: %s) from entry %s",
-                                server_name_to_remove,
-                                device_entry.id,
-                                self.config_entry.entry_id,
-                            )
-                            # This call removes the config entry from the device's list of config entries.
-                            # If it's the last config entry, the device might be removed if no other integrations use it.
-                            device_registry.async_update_device(
-                                device_entry.id,
-                                remove_config_entry_id=self.config_entry.entry_id,
-                            )
-                        else:
-                            _LOGGER.debug(
-                                "Device for server '%s' (ID: %s) found but not associated with current config entry %s. No action needed.",
-                                server_name_to_remove,
-                                device_entry.id,
-                                self.config_entry.entry_id,
-                            )
-                    else:
-                        _LOGGER.warning(
-                            "Could not find device for deselected server '%s' to disassociate.",
+                    device_id_tuple = (DOMAIN, server_device_identifier_value)
+
+                    device_entry = dev_reg.async_get_device(
+                        identifiers={device_id_tuple}
+                    )
+                    if (
+                        device_entry
+                        and self.config_entry.entry_id in device_entry.config_entries
+                    ):
+                        _LOGGER.info(
+                            "Disassociating device for deselected server '%s' (Device HA ID: %s) from config entry %s",
+                            server_name_to_remove,
+                            device_entry.id,
+                            self.config_entry.entry_id,
+                        )
+                        dev_reg.async_update_device(
+                            device_entry.id,
+                            remove_config_entry_id=self.config_entry.entry_id,
+                        )
+                    elif device_entry:
+                        _LOGGER.debug(
+                            "Device for server '%s' found but not linked to this config entry.",
                             server_name_to_remove,
                         )
+                    else:
+                        _LOGGER.warning(
+                            "Could not find device for deselected server '%s' (Identifier: %s) to disassociate.",
+                            server_name_to_remove,
+                            device_id_tuple,
+                        )
 
-            new_options_data = {
+            # Create new options entry
+            new_options = {
                 **current_options,
-                CONF_SERVER_NAMES: newly_selected_servers_list,  # Store the list from UI
-            }
-            return self.async_create_entry(title="", data=new_options_data)
+                CONF_SERVER_NAMES: list(newly_selected_servers_set),
+            }  # Store as list
+            return self.async_create_entry(
+                title="", data=new_options
+            )  # title="" means use existing, data= updates options
 
-        # Ensure available_servers is a list of strings, even if discovery failed
-        available_servers_for_selector = (
-            self._discovered_servers
-            if isinstance(self._discovered_servers, list)
-            else []
+        # Prepare form for display
+        # Ensure _discovered_servers is a list of strings for the selector options
+        options_for_selector = (
+            self._discovered_servers if self._discovered_servers else []
         )
-        available_servers_set_for_filtering = set(available_servers_for_selector)
 
-        # Filter the current selection: only include servers that are still available
-        filtered_current_selection = [
-            s
-            for s in old_selected_servers_set
-            if s in available_servers_set_for_filtering
+        # Default selection should be current valid selection from options
+        current_selection_from_options = self.config_entry.options.get(
+            CONF_SERVER_NAMES, []
+        )
+        # Filter current selection to only include servers that are still discoverable
+        valid_current_selection = [
+            s for s in current_selection_from_options if s in options_for_selector
         ]
-        _LOGGER.debug(
-            "Available servers for selector: %s", available_servers_for_selector
-        )
-        _LOGGER.debug("Old selection from options: %s", old_selected_servers_set)
-        _LOGGER.debug(
-            "Filtered current selection for default: %s", filtered_current_selection
-        )
 
         select_schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_SERVER_NAMES,
-                    default=filtered_current_selection,  # Use the filtered list
+                    CONF_SERVER_NAMES, default=valid_current_selection
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=available_servers_for_selector,
+                        options=options_for_selector,
                         multiple=True,
                         mode=selector.SelectSelectorMode.LIST,
-                        sort=True,
                     )
                 ),
             }
         )
-        placeholders = {}
-        if "base" in errors and errors["base"] == "fetch_servers_failed":
-            placeholders["fetch_error"] = (
-                "Could not fetch the list of available servers from the BSM manager. "
-                "Please check the BSM manager's status and logs. "
-                "You can still proceed if you know the server names, but selection will be manual."
-            )
-            # If fetch fails, we might allow custom input or show an empty list.
-            # For now, options will be empty if _discovered_servers is empty.
-        elif "base" in errors and errors["base"] in ["cannot_connect", "invalid_auth"]:
-            placeholders["fetch_error"] = (
-                "Could not connect or authenticate with the BSM manager to fetch the server list."
-            )
-        elif (
-            not available_servers_for_selector and not errors
-        ):  # No servers discovered but no error
-            placeholders["fetch_error"] = (
-                "No Minecraft servers were found on this BSM manager instance. "
-                "If you have servers, ensure they are properly configured in BSM."
-            )
+
+        if not description_placeholders:  # If not set by error handling above
+            description_placeholders = {}
+            if not options_for_selector and not errors:
+                description_placeholders["fetch_error"] = (
+                    "No Minecraft servers were found on this BSM manager. "
+                    "Verify configurations on your BSM host or add servers there first."
+                )
+        description_placeholders["host"] = self.config_entry.data.get(CONF_HOST)
 
         return self.async_show_form(
             step_id="select_servers",
             data_schema=select_schema,
             errors=errors,
-            description_placeholders=placeholders if placeholders else None,
+            description_placeholders=description_placeholders,
         )
 
     async def async_step_update_server_interval(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
+        """Handle server polling interval update."""
         errors: Dict[str, str] = {}
         if user_input is not None:
-            scan_interval = user_input.get(CONF_SCAN_INTERVAL)
-            if scan_interval is not None and scan_interval < 5:
-                errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
+            scan_interval_val = user_input.get(CONF_SERVER_SCAN_INTERVAL)
+            # Validate the input
+            if scan_interval_val is not None:
+                try:
+                    # Voluptuous schema validation is usually done by async_show_form implicitly,
+                    # but manual check can be more precise for range.
+                    interval = int(scan_interval_val)
+                    if not (10 <= interval <= 3600):  # Matches selector config
+                        errors[CONF_SERVER_SCAN_INTERVAL] = (
+                            "invalid_server_scan_interval_range"
+                        )
+                except ValueError:
+                    errors[CONF_SERVER_SCAN_INTERVAL] = (
+                        "invalid_server_scan_interval_type"
+                    )
+            else:  # If key is missing but form submitted (should not happen with Optional(default))
+                errors[CONF_SERVER_SCAN_INTERVAL] = "value_required"
+
             if not errors:
-                new_options_data = {
+                new_options = {
                     **self.config_entry.options,
-                    CONF_SCAN_INTERVAL: scan_interval,
+                    CONF_SERVER_SCAN_INTERVAL: interval,
                 }
-                return self.async_create_entry(title="", data=new_options_data)
-        current_scan_interval = self.config_entry.options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
+                _LOGGER.info(
+                    "Updating server scan interval to %s seconds for BSM %s",
+                    interval,
+                    self.config_entry.title,
+                )
+                return self.async_create_entry(title="", data=new_options)
+
+        # Get current or default value for pre-filling the form
+        current_interval = self.config_entry.options.get(
+            CONF_SERVER_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
         )
-        schema = self.add_suggested_values_to_schema(
+        schema_with_suggestions = self.add_suggested_values_to_schema(
             STEP_SERVER_POLLING_SCHEMA,
-            suggested_values={CONF_SCAN_INTERVAL: current_scan_interval},
+            suggested_values={CONF_SERVER_SCAN_INTERVAL: current_interval},
         )
         return self.async_show_form(
-            step_id="update_server_interval", data_schema=schema, errors=errors
+            step_id="update_server_interval",
+            data_schema=schema_with_suggestions,
+            errors=errors,
         )
 
     async def async_step_update_manager_interval(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
+        """Handle manager polling interval update."""
         errors: Dict[str, str] = {}
         if user_input is not None:
-            manager_scan_interval = user_input.get(CONF_MANAGER_SCAN_INTERVAL)
-            if manager_scan_interval is not None and manager_scan_interval < 60:
-                errors[CONF_MANAGER_SCAN_INTERVAL] = "invalid_manager_scan_interval"
+            manager_interval_val = user_input.get(CONF_MANAGER_SCAN_INTERVAL)
+            if manager_interval_val is not None:
+                try:
+                    interval = int(manager_interval_val)
+                    if not (60 <= interval <= 86400):  # Matches selector config
+                        errors[CONF_MANAGER_SCAN_INTERVAL] = (
+                            "invalid_manager_scan_interval_range"
+                        )
+                except ValueError:
+                    errors[CONF_MANAGER_SCAN_INTERVAL] = (
+                        "invalid_manager_scan_interval_type"
+                    )
+            else:
+                errors[CONF_MANAGER_SCAN_INTERVAL] = "value_required"
+
             if not errors:
-                new_options_data = {
+                new_options = {
                     **self.config_entry.options,
-                    CONF_MANAGER_SCAN_INTERVAL: manager_scan_interval,
+                    CONF_MANAGER_SCAN_INTERVAL: interval,
                 }
-                return self.async_create_entry(title="", data=new_options_data)
-        current_manager_scan_interval = self.config_entry.options.get(
+                _LOGGER.info(
+                    "Updating manager scan interval to %s seconds for BSM %s",
+                    interval,
+                    self.config_entry.title,
+                )
+                return self.async_create_entry(title="", data=new_options)
+
+        current_interval = self.config_entry.options.get(
             CONF_MANAGER_SCAN_INTERVAL, DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS
         )
-        schema = self.add_suggested_values_to_schema(
+        schema_with_suggestions = self.add_suggested_values_to_schema(
             STEP_MANAGER_POLLING_SCHEMA,
-            suggested_values={
-                CONF_MANAGER_SCAN_INTERVAL: current_manager_scan_interval
-            },
+            suggested_values={CONF_MANAGER_SCAN_INTERVAL: current_interval},
         )
         return self.async_show_form(
-            step_id="update_manager_interval", data_schema=schema, errors=errors
+            step_id="update_manager_interval",
+            data_schema=schema_with_suggestions,
+            errors=errors,
         )
+
+    async def async_will_remove_config_entry(self) -> None:
+        """Handle removal of config entry."""
+        _LOGGER.debug(
+            "Options flow: Config entry %s is being removed.",
+            self.config_entry.entry_id,
+        )
+        await self._close_api_client_if_created()  # Ensure any client created by this flow is closed.

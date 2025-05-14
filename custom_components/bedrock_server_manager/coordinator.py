@@ -5,12 +5,13 @@ import asyncio
 import logging
 from datetime import timedelta
 
-import async_timeout  # Keep this import
+import async_timeout  # For explicit timeout on asyncio.gather
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.exceptions import ConfigEntryAuthFailed
-
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+)  # Standard HA exception for auth issues
 
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
@@ -18,13 +19,15 @@ from pybedrock_server_manager import (
     AuthError,
     CannotConnectError,
     ServerNotFoundError,
-    ServerNotRunningError,
+    # ServerNotRunningError, # Not explicitly raised by client for info endpoints, but can be inferred
 )
 
-
-from .const import DOMAIN  # Keep local constant import
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Define a minimum sensible timeout for API calls if scan_interval is very short
+MIN_API_TIMEOUT = 10  # seconds
 
 
 class MinecraftBedrockCoordinator(DataUpdateCoordinator):
@@ -39,54 +42,48 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
     ) -> None:
         self.api = api_client
         self.server_name = server_name
-        self._timeout_seconds = max(5, scan_interval - 5)
+        # Ensure timeout is reasonable, slightly less than scan_interval but not too short
+        self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 5)
 
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN} Coordinator ({server_name})",
+            name=f"{DOMAIN} Server Coordinator ({server_name})",  # More specific name
             update_interval=timedelta(seconds=scan_interval),
         )
         _LOGGER.debug(
-            "Initialized MinecraftBedrockCoordinator for '%s' with interval %ds",
+            "Initialized MinecraftBedrockCoordinator for '%s' with update interval %ds (API timeout %ds)",
             server_name,
             scan_interval,
+            self._api_call_timeout,
         )
 
     async def _async_update_data(self) -> dict:
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
+        # Initialize with default/error state
         coordinator_data = {
-            "status": "error",
-            "message": "Update failed",
-            "process_info": None,
-            "allowlist": None,
-            "properties": None,
-            "server_permissions": None,
-            "world_backups": None,
-            "config_backups": None,
+            "status": "error",  # Overall status of this data fetch operation
+            "message": "Update data collection failed",
+            "process_info": None,  # from /status_info
+            "allowlist": [],  # from /allowlist
+            "properties": {},  # from /read_properties
+            "server_permissions": [],  # from /permissions_data
+            "world_backups": [],  # from /backups/list/world
+            "config_backups": [],  # from /backups/list/config
         }
 
         try:
-            async with async_timeout.timeout(self._timeout_seconds):
-                # --- UPDATED METHOD CALLS ---
+            # Using async_timeout for the entire block of API calls
+            async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_server_status_info(self.server_name),
-                    self.api.async_get_server_allowlist(self.server_name),  # Renamed
-                    self.api.async_get_server_properties(
-                        self.server_name
-                    ),  # Name was OK
-                    self.api.async_get_server_permissions_data(
-                        self.server_name
-                    ),  # Name was OK
-                    self.api.async_list_server_backups(
-                        self.server_name, "world"
-                    ),  # Renamed
-                    self.api.async_list_server_backups(
-                        self.server_name, "config"
-                    ),  # Renamed
-                    return_exceptions=True,
+                    self.api.async_get_server_allowlist(self.server_name),
+                    self.api.async_get_server_properties(self.server_name),
+                    self.api.async_get_server_permissions_data(self.server_name),
+                    self.api.async_list_server_backups(self.server_name, "world"),
+                    self.api.async_list_server_backups(self.server_name, "config"),
+                    return_exceptions=True,  # Catch exceptions from individual calls
                 )
-                # --- END UPDATED METHOD CALLS ---
 
             (
                 status_info_result,
@@ -97,175 +94,99 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 config_backups_result,
             ) = results
 
-            # --- Process Status Info (Critical) ---
+            fetch_errors_details = []  # To collect detailed error messages
+
+            # --- Process Status Info (Considered critical for the coordinator's success) ---
             if isinstance(status_info_result, Exception):
-                if isinstance(status_info_result, AuthError):
-                    _LOGGER.error(
-                        "Auth error fetching status for %s: %s",
+                self._handle_critical_exception(
+                    "status_info", status_info_result
+                )  # Helper will raise
+            elif (
+                isinstance(status_info_result, dict)
+                and status_info_result.get("status") == "success"
+            ):
+                coordinator_data["process_info"] = status_info_result.get(
+                    "process_info"
+                )
+                coordinator_data["status"] = (
+                    "success"  # Mark overall success if this critical part passes
+                )
+                coordinator_data["message"] = status_info_result.get(
+                    "message", "Status fetched successfully"
+                )
+                if (
+                    coordinator_data["process_info"] is None
+                    and "not running" in coordinator_data["message"].lower()
+                ):
+                    _LOGGER.debug(
+                        "Server '%s' reported as not running by status_info.",
                         self.server_name,
-                        status_info_result,
                     )
-                    raise ConfigEntryAuthFailed(
-                        f"Auth error fetching status: {status_info_result}"
-                    ) from status_info_result
-                if isinstance(status_info_result, ServerNotFoundError):
-                    _LOGGER.error(
-                        "Server %s not found when fetching status: %s",
-                        self.server_name,
-                        status_info_result,
-                    )
-                    raise UpdateFailed(
-                        f"Server not found fetching status: {status_info_result}"
-                    ) from status_info_result
-                if isinstance(status_info_result, (APIError, CannotConnectError)):
-                    _LOGGER.error(
-                        "API/Connection error fetching status for %s: %s",
-                        self.server_name,
-                        status_info_result,
-                    )
-                    raise UpdateFailed(
-                        f"API/Connection error fetching status: {status_info_result}"
-                    ) from status_info_result
-                _LOGGER.exception(
-                    "Unexpected error fetching status info for %s: %s",
+            else:  # Unexpected structure or API error status for critical data
+                _LOGGER.error(
+                    "Invalid or API error response for status_info for '%s': %s",
                     self.server_name,
                     status_info_result,
                 )
                 raise UpdateFailed(
-                    f"Unexpected error fetching status: {status_info_result}"
-                ) from status_info_result
-            elif isinstance(status_info_result, dict):
-                if status_info_result.get("status") == "error":
-                    msg = status_info_result.get("message", "Unknown API error")
-                    _LOGGER.warning(
-                        "API error fetching status for %s: %s", self.server_name, msg
-                    )
-                    raise UpdateFailed(f"API error fetching status: {msg}")
-                else:
-                    coordinator_data["process_info"] = status_info_result.get(
-                        "process_info"
-                    )
-                    coordinator_data["status"] = "success"
-                    coordinator_data["message"] = "Status fetched"
-                    if coordinator_data["process_info"] is None:
-                        coordinator_data["message"] = "Server stopped"
-            else:
-                _LOGGER.error(
-                    "Invalid response type for status info for %s: %s",
-                    self.server_name,
-                    type(status_info_result),
-                )
-                raise UpdateFailed(
-                    f"Invalid response type for status info: {type(status_info_result).__name__}"
+                    f"Invalid response for critical status_info for server '{self.server_name}'"
                 )
 
-            fetch_failures = []
-            # Process Allowlist
+            # --- Process Non-Critical Data Points ---
+            # Allowlist
             if isinstance(allowlist_result, Exception):
-                _LOGGER.warning(
-                    "Error fetching allowlist for %s: %s",
-                    self.server_name,
-                    allowlist_result,
+                fetch_errors_details.append(
+                    f"Allowlist: {type(allowlist_result).__name__} ({allowlist_result})"
                 )
-                fetch_failures.append(f"Allowlist ({type(allowlist_result).__name__})")
-            elif isinstance(allowlist_result, dict):
-                if allowlist_result.get("status") == "error":
-                    msg = allowlist_result.get("message", "Unknown API error")
-                    _LOGGER.warning(
-                        "API error fetching allowlist for %s: %s", self.server_name, msg
-                    )
-                    fetch_failures.append(f"Allowlist (API: {msg[:30]}...)")
-                else:
-                    coordinator_data["allowlist"] = allowlist_result.get(
-                        "existing_players", []
-                    )
+            elif (
+                isinstance(allowlist_result, dict)
+                and allowlist_result.get("status") == "success"
+            ):
+                coordinator_data["allowlist"] = allowlist_result.get(
+                    "existing_players", []
+                )
             else:
-                _LOGGER.warning(
-                    "Invalid response type for allowlist for %s: %s",
-                    self.server_name,
-                    type(allowlist_result),
-                )
-                fetch_failures.append(
-                    f"Allowlist (Invalid Type: {type(allowlist_result).__name__})"
+                fetch_errors_details.append(
+                    f"Allowlist: Invalid response ({allowlist_result})"
                 )
 
-            # Process Properties
+            # Properties
             if isinstance(properties_result, Exception):
-                _LOGGER.warning(
-                    "Error fetching server properties for %s: %s",
-                    self.server_name,
-                    properties_result,
+                fetch_errors_details.append(
+                    f"Properties: {type(properties_result).__name__} ({properties_result})"
                 )
-                fetch_failures.append(
-                    f"Properties ({type(properties_result).__name__})"
-                )
-            elif isinstance(properties_result, dict):
-                if properties_result.get("status") == "error":
-                    msg = properties_result.get("message", "Unknown API error")
-                    _LOGGER.warning(
-                        "API error fetching properties for %s: %s",
-                        self.server_name,
-                        msg,
-                    )
-                    fetch_failures.append(f"Properties (API: {msg[:30]}...)")
-                else:
-                    coordinator_data["properties"] = properties_result.get(
-                        "properties", {}
-                    )
+            elif (
+                isinstance(properties_result, dict)
+                and properties_result.get("status") == "success"
+            ):
+                coordinator_data["properties"] = properties_result.get("properties", {})
             else:
-                _LOGGER.warning(
-                    "Invalid response type for properties for %s: %s",
-                    self.server_name,
-                    type(properties_result),
-                )
-                fetch_failures.append(
-                    f"Properties (Invalid Type: {type(properties_result).__name__})"
+                fetch_errors_details.append(
+                    f"Properties: Invalid response ({properties_result})"
                 )
 
-            # Process Permissions
+            # Permissions
             if isinstance(permissions_result, Exception):
-                _LOGGER.warning(
-                    "Error fetching server permissions for %s: %s",
-                    self.server_name,
-                    permissions_result,
-                )
-                fetch_failures.append(
-                    f"Permissions ({type(permissions_result).__name__})"
+                fetch_errors_details.append(
+                    f"Permissions: {type(permissions_result).__name__} ({permissions_result})"
                 )
             elif (
                 isinstance(permissions_result, dict)
                 and permissions_result.get("status") == "success"
             ):
-                permissions_data_obj = permissions_result.get("data")
-                if isinstance(permissions_data_obj, dict):
-                    coordinator_data["server_permissions"] = permissions_data_obj.get(
-                        "permissions", []
-                    )
-                else:
-                    _LOGGER.warning(
-                        "Unexpected structure for server_permissions for %s: %s",
-                        self.server_name,
-                        permissions_result,
-                    )
-                    coordinator_data["server_permissions"] = []
-                    fetch_failures.append("Permissions (Bad Structure)")
+                permissions_data_nested = permissions_result.get("data", {})
+                coordinator_data["server_permissions"] = permissions_data_nested.get(
+                    "permissions", []
+                )
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching server permissions for %s: %s",
-                    self.server_name,
-                    permissions_result,
+                fetch_errors_details.append(
+                    f"Permissions: Invalid response ({permissions_result})"
                 )
-                fetch_failures.append("Permissions (Invalid Resp)")
 
-            # Process World Backups
+            # World Backups
             if isinstance(world_backups_result, Exception):
-                _LOGGER.warning(
-                    "Error fetching world backups for %s: %s",
-                    self.server_name,
-                    world_backups_result,
-                )
-                fetch_failures.append(
-                    f"World Backups ({type(world_backups_result).__name__})"
+                fetch_errors_details.append(
+                    f"WorldBackups: {type(world_backups_result).__name__} ({world_backups_result})"
                 )
             elif (
                 isinstance(world_backups_result, dict)
@@ -275,22 +196,14 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     "backups", []
                 )
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching world backups for %s: %s",
-                    self.server_name,
-                    world_backups_result,
+                fetch_errors_details.append(
+                    f"WorldBackups: Invalid response ({world_backups_result})"
                 )
-                fetch_failures.append("World Backups (Invalid Resp)")
 
-            # Process Config Backups
+            # Config Backups
             if isinstance(config_backups_result, Exception):
-                _LOGGER.warning(
-                    "Error fetching config backups for %s: %s",
-                    self.server_name,
-                    config_backups_result,
-                )
-                fetch_failures.append(
-                    f"Config Backups ({type(config_backups_result).__name__})"
+                fetch_errors_details.append(
+                    f"ConfigBackups: {type(config_backups_result).__name__} ({config_backups_result})"
                 )
             elif (
                 isinstance(config_backups_result, dict)
@@ -300,43 +213,90 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     "backups", []
                 )
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching config backups for %s: %s",
-                    self.server_name,
-                    config_backups_result,
+                fetch_errors_details.append(
+                    f"ConfigBackups: Invalid response ({config_backups_result})"
                 )
-                fetch_failures.append("Config Backups (Invalid Resp)")
 
-            if coordinator_data["status"] == "success" and fetch_failures:
+            if fetch_errors_details:
+                _LOGGER.warning(
+                    "Partial data fetch failure for server '%s': %s",
+                    self.server_name,
+                    "; ".join(fetch_errors_details),
+                )
                 coordinator_data[
                     "message"
-                ] += f" (Failures: {', '.join(fetch_failures)})"
-            elif coordinator_data["status"] == "error":  # Should have been raised
-                raise UpdateFailed(
-                    coordinator_data.get("message", "Unknown update error state")
-                )
+                ] += f" (Partial failures: {len(fetch_errors_details)} items)"
 
             _LOGGER.debug(
-                "Coordinator update successful for server '%s'", self.server_name
+                "Coordinator update processed for server '%s'. Data: %s",
+                self.server_name,
+                coordinator_data,
             )
             return coordinator_data
 
-        except ConfigEntryAuthFailed:
+        except (
+            ConfigEntryAuthFailed
+        ):  # Re-raise if handled by _handle_critical_exception
+            _LOGGER.error(
+                "Authentication failure during update for server '%s'", self.server_name
+            )
             raise
-        except UpdateFailed:
+        except (
+            UpdateFailed
+        ):  # Re-raise if handled by _handle_critical_exception or other logic
+            _LOGGER.warning(
+                "Update failed for server '%s' coordinator.", self.server_name
+            )
             raise
         except asyncio.TimeoutError as err:
-            _LOGGER.warning("Timeout fetching data for %s", self.server_name)
+            _LOGGER.warning(
+                "Timeout fetching data for server '%s': %s", self.server_name, err
+            )
             raise UpdateFailed(
-                f"Timeout communicating with API for server {self.server_name}: {err}"
+                f"Timeout communicating with API for server {self.server_name}"
             ) from err
-        except Exception as err:
+        except Exception as err:  # Catch-all for unexpected issues
             _LOGGER.exception(
-                "Unexpected error fetching data for %s: %s", self.server_name, err
+                "Unexpected error fetching data for server '%s'", self.server_name
             )
             raise UpdateFailed(
                 f"Unexpected error updating server {self.server_name}: {err}"
             ) from err
+
+    def _handle_critical_exception(self, data_key: str, error: Exception):
+        """Helper to handle exceptions for critical data points."""
+        if isinstance(error, AuthError):
+            _LOGGER.error(
+                "Auth error fetching %s for %s: %s", data_key, self.server_name, error
+            )
+            raise ConfigEntryAuthFailed(
+                f"Auth error for {data_key}: {error.api_message or error}"
+            ) from error
+        if isinstance(error, ServerNotFoundError):
+            _LOGGER.error(
+                "Server %s not found when fetching %s: %s",
+                self.server_name,
+                data_key,
+                error,
+            )
+            raise UpdateFailed(
+                f"Server not found for {data_key}: {error.api_message or error}"
+            ) from error
+        if isinstance(error, (APIError, CannotConnectError)):
+            _LOGGER.error(
+                "API/Connection error fetching %s for %s: %s",
+                data_key,
+                self.server_name,
+                error,
+            )
+            raise UpdateFailed(
+                f"API/Connection error for {data_key}: {error.api_message or error}"
+            ) from error
+
+        _LOGGER.exception(
+            "Unexpected error fetching %s for %s", data_key, self.server_name
+        )  # Logs full traceback
+        raise UpdateFailed(f"Unexpected error for {data_key}: {error}") from error
 
 
 class ManagerDataCoordinator(DataUpdateCoordinator):
@@ -349,7 +309,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
         scan_interval: int,
     ):
         self.api = api_client
-        self._timeout_seconds = max(5, scan_interval - 3)
+        self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 3)
 
         super().__init__(
             hass,
@@ -358,162 +318,168 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=scan_interval),
         )
         _LOGGER.debug(
-            "Initialized ManagerDataCoordinator with interval %ds", scan_interval
+            "Initialized ManagerDataCoordinator with update interval %ds (API timeout %ds)",
+            scan_interval,
+            self._api_call_timeout,
         )
 
     async def _async_update_data(self) -> dict:
-        _LOGGER.debug("Manager Coordinator: Updating data.")
+        _LOGGER.debug("Manager Coordinator: Updating global data.")
         manager_data = {
-            "status": "error",
+            "status": "error",  # Overall status of this fetch operation
             "message": "Manager data update failed",
-            "info": None,
-            "global_players": None,
-            "available_worlds": None,
-            "available_addons": None,
+            "info": None,  # from async_get_info -> nested 'data' object
+            "global_players": [],  # from async_get_players -> 'players' list
+            "available_worlds": [],  # from async_get_content_worlds -> 'files' list
+            "available_addons": [],  # from async_get_content_addons -> 'files' list
         }
-        partial_success = False
+
+        fetch_errors_details = []  # To collect detailed error messages
 
         try:
-            async with async_timeout.timeout(self._timeout_seconds):
-                # --- UPDATED METHOD CALLS ---
+            async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
-                    self.api.async_get_info(),  # Renamed
-                    self.api.async_get_players(),  # Renamed
-                    self.api.async_get_content_worlds(),  # Renamed
-                    self.api.async_get_content_addons(),  # Renamed
+                    self.api.async_get_info(),
+                    self.api.async_get_players(),
+                    self.api.async_get_content_worlds(),
+                    self.api.async_get_content_addons(),
                     return_exceptions=True,
                 )
-                # --- END UPDATED METHOD CALLS ---
 
             info_result, players_result, worlds_result, addons_result = results
-            fetch_failures = []
+            at_least_one_success = False
 
-            # Process Manager Info
+            # Process Manager Info (No Auth Required for this specific call)
             if isinstance(info_result, Exception):
-                _LOGGER.warning("Error fetching manager info: %s", info_result)
-                fetch_failures.append(f"Info ({type(info_result).__name__})")
-            elif isinstance(info_result, dict):
-                # Assuming the 'data' key from your HTTP API docs for /api/info
-                if "data" in info_result and isinstance(info_result["data"], dict):
-                    manager_data["info"] = info_result["data"]
-                else:  # Fallback if 'data' key is missing or not a dict
-                    manager_data["info"] = (
-                        info_result  # Store raw response if structure is unexpected
-                    )
-                partial_success = True
-            else:
-                _LOGGER.warning(
-                    "Invalid response type for manager info: %s", type(info_result)
+                # This is not critical enough to fail the entire manager update if others succeed
+                fetch_errors_details.append(
+                    f"Info: {type(info_result).__name__} ({info_result})"
                 )
-                fetch_failures.append(
-                    f"Info (Invalid Type: {type(info_result).__name__})"
-                )
+            elif (
+                isinstance(info_result, dict) and info_result.get("status") == "success"
+            ):
+                # api.async_get_info() returns {"status": "success", "data": {"os_type": ..., "app_version": ...}}
+                manager_data["info"] = info_result.get(
+                    "data", {}
+                )  # Store the nested 'data' object
+                at_least_one_success = True
+            else:  # Unexpected structure
+                fetch_errors_details.append(f"Info: Invalid response ({info_result})")
 
-            # Process Global Players
+            # Process Global Players (Requires Auth)
             if isinstance(players_result, Exception):
-                if isinstance(players_result, AuthError):
-                    _LOGGER.error(
-                        "Auth error fetching global players: %s", players_result
-                    )
-                    raise ConfigEntryAuthFailed(
-                        "Auth error fetching global players"
-                    ) from players_result
-                _LOGGER.warning("Error fetching global players: %s", players_result)
-                fetch_failures.append(f"Players ({type(players_result).__name__})")
+                self._handle_exception_for_manager_data(
+                    "global_players", players_result, fetch_errors_details
+                )
             elif (
                 isinstance(players_result, dict)
                 and players_result.get("status") == "success"
             ):
                 manager_data["global_players"] = players_result.get("players", [])
-                partial_success = True
+                at_least_one_success = True
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching global players: %s",
-                    players_result,
+                fetch_errors_details.append(
+                    f"GlobalPlayers: Invalid response ({players_result})"
                 )
-                fetch_failures.append("Players (Invalid Resp)")
 
-            # Process Available Worlds
+            # Process Available Worlds (Requires Auth)
             if isinstance(worlds_result, Exception):
-                if isinstance(worlds_result, AuthError):
-                    _LOGGER.error(
-                        "Auth error fetching available worlds: %s", worlds_result
-                    )
-                    raise ConfigEntryAuthFailed(
-                        "Auth error fetching available worlds"
-                    ) from worlds_result
-                _LOGGER.warning("Error fetching available worlds: %s", worlds_result)
-                fetch_failures.append(f"Worlds ({type(worlds_result).__name__})")
+                self._handle_exception_for_manager_data(
+                    "available_worlds", worlds_result, fetch_errors_details
+                )
             elif (
                 isinstance(worlds_result, dict)
                 and worlds_result.get("status") == "success"
             ):
                 manager_data["available_worlds"] = worlds_result.get("files", [])
-                partial_success = True
+                at_least_one_success = True
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching available worlds: %s",
-                    worlds_result,
+                fetch_errors_details.append(
+                    f"AvailableWorlds: Invalid response ({worlds_result})"
                 )
-                fetch_failures.append("Worlds (Invalid Resp)")
 
-            # Process Available Addons
+            # Process Available Addons (Requires Auth)
             if isinstance(addons_result, Exception):
-                if isinstance(addons_result, AuthError):
-                    _LOGGER.error(
-                        "Auth error fetching available addons: %s", addons_result
-                    )
-                    raise ConfigEntryAuthFailed(
-                        "Auth error fetching available addons"
-                    ) from addons_result
-                _LOGGER.warning("Error fetching available addons: %s", addons_result)
-                fetch_failures.append(f"Addons ({type(addons_result).__name__})")
+                self._handle_exception_for_manager_data(
+                    "available_addons", addons_result, fetch_errors_details
+                )
             elif (
                 isinstance(addons_result, dict)
                 and addons_result.get("status") == "success"
             ):
                 manager_data["available_addons"] = addons_result.get("files", [])
-                partial_success = True
+                at_least_one_success = True
             else:
-                _LOGGER.warning(
-                    "Invalid or error response fetching available addons: %s",
-                    addons_result,
+                fetch_errors_details.append(
+                    f"AvailableAddons: Invalid response ({addons_result})"
                 )
-                fetch_failures.append("Addons (Invalid Resp)")
 
-            if partial_success and not fetch_failures:
+            if at_least_one_success:
                 manager_data["status"] = "success"
-                manager_data["message"] = "Manager data fetched successfully."
-            elif partial_success and fetch_failures:
-                manager_data["status"] = "success"
-                manager_data["message"] = (
-                    f"Partially fetched manager data (Failures: {', '.join(fetch_failures)})"
+                manager_data["message"] = "Manager data fetched."
+                if fetch_errors_details:
+                    _LOGGER.warning(
+                        "Partial data fetch failure for manager data: %s",
+                        "; ".join(fetch_errors_details),
+                    )
+                    manager_data[
+                        "message"
+                    ] += f" (Partial failures: {len(fetch_errors_details)} items)"
+            else:  # No data point succeeded
+                # If all were auth errors, ConfigEntryAuthFailed would have been raised already.
+                # This means other API errors or connection issues occurred for all auth'd endpoints.
+                final_error_summary = (
+                    "; ".join(fetch_errors_details) or "Unknown reasons"
                 )
-            else:
-                if not fetch_failures:
-                    fetch_failures.append("Unknown")
                 manager_data["message"] = (
-                    f"Failed to fetch manager data ({', '.join(fetch_failures)})"
+                    f"Failed to fetch any manager data: {final_error_summary}"
                 )
+                _LOGGER.error(manager_data["message"])  # Log the consolidated error
                 raise UpdateFailed(manager_data["message"])
 
             _LOGGER.debug(
-                "Manager coordinator update finished. Status: %s",
+                "Manager coordinator update processed. Status: %s",
                 manager_data["status"],
             )
             return manager_data
 
-        except ConfigEntryAuthFailed:
+        except (
+            ConfigEntryAuthFailed
+        ):  # Re-raise if handled by _handle_exception_for_manager_data
+            _LOGGER.error("Authentication failure during manager data update.")
             raise
-        except UpdateFailed:
+        except UpdateFailed:  # Re-raise if a general update failure was determined
+            _LOGGER.warning("Update failed for manager data coordinator.")
             raise
         except asyncio.TimeoutError as err:
-            _LOGGER.warning("Timeout fetching manager data")
+            _LOGGER.warning("Timeout fetching manager data: %s", err)
             raise UpdateFailed(
-                f"Timeout communicating with API for manager data: {err}"
+                f"Timeout communicating with API for manager data"
             ) from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching manager data: %s", err)
+        except Exception as err:  # Catch-all for unexpected issues
+            _LOGGER.exception("Unexpected error fetching manager data")
             raise UpdateFailed(
                 f"Unexpected error fetching manager data: {err}"
             ) from err
+
+    def _handle_exception_for_manager_data(
+        self, data_key: str, error: Exception, error_list: list
+    ):
+        """Helper to handle exceptions for manager data points, possibly raising critical ones."""
+        if isinstance(error, AuthError):
+            _LOGGER.error("Auth error fetching %s for manager: %s", data_key, error)
+            # This is critical for authenticated endpoints
+            raise ConfigEntryAuthFailed(
+                f"Auth error for {data_key}: {error.api_message or error}"
+            ) from error
+
+        # For other errors (APIError, CannotConnectError, etc.), just log and add to list for now.
+        # If any single manager data point (other than info) being unavailable is critical,
+        # you might raise UpdateFailed here too.
+        _LOGGER.warning(
+            "Error fetching %s for manager: %s (%s)",
+            data_key,
+            type(error).__name__,
+            error,
+        )
+        error_list.append(f"{data_key}: {type(error).__name__}")
