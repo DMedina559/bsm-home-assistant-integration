@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-from typing import cast, Dict, Optional, List, Any, Set, Coroutine  # Added Coroutine
+from typing import cast, Dict, Optional, List, Any, Set, Coroutine
 
 import voluptuous as vol
 
@@ -20,7 +20,7 @@ from homeassistant.helpers import (
 from .const import (
     DOMAIN,
     SERVICE_ADD_GLOBAL_PLAYERS,
-    SERVICE_SCAN_PLAYERS,  # Assuming you added this based on client method
+    SERVICE_SCAN_PLAYERS,
     SERVICE_SEND_COMMAND,
     SERVICE_PRUNE_DOWNLOADS,
     SERVICE_RESTORE_BACKUP,
@@ -43,7 +43,7 @@ from .const import (
     FIELD_DIRECTORY,
     FIELD_KEEP,
     FIELD_OVERWRITE,
-    FIELD_SERVER_NAME,  # Used in INSTALL_SERVER service data, not just as a target
+    FIELD_SERVER_NAME,
     FIELD_SERVER_VERSION,
     FIELD_CONFIRM_DELETE,
     FIELD_PLAYERS,
@@ -62,25 +62,17 @@ from pybedrock_server_manager import (
     AuthError,
     CannotConnectError,
     ServerNotRunningError,
-    InvalidInputError,  # Client can raise this for bad payloads
+    InvalidInputError,
     ServerNotFoundError,
-    # APIServerSideError, NotFoundError, OperationFailedError (children of APIError)
 )
 
-from .coordinator import ManagerDataCoordinator  # For type hinting
+from .coordinator import ManagerDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 # --- Service Schema Definitions ---
-# Schemas define the expected data for each service call.
-# ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID are implicitly handled by HA for targeting.
-# We add them to schemas with 'object' type just to acknowledge they can be passed,
-# but their validation is HA's responsibility. Our resolver functions use them.
-
 TARGETING_SCHEMA_FIELDS = {
-    vol.Optional(
-        ATTR_DEVICE_ID
-    ): object,  # cv.entity_ids or cv.device_ids would be too restrictive
+    vol.Optional(ATTR_DEVICE_ID): object,
     vol.Optional(ATTR_ENTITY_ID): object,
     vol.Optional(ATTR_AREA_ID): object,
 }
@@ -95,7 +87,7 @@ PRUNE_DOWNLOADS_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_DIRECTORY): cv.string,
         vol.Optional(FIELD_KEEP): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        **TARGETING_SCHEMA_FIELDS,  # Targets a manager instance
+        **TARGETING_SCHEMA_FIELDS,
     }
 )
 TRIGGER_BACKUP_SERVICE_SCHEMA = vol.Schema(
@@ -122,13 +114,12 @@ INSTALL_SERVER_SERVICE_SCHEMA = vol.Schema(
         vol.Required(FIELD_SERVER_NAME): cv.string,
         vol.Required(FIELD_SERVER_VERSION): cv.string,
         vol.Optional(FIELD_OVERWRITE, default=False): cv.boolean,
-        **TARGETING_SCHEMA_FIELDS,  # Targets a manager instance
+        **TARGETING_SCHEMA_FIELDS,
     }
 )
 DELETE_SERVER_SERVICE_SCHEMA = vol.Schema(
     {
-        # FIELD_SERVER_NAME is implicitly derived from target for this one
-        vol.Required(FIELD_CONFIRM_DELETE): True,  # Safety check
+        vol.Required(FIELD_CONFIRM_DELETE): True,
         **TARGETING_SCHEMA_FIELDS,
     }
 )
@@ -149,13 +140,12 @@ SET_PERMISSIONS_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_PERMISSIONS): vol.Schema(
             {cv.string: vol.In(["visitor", "member", "operator"])}
-        ),  # Validate levels
+        ),
         **TARGETING_SCHEMA_FIELDS,
     }
 )
 UPDATE_PROPERTIES_SERVICE_SCHEMA = vol.Schema(
     {
-        # Allow various types for property values as BSM API handles specific conversions.
         vol.Required(FIELD_PROPERTIES): vol.Schema(
             {cv.string: vol.Any(str, int, bool)}
         ),
@@ -176,34 +166,33 @@ INSTALL_ADDON_SERVICE_SCHEMA = vol.Schema(
 )
 CONFIGURE_OS_SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(FIELD_AUTOUPDATE): cv.boolean,  # Common for both OS
-        vol.Optional(FIELD_AUTOSTART): cv.boolean,  # Primarily for Linux
+        vol.Required(FIELD_AUTOUPDATE): cv.boolean,
+        vol.Optional(FIELD_AUTOSTART): cv.boolean,
         **TARGETING_SCHEMA_FIELDS,
     }
 )
 ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA = vol.Schema(
     {
-        # Expects list of "PlayerName:PlayerXUID"
         vol.Required(FIELD_PLAYERS): vol.All(
-            cv.ensure_list, [cv.matches_regex(r"^[a-zA-Z0-9_ ]{1,16}:[0-9]{16}$")]
+            cv.ensure_list,
+            [cv.matches_regex(r"^[a-zA-Z0-9_ .\-']{1,32}:[0-9]{16,19}$")],
         ),
-        **TARGETING_SCHEMA_FIELDS,  # Targets a manager instance
+        **TARGETING_SCHEMA_FIELDS,
     }
 )
 SCAN_PLAYERS_SERVICE_SCHEMA = vol.Schema(
-    {  # Schema for the new scan_players service
-        **TARGETING_SCHEMA_FIELDS,  # Targets a manager instance
+    {
+        **TARGETING_SCHEMA_FIELDS,
     }
 )
 
 
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(
-    api_call_coro: Coroutine[Any, Any, Any],  # More specific Coroutine type
+    api_call_coro: Coroutine[Any, Any, Any],
     error_message_prefix: str,
-    log_context_identifier: Optional[str] = None,  # Server name or manager ID
-) -> Any:  # Return type of the API call
-    """Generic helper to make an API call and handle common exceptions."""
+    log_context_identifier: Optional[str] = None,
+) -> Any:
     context_msg = f" for '{log_context_identifier}'" if log_context_identifier else ""
     try:
         response = await api_call_coro
@@ -218,44 +207,48 @@ async def _base_api_call_handler(
         msg = f"{error_message_prefix}{context_msg}: Server is not running. (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise HomeAssistantError(msg) from err
-    except ServerNotFoundError as err:  # More specific error
+    except ServerNotFoundError as err:
         msg = f"{error_message_prefix}{context_msg}: Target server not found by API. (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise HomeAssistantError(msg) from err
-    except InvalidInputError as err:  # Client-side or API-side validation error (400)
+    except InvalidInputError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input provided. (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise ServiceValidationError(
-            msg
-        ) from err  # Use ServiceValidationError for input issues
-    except AuthError as err:  # Specific AuthError
+            description=msg,  # Fallback description
+            translation_domain=DOMAIN,
+            translation_key="service_invalid_input_api",  # Key for strings.json (under config.error)
+            translation_placeholders={"details": err.api_message or str(err)},
+        ) from err
+    except AuthError as err:
         msg = f"{error_message_prefix}{context_msg}: Authentication failed. (API: {err.api_message or err})"
         _LOGGER.error(msg)
-        raise HomeAssistantError(
-            msg
-        ) from err  # Or ConfigEntryAuthFailed if appropriate context
-    except CannotConnectError as err:  # Specific CannotConnectError
-        msg = f"{error_message_prefix}{context_msg}: Cannot connect to BSM API. ({err})"
+        raise HomeAssistantError(msg) from err
+    except CannotConnectError as err:
+        msg = f"{error_message_prefix}{context_msg}: Cannot connect to BSM API. ({err.args[0] if err.args else err})"
         _LOGGER.error(msg)
         raise HomeAssistantError(msg) from err
-    except APIError as err:  # Catch-all for other API errors (e.g., 500, 501)
-        msg = f"{error_message_prefix}{context_msg}: BSM API Error ({err.status_code}). (API: {err.api_message or err})"
+    except APIError as err:
+        msg = f"{error_message_prefix}{context_msg}: BSM API Error (Status: {err.status_code}). (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise HomeAssistantError(msg) from err
-    except ValueError as err:  # From client's internal validation before API call
+    except ValueError as err:  # From client's internal validation
         msg = f"{error_message_prefix}{context_msg}: Invalid input value provided. ({err})"
         _LOGGER.error(msg)
-        raise ServiceValidationError(msg) from err
-    except Exception as err:  # Truly unexpected errors
-        _LOGGER.exception(
-            "%s%s: Unexpected error.", error_message_prefix, context_msg
-        )  # .exception logs traceback
+        raise ServiceValidationError(
+            description=msg,  # Fallback
+            translation_domain=DOMAIN,
+            translation_key="service_invalid_value_client",  # Key for strings.json
+            translation_placeholders={"details": str(err)},
+        ) from err
+    except Exception as err:
+        _LOGGER.exception("%s%s: Unexpected error.", error_message_prefix, context_msg)
         raise HomeAssistantError(
             f"{error_message_prefix}{context_msg}: Unexpected error - {type(err).__name__}"
         ) from err
 
 
-# Simplified handlers, all using _base_api_call_handler
+# Simplified handlers
 async def _async_handle_send_command(
     api: BedrockServerManagerApi, server: str, command: str
 ):
@@ -365,7 +358,7 @@ async def _async_handle_configure_os_service(
     return await _base_api_call_handler(
         api.async_configure_server_os_service(server, payload),
         "Configure OS service",
-        f"{server} on {manager_id}",
+        f"{server} on manager '{manager_id}'",
     )
 
 
@@ -377,9 +370,7 @@ async def _async_handle_add_global_players(
     )
 
 
-async def _async_handle_scan_players(
-    api: BedrockServerManagerApi, manager_id: str
-):  # New handler
+async def _async_handle_scan_players(api: BedrockServerManagerApi, manager_id: str):
     return await _base_api_call_handler(
         api.async_scan_players(), "Scan players", manager_id
     )
@@ -387,59 +378,55 @@ async def _async_handle_scan_players(
 
 async def _async_handle_install_server(
     api: BedrockServerManagerApi,
-    server_name: str,
+    server_name_to_install: str,
     server_version: str,
     overwrite: bool,
     manager_id: str,
 ):
-    log_context = f"for server '{server_name}' on manager '{manager_id}'"
+    log_context = f"for server '{server_name_to_install}' on manager '{manager_id}'"
     try:
         response = await api.async_install_new_server(
-            server_name, server_version, overwrite
+            server_name_to_install, server_version, overwrite
         )
         if response.get("status") == "confirm_needed":
-            msg = f"Install server {log_context}: Server already exists and overwrite was false. Set 'overwrite: true' to replace it."
+            msg = f"Install server {log_context}: Server already exists and overwrite was false. Set 'overwrite: true' to replace it or use the 'delete_server' service first."
             _LOGGER.warning(msg)
-            # This is a user-correctable issue, ServiceValidationError might be appropriate
             raise ServiceValidationError(
-                msg,
+                description=msg,
                 translation_domain=DOMAIN,
-                translation_key="install_server_confirm_needed",
-                translation_placeholders={"server_name": server_name},
+                translation_key="service_install_server_confirm_needed",  # Updated key
+                translation_placeholders={"server_name": server_name_to_install},
             )
         _LOGGER.info(
             "Successfully requested install %s. API Message: %s",
             log_context,
             response.get("message", "N/A"),
         )
-        return response  # Return success response
+        return response
     except (
         AuthError,
         CannotConnectError,
         APIError,
         ValueError,
-    ) as err:  # Catches client's ValueError too
-        # Use the refined error message from _base_api_call_handler's style
+        InvalidInputError,
+    ) as err:
         error_prefix = f"Install server {log_context}"
-        if isinstance(err, AuthError):
-            msg_detail = f"Authentication failed. (API: {err.api_message or err})"
-        elif isinstance(err, CannotConnectError):
-            msg_detail = f"Cannot connect to BSM API. ({err})"
-        elif isinstance(err, InvalidInputError):
-            msg_detail = f"Invalid input provided. (API: {err.api_message or err})"
-        elif isinstance(err, APIError):
-            msg_detail = (
-                f"BSM API Error ({err.status_code}). (API: {err.api_message or err})"
-            )
-        elif isinstance(err, ValueError):
-            msg_detail = f"Invalid input value for installation. ({err})"
-        else:
-            msg_detail = str(err)
-
-        full_error_msg = f"{error_prefix}: {msg_detail}"
+        err_msg = (
+            err.api_message
+            if hasattr(err, "api_message") and err.api_message
+            else str(err)
+        )
+        status_code_msg = (
+            f"(Status: {err.status_code})"
+            if hasattr(err, "status_code") and err.status_code
+            else ""
+        )
+        full_error_msg = (
+            f"{error_prefix}: {type(err).__name__} {status_code_msg} - {err_msg}"
+        )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(full_error_msg) from err
+            raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Install server %s: Unexpected error.", log_context)
@@ -458,28 +445,22 @@ async def _async_handle_delete_server(
     _LOGGER.critical("EXECUTING IRREVERSIBLE DELETE %s", log_context)
     device_removed_from_ha = False
     try:
-        response = await api.async_delete_server(
-            server_name=server_to_delete
-        )  # Client handles actual API call
+        response = await api.async_delete_server(server_name=server_to_delete)
         if response and response.get("status") == "success":
             _LOGGER.info(
                 "Manager API confirmed deletion of server '%s'. Attempting HA device removal.",
                 server_to_delete,
             )
             device_registry_instance = dr.async_get(hass)
-
-            server_device_unique_value = (
-                f"{manager_host_port_id}_{server_to_delete}"  # Correct identifier
-            )
+            server_device_unique_value = f"{manager_host_port_id}_{server_to_delete}"
             device_identifier_tuple = (DOMAIN, server_device_unique_value)
-
             device_to_remove = device_registry_instance.async_get_device(
                 identifiers={device_identifier_tuple}
             )
             if device_to_remove:
                 _LOGGER.debug(
                     "Removing device '%s' (ID: %s) from HA registry.",
-                    device_to_remove.name,
+                    device_to_remove.name or device_to_remove.id,
                     device_to_remove.id,
                 )
                 device_registry_instance.async_remove_device(device_to_remove.id)
@@ -498,36 +479,33 @@ async def _async_handle_delete_server(
         else:
             msg = f"Manager API did not confirm deletion {log_context}. Response: {response}"
             _LOGGER.error(msg)
-            raise HomeAssistantError(msg)  # API reported failure
-
+            raise HomeAssistantError(msg)
     except (
         AuthError,
         CannotConnectError,
         APIError,
         ValueError,
-    ) as err:  # Base handler logic for delete
+        InvalidInputError,
+    ) as err:
         error_prefix = f"Delete server {log_context}"
-        if isinstance(err, AuthError):
-            msg_detail = f"Authentication failed. (API: {err.api_message or err})"
-        elif isinstance(err, CannotConnectError):
-            msg_detail = f"Cannot connect to BSM API. ({err})"
-        elif isinstance(err, InvalidInputError):
-            msg_detail = f"Invalid input provided. (API: {err.api_message or err})"  # Should not happen for delete
-        elif isinstance(err, APIError):
-            msg_detail = (
-                f"BSM API Error ({err.status_code}). (API: {err.api_message or err})"
-            )
-        elif isinstance(err, ValueError):
-            msg_detail = (
-                f"Invalid input value for deletion. ({err})"  # Should not happen
-            )
-        else:
-            msg_detail = str(err)
-
-        full_error_msg = f"{error_prefix}: {msg_detail}"
+        err_msg = (
+            err.api_message
+            if hasattr(err, "api_message") and err.api_message
+            else str(err)
+        )
+        status_code_msg = (
+            f"(Status: {err.status_code})"
+            if hasattr(err, "status_code") and err.status_code
+            else ""
+        )
+        full_error_msg = (
+            f"{error_prefix}: {type(err).__name__} {status_code_msg} - {err_msg}"
+        )
         _LOGGER.error(full_error_msg)
-        if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(full_error_msg) from err
+        if isinstance(
+            err, (ValueError, InvalidInputError)
+        ):  # Could be client-side validation if any was added to delete_server
+            raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Delete server %s: Unexpected error.", log_context)
@@ -540,26 +518,17 @@ async def _async_handle_delete_server(
 async def _resolve_server_targets(
     service: ServiceCall, hass: HomeAssistant
 ) -> Dict[str, str]:
-    """Resolves service targets to a dict of {config_entry_id: server_name}."""
-    # This function looks complex but is generally okay. Main concerns are:
-    # 1. Ensuring device identifiers for servers are *unique per manager* and correctly parsed.
-    #    e.g., (DOMAIN, f"{manager_host_port_id}_{server_name}")
-    # 2. Handling cases where entities/devices might not have the expected structure.
-
-    servers_to_target: Dict[str, str] = {}  # Key: config_entry_id, Value: server_name
+    servers_to_target: Dict[str, str] = {}
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
 
-    # Helper to process a device and add to targets if it's a BSM server device
     def process_device_for_server_target(
         device_entry: dr.DeviceEntry, config_entry_id_context: str
     ):
         nonlocal servers_to_target
-        # Get the manager_id for this specific config entry to correctly parse server device identifiers
         try:
-            manager_host_port_id = hass.data[DOMAIN][config_entry_id_context][
-                "manager_identifier"
-            ][1]
+            manager_data = hass.data[DOMAIN][config_entry_id_context]
+            manager_host_port_id = manager_data["manager_identifier"][1]
         except (KeyError, TypeError, IndexError):
             _LOGGER.warning(
                 "Could not get manager_identifier for config entry %s when processing device %s.",
@@ -571,16 +540,14 @@ async def _resolve_server_targets(
         parsed_server_name = None
         for identifier_domain, identifier_value in device_entry.identifiers:
             if identifier_domain == DOMAIN:
-                # Expected server device identifier: f"{manager_host_port_id}_{actual_server_name}"
-                if identifier_value.startswith(manager_host_port_id + "_"):
-                    try:
-                        parsed_server_name = identifier_value.split("_", 1)[1]
+                expected_prefix = manager_host_port_id + "_"
+                if identifier_value.startswith(expected_prefix):
+                    prefix_len = len(expected_prefix)
+                    if (
+                        len(identifier_value) > prefix_len
+                    ):  # Ensure there's something after the prefix
+                        parsed_server_name = identifier_value[prefix_len:]
                         break
-                    except IndexError:
-                        _LOGGER.warning(
-                            "Malformed BSM server device identifier: %s",
-                            identifier_value,
-                        )
 
         if parsed_server_name:
             if config_entry_id_context not in servers_to_target:
@@ -599,14 +566,24 @@ async def _resolve_server_targets(
                     parsed_server_name,
                     servers_to_target[config_entry_id_context],
                 )
-        # else: Device is not a BSM server sub-device or identifier is malformed
+        elif _LOGGER.isEnabledFor(logging.DEBUG):
+            is_manager_device = any(
+                val == manager_host_port_id
+                for dom, val in device_entry.identifiers
+                if dom == DOMAIN
+            )
+            if not is_manager_device:
+                _LOGGER.debug(
+                    "Device %s (identifiers: %s) for config entry %s is not a recognized BSM server sub-device.",
+                    device_entry.id,
+                    device_entry.identifiers,
+                    config_entry_id_context,
+                )
 
-    # Extract targets from service call
     target_entity_ids: List[str] = cv.ensure_list(service.data.get(ATTR_ENTITY_ID, []))
     target_device_ids: List[str] = cv.ensure_list(service.data.get(ATTR_DEVICE_ID, []))
     target_area_ids: List[str] = cv.ensure_list(service.data.get(ATTR_AREA_ID, []))
 
-    # Resolve Entities
     for entity_id in target_entity_ids:
         entity_entry = entity_reg.async_get(entity_id)
         if (
@@ -615,25 +592,23 @@ async def _resolve_server_targets(
             and entity_entry.config_entry_id
             and entity_entry.device_id
         ):
-            device_of_entity = dev_reg.async_get(entity_entry.device_id)
-            if device_of_entity:
-                process_device_for_server_target(
-                    device_of_entity, entity_entry.config_entry_id
-                )
+            if entity_entry.config_entry_id in hass.data.get(DOMAIN, {}):
+                device_of_entity = dev_reg.async_get(entity_entry.device_id)
+                if device_of_entity:
+                    process_device_for_server_target(
+                        device_of_entity, entity_entry.config_entry_id
+                    )
 
-    # Resolve Devices
     for device_id in target_device_ids:
         device_entry = dev_reg.async_get(device_id)
         if device_entry:
-            # A device can be linked to multiple config entries, find the one for our domain
             for ce_id in device_entry.config_entries:
-                if ce_id in hass.data.get(DOMAIN, {}):  # Is it one of ours and loaded?
+                if ce_id in hass.data.get(DOMAIN, {}):
                     process_device_for_server_target(device_entry, ce_id)
-                    break  # Assume one BSM config entry per device for simplicity here
+                    break
 
-    # Resolve Areas
     if target_area_ids:
-        all_devices = dev_reg.devices.values()  # More direct way to get all devices
+        all_devices = list(dev_reg.devices.values())
         for device_entry in all_devices:
             if device_entry.area_id in target_area_ids:
                 for ce_id in device_entry.config_entries:
@@ -643,6 +618,7 @@ async def _resolve_server_targets(
 
     if not servers_to_target:
         error_message = f"Service {service.domain}.{service.service} requires targeting specific BSM server devices or their entities."
+        key_for_translation = "service_no_target_provided"
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
             error_message = f"No target (device, entity, or area) was provided for service {service.domain}.{service.service}."
         _LOGGER.error(
@@ -651,6 +627,12 @@ async def _resolve_server_targets(
             target_device_ids,
             target_area_ids,
         )
+        if not any([target_entity_ids, target_device_ids, target_area_ids]):
+            raise ServiceValidationError(
+                description=error_message,
+                translation_domain=DOMAIN,
+                translation_key=key_for_translation,
+            )
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -665,7 +647,6 @@ async def _resolve_server_targets(
 async def _resolve_manager_instance_targets(
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
-    """Resolves service targets to a list of config_entry_ids for BSM manager instances."""
     config_entry_ids_to_target: Set[str] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -681,41 +662,42 @@ async def _resolve_manager_instance_targets(
             and entity_entry.domain == DOMAIN
             and entity_entry.config_entry_id
         ):
-            config_entry_ids_to_target.add(entity_entry.config_entry_id)
+            if entity_entry.config_entry_id in hass.data.get(DOMAIN, {}):
+                config_entry_ids_to_target.add(entity_entry.config_entry_id)
 
     for device_id in target_device_ids:
         device_entry = dev_reg.async_get(device_id)
         if device_entry:
             for ce_id in device_entry.config_entries:
-                # Check if this config entry is for our domain
-                config_entry = hass.config_entries.async_get_entry(
-                    ce_id
-                )  # Get entry first
-                if config_entry and config_entry.domain == DOMAIN:  # Then check domain
+                config_entry = hass.config_entries.async_get_entry(ce_id)
+                if (
+                    config_entry
+                    and config_entry.domain == DOMAIN
+                    and ce_id in hass.data.get(DOMAIN, {})
+                ):
                     config_entry_ids_to_target.add(ce_id)
 
     if target_area_ids:
-        all_devices = list(
-            dev_reg.devices.values()
-        )  # Ensure it's a list for iteration if needed, though values() is iterable
+        all_devices = list(dev_reg.devices.values())
         for device_entry in all_devices:
             if device_entry.area_id in target_area_ids:
                 for ce_id in device_entry.config_entries:
-                    config_entry = hass.config_entries.async_get_entry(
-                        ce_id
-                    )  # Get entry first
+                    config_entry = hass.config_entries.async_get_entry(ce_id)
                     if (
-                        config_entry and config_entry.domain == DOMAIN
-                    ):  # Then check domain
+                        config_entry
+                        and config_entry.domain == DOMAIN
+                        and ce_id in hass.data.get(DOMAIN, {})
+                    ):
                         config_entry_ids_to_target.add(ce_id)
 
     if not config_entry_ids_to_target:
         error_message = f"Service {service.domain}.{service.service} requires targeting a BSM manager instance."
+        key_for_translation = "service_no_target_provided_manager"
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
             error_message += " No target was provided."
         else:
             error_message += (
-                " Provided targets did not resolve to any BSM manager instances."
+                " Provided targets did not resolve to any loaded BSM manager instances."
             )
         _LOGGER.error(
             error_message + " Targets: E=%s, D=%s, A=%s",
@@ -723,6 +705,12 @@ async def _resolve_manager_instance_targets(
             target_device_ids,
             target_area_ids,
         )
+        if not any([target_entity_ids, target_device_ids, target_area_ids]):
+            raise ServiceValidationError(
+                description=error_message,
+                translation_domain=DOMAIN,
+                translation_key=key_for_translation,
+            )
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -740,34 +728,45 @@ async def _execute_targeted_service(
     handler_coro: Coroutine,
     *handler_args: Any,
 ):
-    """Generic executor for services that target specific servers."""
-    resolved_targets = await _resolve_server_targets(service_call, hass)
+    try:
+        resolved_targets = await _resolve_server_targets(service_call, hass)
+    except (HomeAssistantError, ServiceValidationError) as e:
+        _LOGGER.error(
+            "Failed to resolve targets for service %s.%s: %s",
+            service_call.domain,
+            service_call.service,
+            e,
+        )
+        raise
+
     tasks = []
-    processed_targets_info = []  # For logging results associated with targets
+    processed_targets_info = []
 
     for config_entry_id, target_server_name in resolved_targets.items():
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
-            # Pass manager_host_port_id if handler needs it (e.g., for _async_handle_delete_server)
             manager_host_port_id = entry_data["manager_identifier"][1]
 
-            # Dynamically adjust args based on handler_coro's needs (inspect or make it flexible)
-            # For now, assume fixed args + specific server_name + manager_host_port_id if needed by handler
-            full_handler_args = [api_client, target_server_name]
-            if (
-                handler_coro.__name__ == "_async_handle_delete_server"
-            ):  # Example of conditional arg
-                full_handler_args.insert(0, hass)  # Prepend hass
-                full_handler_args.append(
-                    manager_host_port_id
-                )  # Append manager_id for delete
+            current_handler_args = [api_client, target_server_name]
+            # Special argument handling for _async_handle_delete_server
+            if handler_coro.__name__ == "_async_handle_delete_server":
+                current_handler_args = [
+                    hass,
+                    api_client,
+                    target_server_name,
+                    manager_host_port_id,
+                ]
+            else:  # For other handlers, just extend with common args
+                current_handler_args.extend(handler_args)
 
-            full_handler_args.extend(handler_args)
-
-            tasks.append(handler_coro(*full_handler_args))
+            tasks.append(handler_coro(*current_handler_args))
             processed_targets_info.append(
-                {"cid": config_entry_id, "sname": target_server_name}
+                {
+                    "cid": config_entry_id,
+                    "sname": target_server_name,
+                    "manager_id": manager_host_port_id,
+                }
             )
         except KeyError:
             _LOGGER.error(
@@ -775,7 +774,7 @@ async def _execute_targeted_service(
                 config_entry_id,
                 target_server_name,
             )
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception(
                 "Error queueing service for server %s (entry %s)",
                 target_server_name,
@@ -784,16 +783,15 @@ async def _execute_targeted_service(
 
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
+        for i, result_or_exc in enumerate(results):
             target_info = processed_targets_info[i]
-            if isinstance(result, Exception):
-                _LOGGER.error(
-                    "Error executing service for server '%s' (entry %s): %s",
+            if isinstance(result_or_exc, Exception):
+                _LOGGER.debug(
+                    "Service execution for server '%s' (manager '%s') resulted in an exception (already logged by handler): %s",
                     target_info["sname"],
-                    target_info["cid"],
-                    result,
+                    target_info["manager_id"],
+                    type(result_or_exc).__name__,
                 )
-    # No further action needed if no tasks, _resolve_server_targets would have raised.
 
 
 async def _execute_manager_targeted_service(
@@ -802,10 +800,19 @@ async def _execute_manager_targeted_service(
     handler_coro: Coroutine,
     *handler_args: Any,
 ):
-    """Generic executor for services that target BSM manager instances."""
-    resolved_config_entry_ids = await _resolve_manager_instance_targets(
-        service_call, hass
-    )
+    try:
+        resolved_config_entry_ids = await _resolve_manager_instance_targets(
+            service_call, hass
+        )
+    except (HomeAssistantError, ServiceValidationError) as e:
+        _LOGGER.error(
+            "Failed to resolve manager targets for service %s.%s: %s",
+            service_call.domain,
+            service_call.service,
+            e,
+        )
+        raise
+
     tasks = []
     coordinators_to_refresh: List[ManagerDataCoordinator] = []
     processed_targets_info = []
@@ -814,36 +821,28 @@ async def _execute_manager_targeted_service(
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
-            manager_host_port_id = entry_data["manager_identifier"][
-                1
-            ]  # Get manager ID for context
+            manager_host_port_id = entry_data["manager_identifier"][1]
 
-            # Pass manager_id if handler needs it
-            full_handler_args_list = [api_client]
-            # Example: if handler_coro needs manager_id for logging context or other logic
+            current_handler_args = [api_client]
+            current_handler_args.extend(handler_args)
+            # Pass manager_host_port_id as the last arg for handlers that need it for context/logging
             if handler_coro.__name__ in [
                 "_async_handle_prune_downloads",
                 "_async_handle_install_server",
                 "_async_handle_add_global_players",
                 "_async_handle_scan_players",
             ]:
-                full_handler_args_list.extend(
-                    handler_args
-                )  # Original args first for these
-                full_handler_args_list.append(manager_host_port_id)  # Then manager_id
-            else:
-                full_handler_args_list.extend(handler_args)
+                current_handler_args.append(manager_host_port_id)
 
-            tasks.append(handler_coro(*full_handler_args_list))
+            tasks.append(handler_coro(*current_handler_args))
             processed_targets_info.append(
                 {"cid": config_entry_id, "manager_id": manager_host_port_id}
             )
 
-            # Refresh relevant coordinator if data was modified
-            # Check specific handler names or a flag returned by handler_coro
             if handler_coro.__name__ in [
                 "_async_handle_add_global_players",
                 "_async_handle_scan_players",
+                "_async_handle_install_server",
             ]:
                 coordinator: Optional[ManagerDataCoordinator] = entry_data.get(
                     "manager_coordinator"
@@ -855,34 +854,33 @@ async def _execute_manager_targeted_service(
                 "Data missing for config entry %s. Skipping manager service.",
                 config_entry_id,
             )
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception(
                 "Error queueing manager service for entry %s", config_entry_id
             )
 
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
+        for i, result_or_exc in enumerate(results):
             target_info = processed_targets_info[i]
-            if isinstance(result, Exception):
-                _LOGGER.error(
-                    "Error executing manager service for instance '%s' (entry %s): %s",
+            if isinstance(result_or_exc, Exception):
+                _LOGGER.debug(
+                    "Manager service execution for instance '%s' (entry %s) resulted in an exception (already logged by handler): %s",
                     target_info["manager_id"],
                     target_info["cid"],
-                    result,
+                    type(result_or_exc).__name__,
                 )
 
-        for coordinator in coordinators_to_refresh:
+        unique_coordinators_to_refresh = list(set(coordinators_to_refresh))
+        for coordinator in unique_coordinators_to_refresh:
             _LOGGER.debug(
                 "Requesting refresh of ManagerDataCoordinator for BSM '%s' after service.",
                 coordinator.name,
             )
             await coordinator.async_request_refresh()
-    # No further action if no tasks, _resolve_manager_instance_targets would have raised.
 
 
 # --- Main Service Handlers ---
-# These now just extract data from service_call and pass to _execute_...
 async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssistant):
     await _execute_targeted_service(
         service, hass, _async_handle_send_command, service.data[FIELD_COMMAND]
@@ -908,7 +906,9 @@ async def async_handle_trigger_backup_service(
         FIELD_FILE_TO_BACKUP
     ):
         raise ServiceValidationError(
-            f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'."
+            description=f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.",
+            translation_domain=DOMAIN,
+            translation_key="service_backup_config_file_required",
         )
     await _execute_targeted_service(
         service,
@@ -950,9 +950,7 @@ async def async_handle_install_server_service(
     )
 
 
-async def async_handle_scan_players_service(
-    service: ServiceCall, hass: HomeAssistant
-):  # New service handler
+async def async_handle_scan_players_service(service: ServiceCall, hass: HomeAssistant):
     await _execute_manager_targeted_service(service, hass, _async_handle_scan_players)
 
 
@@ -961,9 +959,13 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
         "Executing delete_server service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
     )
-    # FIELD_CONFIRM_DELETE is already validated by schema to be True
 
-    resolved_targets = await _resolve_server_targets(service, hass)  # Dict[cid, sname]
+    try:
+        resolved_targets = await _resolve_server_targets(service, hass)
+    except (HomeAssistantError, ServiceValidationError) as e:
+        _LOGGER.error("Failed to resolve targets for delete_server service: %s", e)
+        raise
+
     tasks = []
     processed_targets_for_notification: List[Dict[str, Any]] = []
 
@@ -991,32 +993,36 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
                 config_entry_id,
                 server_name_to_delete,
             )
-        except Exception:  # pylint: disable=broad-except
+            processed_targets_for_notification.append(
+                {
+                    "server_name": server_name_to_delete,
+                    "error_queuing": "Missing entry data",
+                    "manager_id": "Unknown",
+                }
+            )
+        except Exception:
             _LOGGER.exception(
                 "Error queueing delete_server for server %s (entry %s)",
                 server_name_to_delete,
                 config_entry_id,
             )
-            # Add to a list to notify about queuing errors if desired
             processed_targets_for_notification.append(
                 {
                     "server_name": server_name_to_delete,
-                    "error_queuing": True,
+                    "error_queuing": "Exception during queueing",
                     "manager_id": "Unknown",
                 }
             )
 
-    if (
-        not tasks and resolved_targets
-    ):  # Tasks list is empty but targets were resolved (e.g. all had missing data)
+    if not tasks and resolved_targets:
         async_create(
             hass,
-            "Could not queue deletion for any targeted servers. Check logs.",
+            "Could not queue deletion for any targeted servers due to setup issues. Check logs.",
             "Minecraft Server Deletion Problem",
             f"bsm_delete_{service.context.id}_queue_fail",
         )
         return
-    if not tasks:  # No tasks and no targets initially (resolver already raised error)
+    if not tasks:
         return
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1028,15 +1034,20 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
         target_info = processed_targets_for_notification[i]
         sname = target_info["server_name"]
 
-        if isinstance(result_or_exc, Exception):
+        if target_info.get("error_queuing"):
             failure_messages.append(
-                f"'{sname}': Failed API/HA interaction ({type(result_or_exc).__name__} - {result_or_exc})."
+                f"'{sname}': Failed to queue for deletion ({target_info['error_queuing']})."
             )
-            _LOGGER.error(
-                "Error during delete_server execution for '%s': %s",
-                sname,
-                result_or_exc,
+            continue
+
+        if isinstance(result_or_exc, Exception):
+            err_msg = (
+                result_or_exc.args[0] if result_or_exc.args else str(result_or_exc)
             )
+            failure_messages.append(
+                f"'{sname}': Failed ({type(result_or_exc).__name__} - {err_msg})."
+            )
+            # Error already logged by _async_handle_delete_server or _base_api_call_handler
         elif (
             isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
         ):
@@ -1044,9 +1055,9 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
             if result_or_exc.get("ha_device_removed"):
                 msg += " HA device removed."
             else:
-                msg += " HA device not found or not removed."
+                msg += " HA device not found or not removed from HA."
             success_messages.append(msg)
-        else:  # Unexpected non-exception, non-success dict result
+        else:
             failure_messages.append(
                 f"'{sname}': API deletion status unclear or failed (Result: {result_or_exc})."
             )
@@ -1059,7 +1070,7 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
 
     if not final_notification_parts:
         final_notification_parts.append(
-            "No deletion actions were completed or status is unclear."
+            "No deletion actions were completed or status is unclear. Check logs for details."
         )
 
     async_create(
@@ -1125,9 +1136,14 @@ async def async_handle_configure_os_service_service(
     service: ServiceCall, hass: HomeAssistant
 ):
     autoupdate_val = service.data[FIELD_AUTOUPDATE]
-    autostart_val = service.data.get(FIELD_AUTOSTART)  # Optional
+    autostart_val = service.data.get(FIELD_AUTOSTART)
 
-    resolved_targets = await _resolve_server_targets(service, hass)
+    try:
+        resolved_targets = await _resolve_server_targets(service, hass)
+    except (HomeAssistantError, ServiceValidationError) as e:
+        _LOGGER.error("Failed to resolve targets for configure_os_service: %s", e)
+        raise
+
     tasks = []
     processed_targets_info = []
     for config_entry_id, server_name in resolved_targets.items():
@@ -1143,10 +1159,11 @@ async def async_handle_configure_os_service_service(
                     payload[FIELD_AUTOSTART] = autostart_val
                 else:
                     _LOGGER.warning(
-                        "Autostart config for server '%s' (manager '%s') ignored; manager OS '%s' is not Linux.",
+                        "Autostart config for server '%s' (manager '%s') ignored as manager OS '%s' is not Linux, but %s was provided.",
                         server_name,
                         manager_host_port_id,
                         manager_os_type,
+                        FIELD_AUTOSTART,
                     )
 
             tasks.append(
@@ -1155,7 +1172,11 @@ async def async_handle_configure_os_service_service(
                 )
             )
             processed_targets_info.append(
-                {"cid": config_entry_id, "sname": server_name}
+                {
+                    "cid": config_entry_id,
+                    "sname": server_name,
+                    "manager_id": manager_host_port_id,
+                }
             )
         except KeyError:
             _LOGGER.error(
@@ -1163,7 +1184,7 @@ async def async_handle_configure_os_service_service(
                 config_entry_id,
                 server_name,
             )
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception(
                 "Error queueing configure_os_service for server %s (entry %s)",
                 server_name,
@@ -1174,12 +1195,12 @@ async def async_handle_configure_os_service_service(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for i, result in enumerate(results):
             target_info = processed_targets_info[i]
-            if isinstance(result, Exception):
-                _LOGGER.error(
-                    "Error configuring OS service for server '%s' (entry %s): %s",
+            if isinstance(result, Exception):  # Check if result is an exception
+                _LOGGER.debug(
+                    "OS Service config for server '%s' (manager '%s') resulted in an exception (already logged by handler): %s",
                     target_info["sname"],
-                    target_info["cid"],
-                    result,
+                    target_info["manager_id"],
+                    type(result).__name__,
                 )
 
 
@@ -1192,11 +1213,8 @@ async def async_handle_add_global_players_service(
 
 
 # --- Service Registration/Removal ---
-async def async_register_services(
-    hass: HomeAssistant,
-) -> None:  # Added return type hint
+async def async_register_services(hass: HomeAssistant) -> None:
     """Register services with Home Assistant."""
-    # Map service names to their handlers and schemas
     service_mapping = {
         SERVICE_SEND_COMMAND: (
             async_handle_send_command_service,
@@ -1261,25 +1279,52 @@ async def async_register_services(
         SERVICE_SCAN_PLAYERS: (
             async_handle_scan_players_service,
             SCAN_PLAYERS_SERVICE_SCHEMA,
-        ),  # Added new service
+        ),
     }
 
     for service_name, (handler, schema) in service_mapping.items():
         if not hass.services.has_service(DOMAIN, service_name):
-            # Use a lambda or functools.partial to capture the correct handler for the service_wrapper
-            # This avoids issues with loop variable capture if handler was directly used in a nested def.
-            # However, your direct assignment `_handler_to_call=handler_func_from_map` in the wrapper
-            # already correctly captures the handler for each iteration.
+
             async def service_wrapper_closure(
                 call: ServiceCall, captured_handler=handler
-            ):  # Capture handler
+            ):
                 _LOGGER.debug(
                     "Service call '%s.%s' received, dispatching to %s.",
                     call.domain,
                     call.service,
                     captured_handler.__name__,
                 )
-                await captured_handler(call, hass)
+                try:
+                    await captured_handler(call, hass)
+                except ServiceValidationError as sve:
+                    _LOGGER.warning(
+                        "Service validation error in %s for %s.%s: %s",
+                        captured_handler.__name__,
+                        call.domain,
+                        call.service,
+                        sve,
+                    )
+                    raise
+                except HomeAssistantError as hae:
+                    _LOGGER.error(
+                        "HomeAssistantError in %s for %s.%s: %s",
+                        captured_handler.__name__,
+                        call.domain,
+                        call.service,
+                        hae,
+                    )
+                    raise
+                except Exception as exc:
+                    _LOGGER.exception(
+                        "Unexpected error in service handler %s for %s.%s",
+                        captured_handler.__name__,
+                        call.domain,
+                        call.service,
+                    )
+                    # Raise a generic HomeAssistantError to provide some feedback to the user
+                    raise HomeAssistantError(
+                        f"Unexpected error executing service {call.domain}.{call.service}: {type(exc).__name__} - {exc}"
+                    ) from exc
 
             hass.services.async_register(
                 DOMAIN, service_name, service_wrapper_closure, schema=schema
@@ -1287,16 +1332,19 @@ async def async_register_services(
             _LOGGER.debug("Registered service: %s.%s", DOMAIN, service_name)
 
 
-async def async_remove_services(hass: HomeAssistant) -> None:  # Added return type hint
+async def async_remove_services(hass: HomeAssistant) -> None:
     """Remove previously registered services."""
-    # Check if this is the last BSM config entry being unloaded
-    is_last_entry = not any(
-        entry_id != "_services_registered" for entry_id in hass.data.get(DOMAIN, {})
-    )
+    domain_data = hass.data.get(DOMAIN)
+    is_last_entry = True
+    if domain_data:
+        is_last_entry = not any(
+            entry_id != "_services_registered" for entry_id in domain_data
+        )
 
     if is_last_entry:
-        _LOGGER.info("Last BSM config entry unloaded. Removing all BSM services.")
-        # List all services that were registered
+        _LOGGER.info(
+            "Last BSM config entry unloaded or no entries active. Removing all BSM services."
+        )
         services_to_unregister = [
             SERVICE_SEND_COMMAND,
             SERVICE_PRUNE_DOWNLOADS,
@@ -1313,16 +1361,17 @@ async def async_remove_services(hass: HomeAssistant) -> None:  # Added return ty
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
             SERVICE_ADD_GLOBAL_PLAYERS,
-            SERVICE_SCAN_PLAYERS,  # Added new service
+            SERVICE_SCAN_PLAYERS,
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):
                 _LOGGER.debug("Removing service: %s.%s", DOMAIN, service_name)
                 hass.services.async_remove(DOMAIN, service_name)
-        # Clean up the registration flag as well
-        hass.data.get(DOMAIN, {}).pop("_services_registered", None)
-        if not hass.data.get(DOMAIN, {}):  # If domain data itself is empty now
-            hass.data.pop(DOMAIN, None)
+
+        if domain_data:  # Check again as it might have been modified by another process
+            domain_data.pop("_services_registered", None)
+            if not domain_data:
+                hass.data.pop(DOMAIN, None)
     else:
         _LOGGER.debug(
             "Other BSM config entries still loaded. Services will not be removed."
