@@ -293,16 +293,10 @@
       "description": "Triggers a scan of all server log files on the BSM manager host to update the global list of known players. Targets a BSM manager instance."
     }
   },
-  "component": {
-    "bedrock_server_manager": {
-      "service_error": {
-        "install_server_confirm_needed": "Server '{server_name}' already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
-        "no_target_provided": "No target (device, entity, or area) was provided for the service. Please specify a target.",
-        "no_target_provided_manager": "This service requires targeting a Bedrock Server Manager instance, but no target was provided.",
-        "invalid_input_api": "Invalid input provided to the BSM API: {details}",
-        "invalid_value_client": "Invalid value provided for the service call: {details}",
-        "backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'."
-      }
-    }
-  }
+  "install_server_confirm_needed": "Server '{server_name}' already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
+  "no_target_provided": "No target (device, entity, or area) was provided for the service. Please specify a target.",
+  "no_target_provided_manager": "This service requires targeting a Bedrock Server Manager instance, but no target was provided.",
+  "invalid_input_api": "Invalid input provided to the BSM API: {details}",
+  "invalid_value_client": "Invalid value provided for the service call: {details}",
+  "backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'."
 }
