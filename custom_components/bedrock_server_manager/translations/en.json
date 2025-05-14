@@ -28,7 +28,7 @@
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
       "unknown_validation_error": "An unexpected error occurred during validation. Check logs.",
       "api_error": "An API error occurred while communicating with the BSM manager: {error_details}",
-      "service_install_server_confirm_needed": "Server '{server_name}' already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
+      "service_install_server_confirm_needed": "Server {server_name} already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
       "service_no_target_provided": "No target (device, entity, or area) was provided for the service. Please specify a target.",
       "service_no_target_provided_manager": "This service requires targeting a Bedrock Server Manager instance, but no target was provided.",
       "service_invalid_input_api": "Invalid input provided to the BSM API: {details}",
