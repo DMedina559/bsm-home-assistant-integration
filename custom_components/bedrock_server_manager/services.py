@@ -5,10 +5,6 @@ import asyncio
 import logging
 from typing import cast, Dict, Optional, List, Any
 
-# Make sure functools is imported if you choose that path,
-# but for the lambda solution below, it's not strictly needed.
-# from functools import partial # Not strictly needed for the chosen solution
-
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
