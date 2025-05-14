@@ -14,7 +14,6 @@
   ],
   "integration_type": "hub",
   "config_flow": true,
-  "diagnostics": 1,
   "iot_class": "local_polling",
   "loggers": [
     "custom_components.bedrock_server_manager",
