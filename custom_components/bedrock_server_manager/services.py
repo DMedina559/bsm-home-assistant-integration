@@ -497,54 +497,131 @@ async def _resolve_server_targets(
     if isinstance(target_area_ids, str):
         target_area_ids = [target_area_ids]
 
-    # Resolve Entities
+    # --- Resolve Entities ---
     for entity_id_str in target_entity_ids:
         entity_entry = entity_registry_instance.async_get(entity_id_str)
         if (
             entity_entry
             and entity_entry.platform == DOMAIN
             and entity_entry.config_entry_id
+            # Ensure the entity's device is a server device, not the manager device
+            # Entity unique ID typically: DOMAIN_managerhost:port_servername_entitykey
         ):
-            parts = entity_entry.unique_id.split("_", 2)
-            if len(parts) == 3 and parts[0] == DOMAIN:
-                server_name = parts[1]
-                if entity_entry.config_entry_id not in servers_to_target:
-                    servers_to_target[entity_entry.config_entry_id] = server_name
-                elif servers_to_target[entity_entry.config_entry_id] != server_name:
-                    _LOGGER.warning(
-                        "Config entry %s targeted via entities with different server names ('%s' vs '%s'). Using first found.",
-                        entity_entry.config_entry_id,
-                        servers_to_target[entity_entry.config_entry_id],
-                        server_name,
-                    )
-            else:
-                _LOGGER.warning(
-                    "Could not determine server name from unique ID '%s' for entity %s",
-                    entity_entry.unique_id,
-                    entity_id_str,
+            # Assuming unique_id format for server entities: DOMAIN_managerid_servername_entitykey
+            # or if managerid part isn't in unique_id, rely on device info.
+            # A safer bet is to get the device of the entity and check its identifiers.
+            if entity_entry.device_id:
+                device_of_entity = device_registry_instance.async_get(
+                    entity_entry.device_id
                 )
+                if device_of_entity:
+                    # Check if this device_of_entity is a server device
+                    manager_id_from_entry = hass.data[DOMAIN][
+                        entity_entry.config_entry_id
+                    ]["manager_identifier"][1]
+                    server_name_from_entity_device = None
+                    for identifier in device_of_entity.identifiers:
+                        if identifier[0] == DOMAIN and identifier[1].startswith(
+                            manager_id_from_entry + "_"
+                        ):
+                            server_name_from_entity_device = identifier[1].split(
+                                "_", 1
+                            )[1]
+                            break
+                    if server_name_from_entity_device:
+                        if entity_entry.config_entry_id not in servers_to_target:
+                            servers_to_target[entity_entry.config_entry_id] = (
+                                server_name_from_entity_device
+                            )
+                        elif (
+                            servers_to_target[entity_entry.config_entry_id]
+                            != server_name_from_entity_device
+                        ):
+                            _LOGGER.warning(
+                                "Config entry %s targeted via entities with different server names ('%s' vs '%s'). Using first.",
+                                entity_entry.config_entry_id,
+                                servers_to_target[entity_entry.config_entry_id],
+                                server_name_from_entity_device,
+                            )
+                    else:
+                        _LOGGER.debug(
+                            "Entity %s is linked to device %s which is not a recognized server device for this manager.",
+                            entity_id_str,
+                            entity_entry.device_id,
+                        )
+            else:  # Fallback to parsing entity unique_id if no device_id (less robust)
+                parts = entity_entry.unique_id.split("_", 2)
+                if (
+                    len(parts) == 3
+                    and parts[0] == DOMAIN
+                    and ":" in parts[1]
+                    and "_" in parts[1]
+                ):  # basic check for manager_server format
+                    # This parsing is fragile. Example: DOMAIN_host:port_servername_sensor
+                    manager_and_server_part = parts[1]
+                    # We need to ensure manager_and_server_part corresponds to the current config entry's manager
+                    config_entry_manager_id = hass.data[DOMAIN][
+                        entity_entry.config_entry_id
+                    ]["manager_identifier"][1]
+                    if manager_and_server_part.startswith(
+                        config_entry_manager_id + "_"
+                    ):
+                        server_name = manager_and_server_part.split("_", 1)[1]
+                        if entity_entry.config_entry_id not in servers_to_target:
+                            servers_to_target[entity_entry.config_entry_id] = (
+                                server_name
+                            )
+                        # ... (conflict warning) ...
+                else:
+                    _LOGGER.warning(
+                        "Could not reliably determine server name from unique ID '%s' for entity %s",
+                        entity_entry.unique_id,
+                        entity_id_str,
+                    )
 
-    # Resolve Devices
+    # --- Resolve Devices ---
     for device_id_str in target_device_ids:
         device_entry = device_registry_instance.async_get(device_id_str)
         if device_entry:
             our_entry_id = None
+            # Find which of our config entries this device belongs to
             for entry_id_for_dev in device_entry.config_entries:
-                config_entry = hass.config_entries.async_get_entry(entry_id_for_dev)
-                if config_entry and config_entry.domain == DOMAIN:
+                if entry_id_for_dev in hass.data.get(
+                    DOMAIN, {}
+                ):  # Check if it's one of ours and loaded
                     our_entry_id = entry_id_for_dev
                     break
+
             if our_entry_id:
                 server_name_from_dev = None
+                # Get the manager_id for this specific config entry
+                # This is crucial for correctly parsing server device identifiers
+                manager_id_for_this_config_entry = hass.data[DOMAIN][our_entry_id][
+                    "manager_identifier"
+                ][1]
+
                 for identifier in device_entry.identifiers:
-                    if (
-                        len(identifier) == 2
-                        and identifier[0] == DOMAIN
-                        and ":"
-                        not in identifier[1]  # Standard server device identifier
-                    ):
-                        server_name_from_dev = identifier[1]
-                        break
+                    if identifier[0] == DOMAIN:
+                        # Expected server device identifier value: f"{manager_id_for_this_config_entry}_{actual_server_name}"
+                        if identifier[1].startswith(
+                            manager_id_for_this_config_entry + "_"
+                        ):
+                            try:
+                                server_name_from_dev = identifier[1].split("_", 1)[
+                                    1
+                                ]  # Get part after first underscore
+                                _LOGGER.debug(
+                                    "Resolved server device: ID Value '%s', Extracted Server Name: '%s'",
+                                    identifier[1],
+                                    server_name_from_dev,
+                                )
+                                break
+                            except IndexError:  # Should not happen if format is correct
+                                _LOGGER.warning(
+                                    "Malformed server device identifier for parsing: %s",
+                                    identifier[1],
+                                )
+
                 if server_name_from_dev:
                     if our_entry_id not in servers_to_target:
                         servers_to_target[our_entry_id] = server_name_from_dev
@@ -555,56 +632,90 @@ async def _resolve_server_targets(
                             servers_to_target[our_entry_id],
                             server_name_from_dev,
                         )
+                else:
+                    _LOGGER.debug(
+                        "Targeted device %s (identifiers: %s) is not a recognized BSM server device for manager %s, or is the manager device itself.",
+                        device_id_str,
+                        device_entry.identifiers,
+                        manager_id_for_this_config_entry,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Targeted device %s is not associated with any loaded %s config entry.",
+                    device_id_str,
+                    DOMAIN,
+                )
 
-    # Resolve Areas (for server targets)
+    # --- Resolve Areas ---
     if target_area_ids:
         all_devices_in_ha = list(device_registry_instance.devices.values())
         for area_id_str in target_area_ids:
-            for device_entry in all_devices_in_ha:
-                if device_entry.area_id == area_id_str:
-                    our_entry_id = None
-                    for entry_id_for_dev in device_entry.config_entries:
-                        config_entry = hass.config_entries.async_get_entry(
-                            entry_id_for_dev
-                        )
-                        if config_entry and config_entry.domain == DOMAIN:
-                            our_entry_id = entry_id_for_dev
+            for device_entry_from_area in all_devices_in_ha:
+                if device_entry_from_area.area_id == area_id_str:
+                    # Now, process this device_entry_from_area like in the ATTR_DEVICE_ID section
+                    our_entry_id_area = None
+                    for entry_id_for_dev_area in device_entry_from_area.config_entries:
+                        if entry_id_for_dev_area in hass.data.get(DOMAIN, {}):
+                            our_entry_id_area = entry_id_for_dev_area
                             break
-                    if our_entry_id:
-                        server_name_from_dev = None
-                        for identifier in device_entry.identifiers:
-                            if (
-                                len(identifier) == 2
-                                and identifier[0] == DOMAIN
-                                and ":"
-                                not in identifier[
-                                    1
-                                ]  # Standard server device identifier
+                    if our_entry_id_area:
+                        server_name_from_area_dev = None
+                        manager_id_for_area_config_entry = hass.data[DOMAIN][
+                            our_entry_id_area
+                        ]["manager_identifier"][1]
+                        for identifier in device_entry_from_area.identifiers:
+                            if identifier[0] == DOMAIN and identifier[1].startswith(
+                                manager_id_for_area_config_entry + "_"
                             ):
-                                server_name_from_dev = identifier[1]
-                                break
-                        if server_name_from_dev:
-                            if our_entry_id not in servers_to_target:
-                                servers_to_target[our_entry_id] = server_name_from_dev
+                                try:
+                                    server_name_from_area_dev = identifier[1].split(
+                                        "_", 1
+                                    )[1]
+                                    break
+                                except IndexError:
+                                    _LOGGER.warning(
+                                        "Malformed server device identifier from area device: %s",
+                                        identifier[1],
+                                    )
+
+                        if server_name_from_area_dev:
+                            if our_entry_id_area not in servers_to_target:
+                                servers_to_target[our_entry_id_area] = (
+                                    server_name_from_area_dev
+                                )
                             elif (
-                                servers_to_target[our_entry_id] != server_name_from_dev
+                                servers_to_target[our_entry_id_area]
+                                != server_name_from_area_dev
                             ):
                                 _LOGGER.warning(
                                     "Config entry %s targeted via area/device/entity with different server names ('%s' vs '%s'). Using first.",
-                                    our_entry_id,
-                                    servers_to_target[our_entry_id],
-                                    server_name_from_dev,
+                                    our_entry_id_area,
+                                    servers_to_target[our_entry_id_area],
+                                    server_name_from_area_dev,
                                 )
 
     if not servers_to_target:
         _LOGGER.error(
-            "Service call for '%s.%s' did not resolve to any valid server targets.",
+            "Service call for '%s.%s' with targets %s, %s, %s did not resolve to any valid BSM server sub-devices.",
             service.domain,
             service.service,
+            target_entity_ids,
+            target_device_ids,
+            target_area_ids,
         )
-        raise HomeAssistantError(
-            f"Service {service.domain}.{service.service} requires targeting specific server devices or entities from the {DOMAIN} integration."
-        )
+        # Provide more specific error based on what was targeted
+        error_message = f"Service {service.domain}.{service.service} requires targeting specific BSM server devices or entities."
+        if not any([target_entity_ids, target_device_ids, target_area_ids]):
+            error_message = f"Service {service.domain}.{service.service} requires a target (device, entity, or area) but none was provided."
+
+        raise HomeAssistantError(error_message)
+
+    _LOGGER.debug(
+        "Resolved targets for service %s.%s: %s",
+        service.domain,
+        service.service,
+        servers_to_target,
+    )
     return servers_to_target
 
 
