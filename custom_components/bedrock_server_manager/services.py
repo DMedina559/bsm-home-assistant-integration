@@ -1276,10 +1276,6 @@ async def async_register_services(hass: HomeAssistant) -> None:
             async_handle_add_global_players_service,
             ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
         ),
-        SERVICE_SCAN_PLAYERS: (
-            async_handle_scan_players_service,
-            SCAN_PLAYERS_SERVICE_SCHEMA,
-        ),
     }
 
     for service_name, (handler, schema) in service_mapping.items():
@@ -1361,7 +1357,6 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
             SERVICE_ADD_GLOBAL_PLAYERS,
-            SERVICE_SCAN_PLAYERS,
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):

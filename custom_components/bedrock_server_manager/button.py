@@ -42,6 +42,7 @@ SERVER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
         name="Restart Server",
         icon="mdi:restart",
         device_class=ButtonDeviceClass.RESTART,
+        entity_registry_enabled_default=False,
     ),
     ButtonEntityDescription(
         key="update_server",
@@ -59,12 +60,14 @@ SERVER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
         name="Export World",
         icon="mdi:earth-box",
         entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
     ),
     ButtonEntityDescription(
         key="prune_server_backups",
         name="Prune Backups",
         icon="mdi:archive-refresh-outline",
         entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
     ),
 )
 

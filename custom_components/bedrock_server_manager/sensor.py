@@ -65,7 +65,7 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
         key=ATTR_MEMORY_MB,
@@ -74,7 +74,7 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         native_unit_of_measurement="MB",
         device_class=SensorDeviceClass.DATA_SIZE,
         suggested_display_precision=1,
-        entity_registry_enabled_default=True,
+        entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
         key=KEY_SERVER_PERMISSIONS_COUNT,
@@ -119,12 +119,14 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         name="Available Worlds",
         icon="mdi:earth-box",
         state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
         key=KEY_AVAILABLE_ADDONS_COUNT,
         name="Available Addons",
         icon="mdi:puzzle-edit-outline",
         state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
     ),
 )
 
