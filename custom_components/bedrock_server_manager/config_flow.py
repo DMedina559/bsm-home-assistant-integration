@@ -11,6 +11,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWO
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
+from homeassistant.components.diagnostics.util import async_redact_data
 
 # --- IMPORT FROM CONSTANTS ---
 from .const import (
@@ -242,7 +243,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._connection_data[CONF_HOST],
                 self._connection_data[CONF_PORT],
                 selected_servers,
-                self._connection_data,  # Log full data being saved (excluding password in production logs ideally)
+                async_redact_data(self._connection_data, [CONF_PASSWORD])
             )
 
             # Data stored in config_entry.data (credentials, host, port, ssl)
