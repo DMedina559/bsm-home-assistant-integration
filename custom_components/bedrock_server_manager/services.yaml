@@ -1,7 +1,6 @@
 # custom_components/bedrock_server_manager/services.yaml
-# Defines the actions provided by the Bedrock Server Manager integration.
-
 send_command:
+  name: Send Server Command
   description: Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.
   target:
     entity:
@@ -11,6 +10,7 @@ send_command:
       integration: bedrock_server_manager
   fields:
     command:
+      name: Command
       description: The command string to send to the server console (without the leading '/').
       required: true
       example: "say Hello World from Home Assistant!"
@@ -18,7 +18,8 @@ send_command:
         text: {}
 
 prune_download_cache:
-  description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files.
+  name: Prune Download Cache
+  description: Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files. Targets a BSM manager instance.
   target:
     entity:
       domain: sensor
@@ -27,22 +28,26 @@ prune_download_cache:
       integration: bedrock_server_manager
   fields:
     directory:
+      name: Directory Path
       description: The absolute path on the manager host where download files (.zip) are stored.
       required: true
       example: "/opt/minecraft_manager/.downloads/stable"
       selector:
         text: {}
     keep:
-      description: "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+      name: Number to Keep
+      description: "(Optional) Number of newest files to keep. Uses BSM manager's default setting if omitted."
       required: false
       example: 3
       selector:
         number:
           min: 0
+          max: 100
           step: 1
           mode: box
 
 trigger_backup:
+  name: Trigger Server Backup
   description: Triggers a specific backup operation (world, config file, or all) for the target server(s).
   target:
     entity:
@@ -52,6 +57,7 @@ trigger_backup:
       integration: bedrock_server_manager
   fields:
     backup_type:
+      name: Backup Type
       description: Type of backup to perform.
       required: true
       example: "all"
@@ -63,14 +69,16 @@ trigger_backup:
             - "config"
           mode: dropdown
     file_to_backup:
-      description: Required only if backup_type is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties').
+      name: File to Backup (for config type)
+      description: "Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
       required: false
       example: "permissions.json"
       selector:
         text: {}
 
 restore_backup:
-  description: Restores a specific world or config file from a backup for the target server(s). Use with caution - overwrites current files!
+  name: Restore Server Backup
+  description: "Restores a specific world or config file from a backup for the target server(s). WARNING: This overwrites current files! Use with caution."
   target:
     entity:
       domain: sensor
@@ -79,6 +87,7 @@ restore_backup:
       integration: bedrock_server_manager
   fields:
     restore_type:
+      name: Restore Type
       description: Type of restore to perform.
       required: true
       example: "world"
@@ -89,14 +98,16 @@ restore_backup:
             - "config"
           mode: dropdown
     backup_file:
-      description: The full path to the backup file on the manager host (e.g., '/path/to/backups/server/world_backup_xyz.mcworld' or '/path/to/backups/server/config_backup_xyz.zip'). Must exist within the manager's configured backup directory.
+      name: Backup Filename
+      description: "The filename of the backup to restore (e.g., 'world_backup_xyz.mcworld' or 'server_backup_abc.properties'). This file must exist within the specific server's backup subdirectory inside the manager's main BACKUP_DIR."
       required: true
-      example: "/opt/bsm/backups/my_server/world_backup_20250101_120000.mcworld"
+      example: "world_backup_20250101_120000.mcworld"
       selector:
         text: {}
 
 restore_latest_all:
-  description: Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Use with caution - overwrites current files!
+  name: Restore Latest Full Server Backup
+  description: "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). WARNING: This overwrites current files! Use with caution."
   target:
     entity:
       domain: sensor
@@ -105,7 +116,8 @@ restore_latest_all:
       integration: bedrock_server_manager
 
 install_server:
-  description: "Installs a new Minecraft Bedrock server instance via the manager. Does NOT prompt for overwrite confirmation - set 'overwrite: true' explicitly if needed."
+  name: Install New Minecraft Server
+  description: "Installs a new Minecraft Bedrock server instance via the targeted BSM manager. Set 'overwrite: true' explicitly if you intend to replace an existing server with the same name."
   target:
     entity:
       domain: sensor
@@ -114,26 +126,30 @@ install_server:
       integration: bedrock_server_manager
   fields:
     server_name:
-      description: Desired unique name for the new server (valid directory name characters only).
+      name: New Server Name
+      description: Desired unique name for the new server (must be a valid directory name).
       required: true
       example: "my_new_survival"
       selector:
         text: {}
     server_version:
-      description: Version to install ('LATEST', 'PREVIEW', or specific version like '1.20.81.01').
+      name: Server Version
+      description: "Version to install (e.g., 'LATEST', 'PREVIEW', or a specific version string like '1.20.81.01')."
       required: true
       example: "LATEST"
       selector:
         text: {}
     overwrite:
-      description: "(Optional) If true, deletes any existing server data with the same name before installing. Defaults to false."
+      name: Overwrite Existing
+      description: "(Optional) If true, and a server with the same name exists, all its data will be deleted before installing the new one. Defaults to false."
       required: false
       example: false
       selector:
         boolean: {}
 
 delete_server:
-  description: Permanently deletes ALL data for the target server instance(s), including installation, configuration, and backups. THIS ACTION IS IRREVERSIBLE AND CANNOT BE UNDONE. USE WITH EXTREME CAUTION!
+  name: Delete Minecraft Server
+  description: "Permanently deletes ALL data for the target server instance(s), including its installation, configuration files, and all backups. THIS ACTION IS IRREVERSIBLE. USE WITH EXTREME CAUTION!"
   target:
     entity:
       domain: sensor
@@ -142,14 +158,15 @@ delete_server:
       integration: bedrock_server_manager
   fields:
     confirm_deletion:
-      description: MUST be set to 'true' to confirm you understand this action is irreversible and will delete all server data.
+      name: Confirm Deletion
+      description: "MUST be set to 'true' to confirm you understand this action is irreversible and will permanently delete all selected server data."
       required: true
-      example: false
       selector:
         boolean: {}
 
 add_to_allowlist:
-  description: Adds one or more players to the target server's allowlist. Does not remove existing players.
+  name: Add Players to Server Allowlist
+  description: Adds one or more players to the target server's allowlist. This does not remove players already on the list.
   target:
     entity:
       domain: sensor
@@ -158,20 +175,23 @@ add_to_allowlist:
       integration: bedrock_server_manager
   fields:
     players:
-      description: A list of player Gamertags to add.
+      name: Players
+      description: A list of player Gamertags to add to the allowlist.
       required: true
       example: ["Player1", "AnotherGamer"]
       selector:
         object: {}
     ignores_player_limit:
-      description: "(Optional) Set the 'ignoresPlayerLimit' flag for these players."
+      name: Ignores Player Limit
+      description: "(Optional) Sets the 'ignoresPlayerLimit' flag for the players being added. Defaults to false."
       required: false
       example: false
       selector:
         boolean: {}
 
 remove_from_allowlist:
-  description: Removes a specific player from the target server's allowlist (case-insensitive).
+  name: Remove Player from Server Allowlist
+  description: Removes a specific player from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.
   target:
     entity:
       domain: sensor
@@ -180,14 +200,16 @@ remove_from_allowlist:
       integration: bedrock_server_manager
   fields:
     player_name:
-      description: The Gamertag of the player to remove.
+      name: Player Name
+      description: The Gamertag of the player to remove from the allowlist.
       required: true
       example: "PlayerToRemove"
       selector:
         text: {}
 
 set_permissions:
-  description: Sets permission levels ('visitor', 'member', 'operator') for players using their XUID on the target server(s). Replaces existing levels for specified players.
+  name: Set Server Player Permissions
+  description: "Sets permission levels ('visitor', 'member', 'operator') for one or more players using their XUIDs on the target server(s). This replaces existing permission levels for the specified players."
   target:
     entity:
       domain: sensor
@@ -196,14 +218,16 @@ set_permissions:
       integration: bedrock_server_manager
   fields:
     permissions:
-      description: A dictionary mapping Player XUIDs (as strings) to permission levels (as strings 'visitor', 'member', or 'operator').
+      name: Permissions Dictionary
+      description: "A dictionary mapping Player XUIDs (as strings) to permission level strings (e.g., 'visitor', 'member', 'operator')."
       required: true
       example: '{"2535416409681153": "operator", "2535457894355891": "member"}'
       selector:
         object: {}
 
 update_properties:
-  description: Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.
+  name: Update Server Properties
+  description: "Updates specified server properties (e.g., 'max-players', 'difficulty') for the target server(s). Only properties allowed by the BSM API can be changed."
   target:
     entity:
       domain: sensor
@@ -212,14 +236,16 @@ update_properties:
       integration: bedrock_server_manager
   fields:
     properties:
-      description: A dictionary mapping server property keys (strings) to their new desired values (strings or numbers). See integration docs for allowed keys.
+      name: Properties Dictionary
+      description: "A dictionary mapping server property keys (strings) to their new desired values (strings, numbers, or booleans). Refer to BSM documentation for allowed keys and value types."
       required: true
-      example: '{"max-players": "15", "difficulty": "normal", "allow-list": true}'
+      example: '{"max-players": 15, "difficulty": "normal", "allow-list": true}'
       selector:
-        object: {} # Use the object selector, users will input YAML/JSON mapping
+        object: {}
 
 install_world:
-  description: "Installs a world from a .mcworld file into the target server, replacing the existing world. WARNING: This overwrites the current world. The .mcworld file must already exist in the manager's configured 'content/worlds' directory"
+  name: Install World to Server
+  description: "Installs a world from a .mcworld file into the target server, replacing its current world. WARNING: This is a destructive operation. The .mcworld file must already exist in the BSM manager's 'content/worlds' directory."
   target:
     entity:
       domain: sensor
@@ -228,14 +254,16 @@ install_world:
       integration: bedrock_server_manager
   fields:
     filename:
-      description: The name of the .mcworld file (e.g., 'MyCoolWorld.mcworld') located in the manager's 'content/worlds' directory. Can include subdirectories (e.g., 'user_uploads/MyCoolWorld.mcworld').
+      name: World Filename
+      description: "The name of the .mcworld file (e.g., 'MyCoolWorld.mcworld') located in the BSM manager's 'content/worlds' directory. Can include subdirectories relative to 'content/worlds' (e.g., 'user_uploads/MyCoolWorld.mcworld')."
       required: true
       example: "MyCoolWorld.mcworld"
       selector:
         text: {}
 
 install_addon:
-  description: Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the manager's configured 'content/addons' directory.
+  name: Install Addon to Server
+  description: "Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the BSM manager's 'content/addons' directory."
   target:
     entity:
       domain: sensor
@@ -244,14 +272,16 @@ install_addon:
       integration: bedrock_server_manager
   fields:
     filename:
-      description: The name of the .mcaddon or .mcpack file (e.g., 'MyAwesomeAddon.mcaddon') located in the manager's 'content/addons' directory. Can include subdirectories.
+      name: Addon Filename
+      description: "The name of the .mcaddon or .mcpack file (e.g., 'MyAwesomeAddon.mcaddon') located in the BSM manager's 'content/addons' directory. Can include subdirectories relative to 'content/addons'."
       required: true
       example: "CoolBehaviorPack.mcpack"
       selector:
         text: {}
 
 configure_os_service:
-  description: Configures OS-specific service settings for the target server(s) (e.g., autostart, autoupdate).
+  name: Configure Server OS Service
+  description: "Configures OS-specific service settings for the target server(s), such as autoupdate or autostart (Linux systemd only for autostart)."
   target:
     entity:
       domain: sensor
@@ -260,30 +290,44 @@ configure_os_service:
       integration: bedrock_server_manager
   fields:
     autoupdate:
-      description: Enable/Disable autoupdate feature for the server. (Applies to Linux systemd service and Windows config).
+      name: Enable Autoupdate
+      description: "Enable or disable the autoupdate feature for the server. This typically applies to Linux systemd service 'ExecStartPre' or a similar flag in Windows server configuration."
       required: true
       example: true
       selector:
         boolean: {}
     autostart:
-      description: "Enable/Disable the server to autostart with the system (via systemd user service). If not included/enabled service will be disabled. (Linux Only)"
-      required: false # Optional, as it's Linux-only
+      name: Enable Autostart (Linux Only)
+      description: "(Optional, Linux Only) Enable or disable the server to autostart with the system via systemd user service. If not provided on Linux, the existing autostart setting may not be changed or could default to disabled depending on BSM API behavior."
+      required: false
       example: true
       selector:
         boolean: {}
 
 add_global_players:
-  description: Adds or updates players in the manager's global player list (players.json). This is a global manager action, no specific server target needed.
+  name: Add/Update Global Players
+  description: "Adds or updates players in the BSM manager's global player list (players.json). This is a global manager action; target a BSM manager instance."
   target:
     entity:
       domain: sensor
       integration: bedrock_server_manager
     device:
-      integration: bedrock_server_managere
+      integration: bedrock_server_manager
   fields:
     players:
-      description: A list of player strings, each in "PlayerName:PlayerXUID" format (e.g., '["Steve:123", "Alex:456"]'). Input as YAML/JSON list.
+      name: Players Data
+      description: 'A list of player strings, each in "PlayerName:PlayerXUID" format. Example: ["Steve:123...", "Alex:456..."]. Input as a YAML/JSON list.'
       required: true
       example: '["NewPlayer:1234567890123456", "AnotherOne:9876543210987654"]'
       selector:
-        object: {} # User will input YAML/JSON list of strings
+        object: {}
+
+scan_players:
+  name: Scan Player Logs
+  description: Triggers a scan of all server log files on the BSM manager host to update the global list of known players. Targets a BSM manager instance.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager

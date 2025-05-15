@@ -9,11 +9,13 @@
           "host": "Host / IP Address",
           "port": "Port",
           "username": "API Username",
-          "password": "API Password"
+          "password": "API Password",
+          "use_ssl": "Use SSL",
+          "verify_ssl": "Verify SSL"
         }
       },
       "select_servers": {
-        "title": "Select Initial Servers",
+        "title": "Select Initial Servers to Monitor",
         "description": "{message}",
         "data": {
           "servers": "Servers to Monitor"
@@ -21,13 +23,18 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check the address and ensure the Manager is running.",
-      "invalid_auth": "Invalid username or password provided. Please check your credentials.",
-      "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager.",
-      "server_validation_failed": "Failed to validate the selected server {server_name} with the Manager API. It might not exist or there was an API error. (This error should not occur in the new flow)",
+      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check address, port, SSL setting, and ensure the Manager is running. Details: {error_details}",
+      "invalid_auth": "Invalid username or password. Please check your credentials. Details: {error_details}",
+      "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager and select servers later via integration options.",
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
-      "unknown_validation_error": "An unexpected error occurred during validation.",
-      "api_error": "An API error occurred while communicating with the manager: {error_details}"
+      "unknown_validation_error": "An unexpected error occurred during validation. Check logs.",
+      "api_error": "An API error occurred while communicating with the BSM manager: {error_details}",
+      "service_install_server_confirm_needed": "Server {server_name} already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
+      "service_no_target_provided": "No target (device, entity, or area) was provided for the service. Please specify a target.",
+      "service_no_target_provided_manager": "This service requires targeting a Bedrock Server Manager instance, but no target was provided.",
+      "service_invalid_input_api": "Invalid input provided to the BSM API: {details}",
+      "service_invalid_value_client": "Invalid value provided for the service call: {details}",
+      "service_backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'."
     },
     "abort": {
       "already_configured": "A Manager instance for {host}:{port} is already configured.",
@@ -38,17 +45,17 @@
     "step": {
       "init": {
         "title": "Bedrock Server Manager Options",
-        "description": "Choose which settings to modify for the manager at {host}.",
+        "description": "Choose which settings to modify for the Bedrock Server Manager at {host}.",
         "menu_options": {
           "update_credentials": "Update API Credentials",
           "select_servers": "Select Servers to Monitor",
-          "update_server_interval": "Update Server Polling Interval",
-          "update_manager_interval": "Update Manager Polling Interval"
+          "update_server_interval": "Set Server Data Polling Interval",
+          "update_manager_interval": "Set Manager Data Polling Interval"
         }
       },
       "update_credentials": {
         "title": "Update API Credentials",
-        "description": "Enter the new API username and password for the manager at {host}.",
+        "description": "Enter the new API username and password for the Bedrock Server Manager at {host}.",
         "data": {
           "username": "New API Username",
           "password": "New API Password"
@@ -56,107 +63,68 @@
       },
       "select_servers": {
         "title": "Select Servers to Monitor",
-        "description": "Choose which Minecraft server instances managed by this API should be monitored by Home Assistant.{fetch_error}",
+        "description": "Choose which Minecraft server instances managed by this BSM instance should be monitored by Home Assistant. {fetch_error}",
         "data": {
           "servers": "Servers to Monitor"
         }
       },
       "update_server_interval": {
-        "title": "Update Server Polling Interval",
-        "description": "Set how often Home Assistant polls individual server status (Running, CPU, Memory, etc.).",
+        "title": "Set Server Data Polling Interval",
+        "description": "Define how often Home Assistant polls individual Minecraft server status and details (e.g., Running, CPU, Memory). Shorter intervals provide more real-time data but increase load.",
         "data": {
-          "scan_interval": "Server update frequency (seconds)"
+          "scan_interval": "Server data update frequency (seconds)"
         }
       },
       "update_manager_interval": {
-        "title": "Update Manager Polling Interval",
-        "description": "Set how often Home Assistant polls global manager data (OS, Version, Global Players List). This is usually less frequent.",
+        "title": "Set Manager Data Polling Interval",
+        "description": "Define how often Home Assistant polls global Bedrock Server Manager data (e.g., BSM OS/Version, Global Players List, Available Content). This is typically less frequent than individual server polling.",
         "data": {
           "manager_scan_interval": "Manager data update frequency (seconds)"
         }
       }
     },
     "error": {
-      "invalid_scan_interval": "Update frequency must be at least 5 seconds.",
-      "invalid_manager_scan_interval": "Manager data update frequency must be at least 60 seconds.",
-      "invalid_auth": "Authentication failed with the provided credentials. Please check username and password.",
-      "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list.",
-      "fetch_servers_failed": "Failed to fetch the list of servers from the manager. Check connection and logs.",
-      "unknown_error": "An unexpected error occurred."
+      "invalid_server_scan_interval_range": "Server update frequency must be between 10 and 3600 seconds.",
+      "invalid_manager_scan_interval_range": "Manager data update frequency must be between 60 and 86400 seconds.",
+      "invalid_auth": "Authentication failed with the provided credentials. Please check username and password. Details: {error_details}",
+      "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list. Details: {error_details}",
+      "fetch_servers_failed": "Failed to fetch the list of servers from the BSM manager. Check connection and BSM logs. Details: {error_details}",
+      "unknown_error": "An unexpected error occurred. Check Home Assistant logs."
     },
     "abort": {
-      "credentials_updated": "Credentials updated successfully. Reloading integration.",
-      "changes_successful": "Options updated successfully. Reloading integration."
+      "credentials_updated": "Credentials updated successfully. The integration will now reload.",
+      "changes_successful": "Options updated successfully. The integration will now reload."
     }
   },
   "entity": {
     "button": {
-      "restart_server": {
-        "name": "Restart"
-      },
-      "update_server": {
-        "name": "Update"
-      },
-      "trigger_server_backup_all": {
-        "name": "Backup All"
-      },
-      "export_server_world": {
-        "name": "Export World"
-      },
-      "prune_server_backups": {
-        "name": "Prune Backups"
-      },
-      "prune_downloads": {
-        "name": "Prune Downloads"
-      },
-      "scan_players": {
-        "name": "Scan Player Logs"
-      }
+      "restart_server": { "name": "Restart Server" },
+      "update_server": { "name": "Check for Server Update" },
+      "trigger_server_backup_all": { "name": "Trigger Full Backup" },
+      "export_server_world": { "name": "Export World to Content" },
+      "prune_server_backups": { "name": "Prune Server Backups" },
+      "scan_players": { "name": "Scan All Player Logs" }
     },
     "switch": {
-      "server_control": {
-        "name": "Server"
-      }
+      "server_control": { "name": "Server Power" }
     },
     "sensor": {
-      "status": {
-        "name": "Status"
-      },
-      "cpu_usage": {
-        "name": "CPU Usage"
-      },
-      "memory_usage": {
-        "name": "Memory Usage"
-      },
-      "server_permissions_count": {
-        "name": "Permissioned Players"
-      },
-      "world_backups_count": {
-        "name": "World Backups"
-      },
-      "config_backups_count": {
-        "name": "Config Backups"
-      },
-      "available_worlds_count": {
-        "name": "Available Worlds"
-      },
-      "available_addons_count": {
-        "name": "Available Addons"
-      },
-      "level_name": {
-        "name": "Level Name"
-      },
-      "allowlist_count": {
-        "name": "Allowlist Count"
-      },
-      "global_players_count": {
-        "name": "Global Players Count"
-      }
+      "status": { "name": "Status" },
+      "cpu_percent": { "name": "CPU Usage" },
+      "memory_mb": { "name": "Memory Usage" },
+      "server_permissions_count": { "name": "Permissioned Players Count" },
+      "world_backups_count": { "name": "World Backups Count" },
+      "config_backups_count": { "name": "Config Backups Count" },
+      "level_name": { "name": "Level Name" },
+      "allowlist_count": { "name": "Allowlist Players Count" },
+      "global_players_count": { "name": "Global Known Players Count" },
+      "available_worlds_count": { "name": "Available Worlds Count" },
+      "available_addons_count": { "name": "Available Addons Count" }
     }
   },
   "services": {
     "send_command": {
-      "name": "Send command",
+      "name": "Send command to server",
       "description": "Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.",
       "fields": {
         "command": {
@@ -166,21 +134,21 @@
       }
     },
     "prune_download_cache": {
-      "name": "Prune download cache",
-      "description": "Deletes older downloaded server archives from a specified directory on the manager host.",
+      "name": "Prune BSM download cache",
+      "description": "Deletes older downloaded server archives from a specified directory on the BSM manager host, keeping a defined number of newest files. Targets a BSM manager instance.",
       "fields": {
         "directory": {
           "name": "Directory Path",
-          "description": "The absolute path on the manager host where download files are stored."
+          "description": "The absolute path on the BSM manager host where download files (.zip) are stored."
         },
         "keep": {
-          "name": "Keep Count",
-          "description": "(Optional) Number of newest files to keep. Uses manager's default if omitted."
+          "name": "Number to Keep",
+          "description": "(Optional) Number of newest files to keep. Uses BSM manager's default setting if omitted."
         }
       }
     },
     "trigger_backup": {
-      "name": "Trigger specific backup",
+      "name": "Trigger server backup",
       "description": "Triggers a specific backup operation (world, config file, or all) for the target server(s).",
       "fields": {
         "backup_type": {
@@ -188,144 +156,148 @@
           "description": "Type of backup to perform ('all', 'world', or 'config')."
         },
         "file_to_backup": {
-          "name": "File to Backup",
-          "description": "(Optional) Required only if backup_type is 'config'. Relative path of the config file (e.g., 'server.properties')."
+          "name": "File to Backup (for config type)",
+          "description": "(Optional) Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
         }
       }
     },
     "restore_backup": {
-      "name": "Restore specific backup",
-      "description": "Restores a specific world or config file from a backup for the target server(s). Overwrites current files!",
+      "name": "Restore server backup",
+      "description": "Restores a specific world or config file from a backup for the target server(s). WARNING: This overwrites current files! Use with caution.",
       "fields": {
         "restore_type": {
           "name": "Restore Type",
           "description": "Type of restore to perform ('world' or 'config')."
         },
         "backup_file": {
-          "name": "Backup File Path",
-          "description": "The full path to the backup file on the manager host."
+          "name": "Backup Filename",
+          "description": "The filename of the backup to restore (e.g., 'world_backup_xyz.mcworld' or 'server_backup_abc.properties'). This file must exist within the specific server's backup subdirectory inside the BSM manager's main BACKUP_DIR."
         }
       }
     },
     "restore_latest_all": {
-      "name": "Restore latest full backup",
-      "description": "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). Overwrites current files!"
+      "name": "Restore latest full server backup",
+      "description": "Restores the server's world and standard configuration files from the most recent 'all' type backup for the target server(s). WARNING: This overwrites current files! Use with caution."
     },
     "install_server": {
-      "name": "Install new server",
-      "description": "Installs a new Minecraft Bedrock server instance via the manager.",
+      "name": "Install new Minecraft server",
+      "description": "Installs a new Minecraft Bedrock server instance via the targeted BSM manager. Set 'overwrite: true' explicitly if you intend to replace an existing server with the same name.",
       "fields": {
         "server_name": {
-          "name": "Server Name",
-          "description": "Desired unique name for the new server."
+          "name": "New Server Name",
+          "description": "Desired unique name for the new server (must be a valid directory name)."
         },
         "server_version": {
           "name": "Server Version",
-          "description": "Version to install ('LATEST', 'PREVIEW', or specific version)."
+          "description": "Version to install (e.g., 'LATEST', 'PREVIEW', or a specific version string like '1.20.81.01')."
         },
         "overwrite": {
           "name": "Overwrite Existing",
-          "description": "(Optional) If true, deletes existing server data with the same name first."
+          "description": "(Optional) If true, and a server with the same name exists, all its data will be deleted before installing the new one. Defaults to false."
         }
       }
     },
     "delete_server": {
-      "name": "Delete server",
-      "description": "Permanently deletes ALL data for the target server instance(s). IRREVERSIBLE!",
+      "name": "Delete Minecraft server",
+      "description": "Permanently deletes ALL data for the target server instance(s), including its installation, configuration files, and all backups. THIS ACTION IS IRREVERSIBLE. USE WITH EXTREME CAUTION!",
       "fields": {
         "confirm_deletion": {
           "name": "Confirm Deletion",
-          "description": "MUST be true to confirm irreversible deletion."
+          "description": "MUST be set to 'true' to confirm you understand this action is irreversible and will permanently delete all selected server data."
         }
       }
     },
     "add_to_allowlist": {
-      "name": "Add to allowlist",
-      "description": "Adds one or more players to the target server's allowlist.",
+      "name": "Add players to server allowlist",
+      "description": "Adds one or more players to the target server's allowlist. This does not remove players already on the list.",
       "fields": {
         "players": {
           "name": "Players",
-          "description": "List of player Gamertags to add."
+          "description": "A list of player Gamertags to add to the allowlist."
         },
         "ignores_player_limit": {
           "name": "Ignores Player Limit",
-          "description": "(Optional) Set the 'ignoresPlayerLimit' flag for these players."
+          "description": "(Optional) Sets the 'ignoresPlayerLimit' flag for the players being added. Defaults to false."
         }
       }
     },
     "remove_from_allowlist": {
-      "name": "Remove from allowlist",
-      "description": "Removes a specific player from the target server's allowlist (case-insensitive).",
+      "name": "Remove player from server allowlist",
+      "description": "Removes a specific player from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.",
       "fields": {
         "player_name": {
           "name": "Player Name",
-          "description": "The Gamertag of the player to remove."
+          "description": "The Gamertag of the player to remove from the allowlist."
         }
       }
     },
     "set_permissions": {
-      "name": "Set player permissions",
-      "description": "Sets permission levels ('visitor', 'member', 'operator') for players using their XUIDs on the target server(s).",
+      "name": "Set server player permissions",
+      "description": "Sets permission levels ('visitor', 'member', 'operator') for one or more players using their XUIDs on the target server(s). This replaces existing permission levels for the specified players.",
       "fields": {
         "permissions": {
-          "name": "Permissions Map",
-          "description": "Dictionary mapping Player XUIDs (strings) to permission levels (strings: 'visitor', 'member', 'operator'). Input as YAML or JSON."
+          "name": "Permissions Dictionary",
+          "description": "A dictionary mapping Player XUIDs (as strings) to permission level strings (e.g., 'visitor', 'member', 'operator'). Input as YAML or JSON."
         }
       }
     },
     "update_properties": {
       "name": "Update server properties",
-      "description": "Updates specified server properties (e.g., max-players, difficulty) for the target server(s). Only allowed properties can be changed.",
+      "description": "Updates specified server properties (e.g., 'max-players', 'difficulty') for the target server(s). Only properties allowed by the BSM API can be changed.",
       "fields": {
         "properties": {
-          "name": "Properties Map",
-          "description": "Dictionary mapping allowed server property keys (strings) to their new values (strings, numbers, booleans). Input as YAML or JSON."
+          "name": "Properties Dictionary",
+          "description": "A dictionary mapping server property keys (strings) to their new desired values (strings, numbers, or booleans). Refer to BSM documentation for allowed keys and value types. Input as YAML or JSON."
         }
       }
     },
     "install_world": {
-      "name": "Install world from file",
-      "description": "Installs a .mcworld file into the target server, REPLACING the current world. File must exist in manager's content/worlds directory.",
+      "name": "Install world to server from file",
+      "description": "Installs a world from a .mcworld file into the target server, REPLACING its current world. WARNING: This is a destructive operation. The .mcworld file must already exist in the BSM manager's 'content/worlds' directory.",
       "fields": {
         "filename": {
-          "name": "Filename",
-          "description": "The .mcworld filename (e.g., 'MyBackup.mcworld') relative to the manager's 'content/worlds' directory."
+          "name": "World Filename",
+          "description": "The name of the .mcworld file (e.g., 'MyCoolWorld.mcworld') located in the BSM manager's 'content/worlds' directory. Can include subdirectories relative to 'content/worlds' (e.g., 'user_uploads/MyCoolWorld.mcworld')."
         }
       }
     },
     "install_addon": {
-      "name": "Install addon from file",
-      "description": "Installs an .mcaddon or .mcpack file into the target server. File must exist in the manager's 'content/addons' directory.",
+      "name": "Install addon to server from file",
+      "description": "Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the BSM manager's 'content/addons' directory.",
       "fields": {
         "filename": {
-          "name": "Filename",
-          "description": "The .mcaddon or .mcpack filename (e.g., 'MyAwesomeAddon.mcaddon') relative to the manager's 'content/addons' directory."
+          "name": "Addon Filename",
+          "description": "The name of the .mcaddon or .mcpack file (e.g., 'MyAwesomeAddon.mcaddon') located in the BSM manager's 'content/addons' directory. Can include subdirectories relative to 'content/addons'."
         }
       }
     },
     "configure_os_service": {
-      "name": "Configure OS service settings",
-      "description": "Configures OS-specific service settings for the target server(s), like autoupdate or autostart (Linux only).",
+      "name": "Configure server OS service settings",
+      "description": "Configures OS-specific service settings for the target server(s), such as autoupdate or autostart (Autostart is Linux systemd only).",
       "fields": {
         "autoupdate": {
           "name": "Enable Autoupdate",
-          "description": "Set to true to enable the autoupdate feature for the server."
+          "description": "Set to true/false to enable/disable the autoupdate feature for the server. This typically applies to a Linux systemd service 'ExecStartPre' command or a similar configuration flag for Windows servers managed by BSM."
         },
         "autostart": {
           "name": "Enable Autostart (Linux Only)",
-          "description": "(Optional) Set to true to enable the server to start automatically on system boot (via systemd user service on Linux)."
+          "description": "(Optional, Linux Only) Set to true/false to enable/disable the server to start automatically on system boot (via systemd user service on Linux). If not provided for a Linux manager, the existing autostart setting may not be changed or could default to disabled depending on BSM API behavior."
         }
       }
     },
     "add_global_players": {
-      "name": "Add global players",
-      "description": "Adds one or more players to the global player database on the BSM manager.",
+      "name": "Add/Update global players list",
+      "description": "Adds or updates players in the BSM manager's global player list (players.json). This is a global manager action; target a BSM manager instance.",
       "fields": {
         "players": {
-          "name": "Players",
-          "description": "List of player Gamertags (and optional XUIDs like 'PlayerName:12345') to add/update."
+          "name": "Players Data",
+          "description": "A list of player strings, each in \"PlayerName:PlayerXUID\" format (e.g., '[\"Steve:123...\", \"Alex:456...\"]'). Input as a YAML/JSON list."
         }
       }
+    },
+    "scan_players": {
+      "name": "Scan player logs globally",
+      "description": "Triggers a scan of all server log files on the BSM manager host to update the global list of known players. Targets a BSM manager instance."
     }
   }
 }

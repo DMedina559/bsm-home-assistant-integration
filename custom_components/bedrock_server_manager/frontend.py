@@ -10,7 +10,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace import LovelaceData
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.typing import UNDEFINED  # Import if needed
+from homeassistant.helpers.typing import UNDEFINED
 
 from .const import DOMAIN, FRONTEND_URL_BASE, JS_MODULES
 
