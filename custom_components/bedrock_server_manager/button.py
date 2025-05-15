@@ -198,14 +198,14 @@ class MinecraftServerButton(
         self.entity_description = description
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
-        self._attr_installed_version_static = installed_version_static  # For DeviceInfo
+        self._attr_installed_version_static = installed_version_static
 
         self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower().replace(
             ":", "_"
         )
         _LOGGER.debug(
             "Init ServerButton '%s' for server '%s' (Manager: %s), UniqueID: %s",
-            description.name,
+            description.name,  # Use self.entity_description.name for consistency if _attr_has_entity_name = True
             self._server_name,
             self._manager_host_port_id,
             self._attr_unique_id,
@@ -214,17 +214,31 @@ class MinecraftServerButton(
         server_device_id_value = f"{self._manager_host_port_id}_{self._server_name}"
 
         config_data = coordinator.config_entry.data
+        host_val = config_data[CONF_HOST]
+        try:
+            port_val = int(float(config_data[CONF_PORT]))
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(
+                "Invalid port value '%s' for button on server '%s' device configuration_url. Defaulting to 0. Error: %s",
+                config_data.get(CONF_PORT),
+                self._server_name,
+                e,
+            )
+            port_val = 0  # Fallback port
+
         protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
-        config_url = f"{protocol}://{config_data[CONF_HOST]}:{config_data[CONF_PORT]}"
+        safe_config_url = (
+            f"{protocol}://{host_val}:{port_val}"  # Use the cleaned port_val
+        )
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_id_value)},
-            name=f"Server: {self._server_name} ({config_data[CONF_HOST]})",
+            name=f"Server: {self._server_name} ({host_val})",  # Use host_val
             manufacturer="Bedrock Server Manager Integration",
             model="Managed Minecraft Server",
             sw_version=self._attr_installed_version_static or "Unknown",
             via_device=manager_identifier,
-            configuration_url=config_url,
+            configuration_url=safe_config_url,  # Use the corrected URL
         )
 
     @property

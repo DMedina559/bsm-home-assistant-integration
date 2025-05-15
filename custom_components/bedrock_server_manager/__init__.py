@@ -321,19 +321,34 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    manager_host_port_id = f"{entry.data.get(CONF_HOST)}:{entry.data.get(CONF_PORT)}"
+    manager_host_port_id = (
+        f"{entry.data.get(CONF_HOST, 'UnknownHost')}:{entry.data.get(CONF_PORT, '0')}"
+    )
     _LOGGER.info(
-        "Unloading Bedrock Server Manager entry for manager '%s'", manager_host_port_id
+        "Unloading Bedrock Server Manager entry for manager '%s' (Entry ID: %s)",
+        manager_host_port_id,
+        entry.entry_id,
     )
 
-    # Unload platforms
+    # Unload platforms (entities, etc.) linked to this config entry
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None)
-        if entry_data:
-            # Unregister frontend if it was registered
-            frontend_registrar = entry_data.get("frontend_registrar")
+        # Remove this entry's specific data from hass.data[DOMAIN]
+        domain_data = hass.data.get(DOMAIN)  # Get the domain's data dictionary
+        entry_specific_data_popped = None
+        if domain_data:
+            entry_specific_data_popped = domain_data.pop(entry.entry_id, None)
+
+        if entry_specific_data_popped:
+            _LOGGER.debug(
+                "Successfully removed data for entry %s (%s) from hass.data.%s",
+                entry.entry_id,
+                manager_host_port_id,
+                DOMAIN,
+            )
+            # Unregister frontend if it was registered for this entry
+            frontend_registrar = entry_specific_data_popped.get("frontend_registrar")
             if frontend_registrar:
                 try:
                     await frontend_registrar.async_unregister()
@@ -348,32 +363,74 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         exc_info=True,
                     )
 
+            # Close the API client session if it was created by this entry and is managed
+            # This assumes the api_client has a close method and was stored.
+            # api_client_instance = entry_specific_data_popped.get("api")
+            # if api_client_instance and hasattr(api_client_instance, "close"):
+            # try:
+            # await api_client_instance.close() # ClientBase already handles _close_session logic
+            # _LOGGER.debug("Closed API client session for unloaded entry %s.", entry.entry_id)
+            # except Exception as e:
+            # _LOGGER.error("Error closing API client for entry %s: %s", entry.entry_id, e)
+            # Note: If using HA's shared session, HA manages its lifecycle.
+            # The client's close() method checks if it should close the session.
+
+        else:  # entry_specific_data_popped was None
             _LOGGER.debug(
-                "Successfully removed data for entry %s (%s)",
+                "No specific data found in hass.data.%s for entry %s to pop. It might have been already cleaned up.",
+                DOMAIN,
                 entry.entry_id,
-                manager_host_port_id,
             )
 
-        # Check if any BSM entries remain to decide on service removal
-        # Iterate over keys in DOMAIN, excluding internal keys like '_services_registered'
-        active_bsm_entries_count = sum(
-            1 for key in hass.data[DOMAIN] if key != "_services_registered"
+        # Now, check if the DOMAIN key itself should be removed from hass.data
+        # (i.e., if this was the last BSM entry)
+        # Re-fetch domain_data as it might have been modified by the pop above
+        current_domain_data = hass.data.get(DOMAIN)
+
+        # Count remaining actual config entries (excluding internal keys like '_services_registered')
+        active_bsm_config_entries_count = 0
+        if current_domain_data:
+            active_bsm_config_entries_count = sum(
+                1 for key in current_domain_data if key != "_services_registered"
+            )
+
+        if active_bsm_config_entries_count == 0:
+            _LOGGER.info(
+                "No active BSM config entries remain after unloading %s. "
+                "Proceeding to remove services and domain data.",
+                entry.entry_id,
+            )
+            # Remove services only if they were registered and no other entries exist
+            if current_domain_data and current_domain_data.get("_services_registered"):
+                await services.async_remove_services(
+                    hass
+                )  # This function should also be robust
+                current_domain_data.pop(
+                    "_services_registered", None
+                )  # Clean up the flag
+
+            # If the domain_data dictionary is now empty (only had _services_registered or nothing), remove it.
+            if (
+                current_domain_data and not current_domain_data
+            ):  # Checks if dict is empty
+                _LOGGER.debug("Popping empty %s dictionary from hass.data.", DOMAIN)
+                hass.data.pop(DOMAIN, None)
+            elif not current_domain_data:  # Domain data was already gone
+                _LOGGER.debug(
+                    "%s dictionary already removed from hass.data or was never created.",
+                    DOMAIN,
+                )
+
+        else:
+            _LOGGER.debug(
+                "%d BSM config entries still loaded for domain %s. Services will be kept.",
+                active_bsm_config_entries_count,
+                DOMAIN,
+            )
+    else:  # unload_ok is False
+        _LOGGER.error(
+            "Failed to unload platforms for BSM entry %s. Data and services will not be fully cleaned up.",
+            entry.entry_id,
         )
-
-        if active_bsm_entries_count == 0 and hass.data[DOMAIN].get(
-            "_services_registered"
-        ):
-            _LOGGER.info("No active BSM entries remain, removing services.")
-            await services.async_remove_services(hass)
-            hass.data[DOMAIN].pop("_services_registered", None)  # Clean up the flag
-        elif active_bsm_entries_count > 0:
-            _LOGGER.debug(
-                "%d BSM entries still loaded, keeping services registered.",
-                active_bsm_entries_count,
-            )
-        else:  # No other entries and services weren't registered
-            _LOGGER.debug(
-                "No other BSM entries and services were not registered, nothing to do for services."
-            )
 
     return unload_ok

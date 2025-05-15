@@ -2,11 +2,11 @@
 """Switch platform for Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional, Dict, Tuple, cast
+from typing import Any, Optional, Dict, Tuple, cast, List
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT  # For configuration_url
+from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import (
     HomeAssistant,
     callback,
@@ -134,48 +134,56 @@ class MinecraftServerSwitch(
         description: SwitchEntityDescription,
         server_name: str,
         manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id)
-        installed_version_static: Optional[str],  # Passed from setup
+        installed_version_static: Optional[str],
     ) -> None:
         """Initialize the server switch."""
         super().__init__(coordinator)
-        self.entity_description = (
-            description  # Sets self._attr_name if description.name is used
-        )
+        self.entity_description = description
         self._server_name = server_name
-        self._manager_host_port_id = manager_identifier[1]  # e.g., "host:port"
-        self._attr_installed_version_static = (
-            installed_version_static  # Store for sw_version
-        )
+        self._manager_host_port_id = manager_identifier[1]
+        self._attr_installed_version_static = installed_version_static
 
-        # Unique ID: domain_manager-id_server-name_switch-key
         self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower().replace(
             ":", "_"
         )
 
         _LOGGER.debug(
             "Initializing ServerSwitch for '%s' (Manager: %s), Unique ID: %s",
-            self._server_name,
+            self._server_name,  # Using self._server_name as description.name might be just "Server Power"
             self._manager_host_port_id,
             self._attr_unique_id,
         )
 
-        # Device Info for this server's switch entity
         server_device_identifier_value = (
             f"{self._manager_host_port_id}_{self._server_name}"
         )
 
         config_data = coordinator.config_entry.data
+        host_val = config_data[CONF_HOST]
+        try:
+            # Ensure port is a clean integer for the URL
+            port_val = int(float(config_data[CONF_PORT]))
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(
+                "Invalid port value '%s' for switch on server '%s', device configuration_url. Defaulting to 0. Error: %s",
+                config_data.get(CONF_PORT),
+                self._server_name,
+                e,
+            )
+            port_val = 0  # Fallback
+
         protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
-        config_url = f"{protocol}://{config_data[CONF_HOST]}:{config_data[CONF_PORT]}"
+        safe_config_url = f"{protocol}://{host_val}:{port_val}"
+        # --- End of corrected configuration_url construction ---
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_identifier_value)},
-            name=f"Server: {self._server_name} ({config_data[CONF_HOST]})",  # More descriptive name
+            name=f"Server: {self._server_name} ({host_val})",  # Use host_val
             manufacturer="Bedrock Server Manager Integration",
             model="Managed Minecraft Server",
             sw_version=self._attr_installed_version_static or "Unknown",
-            via_device=manager_identifier,  # Link to the BSM Manager device
-            configuration_url=config_url,
+            via_device=manager_identifier,
+            configuration_url=safe_config_url,  # Use the safely constructed URL
         )
 
     @property

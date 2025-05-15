@@ -36,7 +36,7 @@ from .const import (
     ATTR_WORLD_BACKUPS_LIST,
     ATTR_AVAILABLE_ADDONS_LIST,
     ATTR_AVAILABLE_WORLDS_LIST,
-    KEY_GLOBAL_PLAYERS,
+    KEY_GLOBAL_PLAYERS_COUNT,
     KEY_LEVEL_NAME,
     KEY_ALLOWLIST_COUNT,
     KEY_SERVER_PERMISSIONS_COUNT,
@@ -109,7 +109,7 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
 
 MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
-        key=KEY_GLOBAL_PLAYERS,
+        key=KEY_GLOBAL_PLAYERS_COUNT,
         name="Global Known Players Count",
         icon="mdi:account-group-outline",
         state_class=SensorStateClass.MEASUREMENT,
@@ -313,34 +313,42 @@ class MinecraftServerSensor(
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]  # e.g., "host:port"
 
-        # Store static info primarily for initial DeviceInfo and fallbacks
         self._world_name_static = world_name_static
-        self._installed_version_static = installed_version_static
+        self._installed_version_static = installed_version_static  # Used for sw_version
 
-        # Construct a unique ID for the entity: domain_manager-id_server-name_sensor-key
         self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower().replace(
             ":", "_"
         )
 
-        # Device Info for this server's entities
-        # Unique part of identifier for this server's device, linked to manager
         server_device_id_value = f"{self._manager_host_port_id}_{self._server_name}"
 
-        # Configuration URL construction
         config_data = coordinator.config_entry.data
+        host_val = config_data[CONF_HOST]
+        try:
+            # Ensure port is a clean integer for the URL
+            port_val = int(float(config_data[CONF_PORT]))
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(
+                "Invalid port value '%s' for sensor on server '%s', device configuration_url. Defaulting to 0. Error: %s",
+                config_data.get(CONF_PORT),
+                self._server_name,
+                e,
+            )
+            port_val = (
+                0  # Fallback, though URL might still be invalid if host is also bad
+            )
+
         protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
-        config_url = f"{protocol}://{config_data[CONF_HOST]}:{config_data[CONF_PORT]}"
+        safe_config_url = f"{protocol}://{host_val}:{port_val}"
 
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={
-                (DOMAIN, server_device_id_value)
-            },  # Unique identifier for this server's device
-            name=f"bsm-{self._server_name} ({config_data[CONF_HOST]})",  # User-friendly device name
-            manufacturer="Bedrock Server Manager",
-            model="Minecraft Bedrock Server",
+            identifiers={(DOMAIN, server_device_id_value)},
+            name=f"Server: {self._server_name} ({host_val})",  # Updated name for clarity
+            manufacturer="Bedrock Server Manager Integration",  # Consistent manufacturer
+            model="Managed Minecraft Server",  # Consistent model
             sw_version=self._installed_version_static or "Unknown",
-            via_device=manager_identifier,  # Links to the BSM Manager device
-            configuration_url=config_url,  # Link to the BSM UI
+            via_device=manager_identifier,
+            configuration_url=safe_config_url,  # Use the safely constructed URL
         )
 
     @property
@@ -548,7 +556,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         data = self.coordinator.data  # Data from ManagerDataCoordinator
         key = self.entity_description.key
 
-        if key == KEY_GLOBAL_PLAYERS:
+        if key == KEY_GLOBAL_PLAYERS_COUNT:
             return len(data.get("global_players", []))
         elif key == KEY_AVAILABLE_WORLDS_COUNT:
             return len(data.get("available_worlds", []))
@@ -572,7 +580,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         key = self.entity_description.key
         attrs: Dict[str, Any] = {}
 
-        if key == KEY_GLOBAL_PLAYERS:
+        if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
         elif key == KEY_AVAILABLE_WORLDS_COUNT:
             attrs[ATTR_AVAILABLE_WORLDS_LIST] = data.get("available_worlds", [])
