@@ -243,7 +243,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._connection_data[CONF_HOST],
                 self._connection_data[CONF_PORT],
                 selected_servers,
-                async_redact_data(self._connection_data, [CONF_PASSWORD])
+                async_redact_data(self._connection_data, [CONF_PASSWORD]),
             )
 
             # Data stored in config_entry.data (credentials, host, port, ssl)
