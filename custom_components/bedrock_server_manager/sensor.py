@@ -78,20 +78,20 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
     ),
     SensorEntityDescription(
         key=KEY_SERVER_PERMISSIONS_COUNT,
-        name="Permissioned Players Count",
+        name="Permissioned Players",
         icon="mdi:account-key-outline",
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_WORLD_BACKUPS_COUNT,
-        name="World Backups Count",
+        name="World Backups",
         icon="mdi:archive-arrow-down-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
         key=KEY_CONFIG_BACKUPS_COUNT,
-        name="Config Backups Count",
+        name="Config Backups",
         icon="mdi:file-settings-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
@@ -101,7 +101,7 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
     ),
     SensorEntityDescription(
         key=KEY_ALLOWLIST_COUNT,
-        name="Allowlist Players Count",
+        name="Allowlist Players",
         icon="mdi:format-list-checks",
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -110,19 +110,19 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
 MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key=KEY_GLOBAL_PLAYERS_COUNT,
-        name="Global Known Players Count",
+        name="Global Known Players",
         icon="mdi:account-group-outline",
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_AVAILABLE_WORLDS_COUNT,
-        name="Available Worlds Count",
-        icon="mdi:world-o-sphere",
+        name="Available Worlds",
+        icon="mdi:earth-box",
         state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_AVAILABLE_ADDONS_COUNT,
-        name="Available Addons Count",
+        name="Available Addons",
         icon="mdi:puzzle-edit-outline",
         state_class=SensorStateClass.MEASUREMENT,
     ),
@@ -343,9 +343,9 @@ class MinecraftServerSensor(
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_id_value)},
-            name=f"Server: {self._server_name} ({host_val})",  # Updated name for clarity
-            manufacturer="Bedrock Server Manager Integration",  # Consistent manufacturer
-            model="Managed Minecraft Server",  # Consistent model
+            name=f"{self._server_name} ({host_val})",  # Updated name for clarity
+            manufacturer="Bedrock Server Manager",  # Consistent manufacturer
+            model="Minecraft Bedrock Server",  # Consistent model
             sw_version=self._installed_version_static or "Unknown",
             via_device=manager_identifier,
             configuration_url=safe_config_url,  # Use the safely constructed URL

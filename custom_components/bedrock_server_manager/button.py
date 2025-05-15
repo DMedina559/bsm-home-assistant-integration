@@ -51,18 +51,18 @@ SERVER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
     ),
     ButtonEntityDescription(
         key="trigger_server_backup_all",
-        name="Trigger Full Backup",
+        name="Backup All",
         icon="mdi:archive-arrow-down-outline",
     ),
     ButtonEntityDescription(
         key="export_server_world",
-        name="Export World to Content",
-        icon="mdi:earth-export",
+        name="Export World",
+        icon="mdi:earth-box",
         entity_category=EntityCategory.CONFIG,
     ),
     ButtonEntityDescription(
         key="prune_server_backups",
-        name="Prune Server Backups",
+        name="Prune Backups",
         icon="mdi:archive-refresh-outline",
         entity_category=EntityCategory.CONFIG,
     ),
@@ -233,9 +233,9 @@ class MinecraftServerButton(
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_id_value)},
-            name=f"Server: {self._server_name} ({host_val})",  # Use host_val
-            manufacturer="Bedrock Server Manager Integration",
-            model="Managed Minecraft Server",
+            name=f"{self._server_name} ({host_val})",  # Use host_val
+            manufacturer="Bedrock Server Manager",
+            model="Minecraft Bedrock Server",
             sw_version=self._attr_installed_version_static or "Unknown",
             via_device=manager_identifier,
             configuration_url=safe_config_url,  # Use the corrected URL

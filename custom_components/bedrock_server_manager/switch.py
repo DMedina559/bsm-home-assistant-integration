@@ -21,7 +21,7 @@ from .const import (
     DOMAIN,
     CONF_USE_SSL,
     ATTR_INSTALLED_VERSION,
-)  # Assuming these are in const
+)
 
 from pybedrock_server_manager import (
     BedrockServerManagerApi,  # For type hinting self.coordinator.api
@@ -30,7 +30,6 @@ from pybedrock_server_manager import (
     CannotConnectError,
     ServerNotFoundError,
     ServerNotRunningError,
-    # InvalidInputError, APIServerSideError etc. are caught by APIError
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 # Single description for the server control switch
 SWITCH_DESCRIPTION = SwitchEntityDescription(
     key="server_control",  # This key is primarily for internal use if you had multiple switch types
-    name="Server Power",  # This will be the entity's friendly name suffix
+    name="Server",  # This will be the entity's friendly name suffix
     icon="mdi:minecraft",
 )
 
@@ -178,9 +177,9 @@ class MinecraftServerSwitch(
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_identifier_value)},
-            name=f"Server: {self._server_name} ({host_val})",  # Use host_val
-            manufacturer="Bedrock Server Manager Integration",
-            model="Managed Minecraft Server",
+            name=f"{self._server_name} ({host_val})",  # Use host_val
+            manufacturer="Bedrock Server Manager",
+            model="Minecraft Bedrock Server",
             sw_version=self._attr_installed_version_static or "Unknown",
             via_device=manager_identifier,
             configuration_url=safe_config_url,  # Use the safely constructed URL
