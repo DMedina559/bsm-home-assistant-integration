@@ -12,7 +12,7 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
-    # CONF_VERIFY_SSL,
+    CONF_VERIFY_SSL,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -152,8 +152,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier_tuple},  # Must be a set of tuples
         name=f"Bedrock Server Manager @ {host}",  # User-friendly name
-        manufacturer="Bedrock Server Manager Project",  # Or your desired manufacturer
-        model=f"BSM API Client ({manager_os_type.capitalize() if manager_os_type != 'unknown' else 'Unknown OS'})",
+        manufacturer="Bedrock Server Manager",
+        model=f"{manager_os_type.capitalize() if manager_os_type != 'unknown' else 'Unknown OS'}",
         sw_version=manager_app_version,
         configuration_url=f"{'https' if use_ssl else 'http'}://{host}:{port}",  # Link to BSM UI
     )
