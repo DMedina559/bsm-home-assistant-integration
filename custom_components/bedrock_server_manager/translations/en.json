@@ -10,7 +10,8 @@
           "port": "Port",
           "username": "API Username",
           "password": "API Password",
-          "use_ssl": "Use SSL"
+          "use_ssl": "Use SSL",
+          "verify_ssl": "Verify SSL"
         }
       },
       "select_servers": {

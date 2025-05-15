@@ -12,7 +12,6 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
-    CONF_VERIFY_SSL,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -36,6 +35,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
     CONF_USE_SSL,
+    CONF_VERIFY_SSL
 )
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from . import services
@@ -66,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
     use_ssl = entry.data.get(CONF_USE_SSL, False)  # Get use_ssl, default to False
+    verify_ssl = entry.data.get(CONF_VERIFY_SSL, True) # Get verify_ssl, default to True
 
     session = async_get_clientsession(hass)
     api_client = BedrockServerManagerApi(
@@ -75,6 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=password,
         session=session,  # Pass HA-managed session
         use_ssl=use_ssl,  # Pass SSL preference
+        verify_ssl=verify_ssl,
     )
     hass.data[DOMAIN][entry.entry_id]["api"] = api_client
     _LOGGER.debug(

@@ -19,6 +19,7 @@ from .const import (
     DEFAULT_PORT,
     CONF_SERVER_NAMES,
     CONF_USE_SSL,
+    CONF_VERIFY_SSL,
 )
 
 from pybedrock_server_manager import (
@@ -47,6 +48,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
             selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
         ),
         vol.Optional(CONF_USE_SSL, default=False): bool,
+        vol.Optional(CONF_VERIFY_SSL, default=True): bool,
     }
 )
 
@@ -81,6 +83,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
         password=data[CONF_PASSWORD],
         session=session,
         use_ssl=data.get(CONF_USE_SSL, False),
+        verify_ssl=data.get(CONF_VERIFY_SSL, True)
     )
 
     try:

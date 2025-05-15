@@ -23,6 +23,7 @@ CONF_PORT = "port"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_USE_SSL = "use_ssl"  # For enabling HTTPS connection to BSM API
+CONF_VERIFY_SSL = "verify_ssl"
 CONF_SERVER_NAMES = "servers"  # Key for list of selected server names in
 
 # --- Scan Interval Configuration Keys (used in options_flow.py) ---
