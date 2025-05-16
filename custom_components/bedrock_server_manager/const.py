@@ -44,10 +44,7 @@ ATTR_PID = "pid"
 ATTR_CPU_PERCENT = "cpu_percent"
 ATTR_MEMORY_MB = "memory_mb"
 ATTR_UPTIME = "uptime"
-ATTR_PLAYERS_ONLINE = (
-    "players_online"  # This would likely be derived or require another API call
-)
-ATTR_MAX_PLAYERS = "max_players"  # Typically from server.properties
+
 ATTR_ALLOWLISTED_PLAYERS = "allowed_players"  # Full list from allowlist.json
 ATTR_SERVER_PROPERTIES = "server_properties"  # Full dict from server.properties
 ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"  # Full list of known players
@@ -56,6 +53,8 @@ ATTR_WORLD_BACKUPS_LIST = "world_backups_list"
 ATTR_CONFIG_BACKUPS_LIST = "config_backups_list"
 ATTR_AVAILABLE_WORLDS_LIST = "available_worlds_list"  # From BSM content dir
 ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"  # From BSM content dir
+
+ATTR_MANAGER_OS_TYPE = "bsm_host"
 
 # --- State/Key Constants  ---
 KEY_GLOBAL_PLAYERS_COUNT = "global_players_count"
@@ -66,6 +65,8 @@ KEY_AVAILABLE_WORLDS_COUNT = "available_worlds_count"
 KEY_AVAILABLE_ADDONS_COUNT = "available_addons_count"
 KEY_LEVEL_NAME = "level_name"
 KEY_ALLOWLIST_COUNT = "allowlist_count"
+
+KEY_MANAGER_APP_VERSION = "bsm_version"
 
 # --- Service Names (used in services.yaml and services.py) ---
 SERVICE_SEND_COMMAND = "send_command"

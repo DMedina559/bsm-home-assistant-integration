@@ -23,7 +23,7 @@ from homeassistant.helpers import device_registry as dr
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from .const import (
     DOMAIN,
-    CONF_USE_SSL,  # For configuration_url
+    CONF_USE_SSL,
     ATTR_CPU_PERCENT,
     ATTR_MEMORY_MB,
     ATTR_PID,
@@ -44,8 +44,10 @@ from .const import (
     KEY_WORLD_BACKUPS_COUNT,
     KEY_AVAILABLE_ADDONS_COUNT,
     KEY_AVAILABLE_WORLDS_COUNT,
-    ATTR_GLOBAL_PLAYERS_LIST,  # Full list for attributes
-    ATTR_SERVER_PERMISSIONS_LIST,  # Full list for attributes
+    ATTR_GLOBAL_PLAYERS_LIST,
+    ATTR_SERVER_PERMISSIONS_LIST,
+    KEY_MANAGER_APP_VERSION,
+    ATTR_MANAGER_OS_TYPE,
 )
 
 from pybedrock_server_manager import BedrockServerManagerApi
@@ -128,6 +130,12 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
     ),
+    SensorEntityDescription(  # New sensor for Manager App Version
+        key=KEY_MANAGER_APP_VERSION,
+        name="Manager App Version",
+        icon="mdi:information-outline",
+        entity_registry_enabled_default=False,
+    ),
 )
 
 
@@ -200,23 +208,16 @@ async def async_setup_entry(
             )
             continue
 
-        # Fetch static info if not already populated by __init__.py (e.g., if init failed partially)
-        # These are just for initial DeviceInfo, coordinator will provide dynamic updates.
         world_name_static = server_entry_data.get(ATTR_WORLD_NAME)
         version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
-        # This block attempts to fetch static info if it wasn't pre-populated.
-        # Useful if __init__.py stored coordinator but failed to get these static details.
         if world_name_static is None or version_static is None:
             _LOGGER.debug(
                 "Attempting to fetch initial static info (world/version) for server '%s' during sensor setup.",
                 server_name,
             )
             try:
-                # Use a timeout for these one-off calls during setup
-                async with asyncio.timeout(
-                    10
-                ):  # 10-second timeout for this setup fetch
+                async with asyncio.timeout(10):
                     results = await asyncio.gather(
                         api_client.async_get_server_world_name(server_name),
                         api_client.async_get_server_version(server_name),
@@ -230,7 +231,7 @@ async def async_setup_entry(
                         server_name,
                         world_name_res,
                     )
-                elif isinstance(world_name_res, str):  # Client returns Optional[str]
+                elif isinstance(world_name_res, str):
                     world_name_static = world_name_res
 
                 if isinstance(version_res, Exception):
@@ -239,10 +240,9 @@ async def async_setup_entry(
                         server_name,
                         version_res,
                     )
-                elif isinstance(version_res, str):  # Client returns Optional[str]
+                elif isinstance(version_res, str):
                     version_static = version_res
 
-                # Update the stored static info in hass.data if fetched
                 server_entry_data[ATTR_WORLD_NAME] = world_name_static
                 server_entry_data[ATTR_INSTALLED_VERSION] = version_static
 
@@ -250,7 +250,7 @@ async def async_setup_entry(
                 _LOGGER.warning(
                     "Timeout fetching initial static info for server '%s'.", server_name
                 )
-            except Exception as e:  # Catch other unexpected errors
+            except Exception as e:
                 _LOGGER.error(
                     "Unexpected error fetching initial static info for server '%s': %s",
                     server_name,
@@ -258,7 +258,6 @@ async def async_setup_entry(
                     exc_info=True,
                 )
 
-        # Add server sensors if coordinator has data
         if server_coordinator.last_update_success and server_coordinator.data:
             for description in SERVER_SENSOR_DESCRIPTIONS:
                 entities_to_add.append(
@@ -266,10 +265,9 @@ async def async_setup_entry(
                         coordinator=server_coordinator,
                         description=description,
                         server_name=server_name,
-                        manager_identifier=manager_identifier,  # For via_device
-                        # Pass the potentially updated static info for DeviceInfo
+                        manager_identifier=manager_identifier,
                         installed_version_static=version_static,
-                        world_name_static=world_name_static,
+                        world_name_static=world_name_static,  # Still pass for DeviceInfo name consistency
                     )
                 )
         else:
@@ -296,25 +294,25 @@ class MinecraftServerSensor(
 ):
     """Representation of a Minecraft Bedrock Server sensor."""
 
-    _attr_has_entity_name = (
-        True  # Sensor name will be "Device Name Sensor Description Name"
-    )
+    _attr_has_entity_name = True
 
     def __init__(
         self,
         coordinator: MinecraftBedrockCoordinator,
         description: SensorEntityDescription,
         server_name: str,
-        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id)
+        manager_identifier: Tuple[str, str],
         installed_version_static: Optional[str],
-        world_name_static: Optional[str],
+        world_name_static: Optional[str],  # Used for device name
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._server_name = server_name
-        self._manager_host_port_id = manager_identifier[1]  # e.g., "host:port"
+        self._manager_host_port_id = manager_identifier[1]
 
+        # _world_name_static is primarily used for the DeviceInfo name now,
+        # and as a fallback for Level Name sensor if properties aren't available.
         self._world_name_static = world_name_static
         self._installed_version_static = installed_version_static  # Used for sw_version
 
@@ -327,7 +325,6 @@ class MinecraftServerSensor(
         config_data = coordinator.config_entry.data
         host_val = config_data[CONF_HOST]
         try:
-            # Ensure port is a clean integer for the URL
             port_val = int(float(config_data[CONF_PORT]))
         except (ValueError, TypeError) as e:
             _LOGGER.error(
@@ -336,21 +333,23 @@ class MinecraftServerSensor(
                 self._server_name,
                 e,
             )
-            port_val = (
-                0  # Fallback, though URL might still be invalid if host is also bad
-            )
+            port_val = 0
 
         protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
         safe_config_url = f"{protocol}://{host_val}:{port_val}"
 
+        # Device name uses server_name and host_val for clarity.
+        # World name is not part of the device name anymore, as a server can change worlds.
+        device_name = f"{self._server_name} ({host_val})"
+
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, server_device_id_value)},
-            name=f"{self._server_name} ({host_val})",  # Updated name for clarity
-            manufacturer="Bedrock Server Manager",  # Consistent manufacturer
-            model="Minecraft Bedrock Server",  # Consistent model
+            name=device_name,
+            manufacturer="Bedrock Server Manager",
+            model="Minecraft Bedrock Server",
             sw_version=self._installed_version_static or "Unknown",
             via_device=manager_identifier,
-            configuration_url=safe_config_url,  # Use the safely constructed URL
+            configuration_url=safe_config_url,
         )
 
     @property
@@ -365,26 +364,21 @@ class MinecraftServerSensor(
     @property
     def native_value(self) -> Any:
         """Return the state of the sensor."""
-        if not self.available or not isinstance(
-            self.coordinator.data, dict
-        ):  # Should be caught by super().available check too
+        if not self.available or not isinstance(self.coordinator.data, dict):
             return None
 
-        data = self.coordinator.data  # Data from MinecraftBedrockCoordinator
+        data = self.coordinator.data
         key = self.entity_description.key
-        process_info = data.get(
-            "process_info"
-        )  # This is a dict if server is running, else None
+        process_info = data.get("process_info")
 
         if key == "status":
             return "Running" if isinstance(process_info, dict) else "Stopped"
 
-        if isinstance(process_info, dict):  # These sensors depend on process_info
+        if isinstance(process_info, dict):
             if key == ATTR_CPU_PERCENT:
                 return process_info.get(ATTR_CPU_PERCENT)
             if key == ATTR_MEMORY_MB:
                 return process_info.get(ATTR_MEMORY_MB)
-            # Other process_info related sensors can be added here
 
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
@@ -396,9 +390,9 @@ class MinecraftServerSensor(
             return len(data.get("allowlist", []))
 
         if key == KEY_LEVEL_NAME:
-            # Prioritize dynamic level-name from properties, fallback to static
             server_properties = data.get("properties", {})
             dynamic_level_name = server_properties.get("level-name")
+            # Fallback to static world name if dynamic one is not available or server is stopped
             return (
                 dynamic_level_name
                 if dynamic_level_name is not None
@@ -419,32 +413,17 @@ class MinecraftServerSensor(
         data = self.coordinator.data
         attrs: Dict[str, Any] = {}
         key = self.entity_description.key
-
         process_info = data.get("process_info")  # Dict if running, else None
 
-        if key == "status":  # Attributes for the main 'Status' sensor
-            if self._world_name_static:
-                attrs[ATTR_WORLD_NAME] = self._world_name_static  # Static name
-            if self._installed_version_static:
-                attrs[ATTR_INSTALLED_VERSION] = (
-                    self._installed_version_static
-                )  # Static version
+        if key == "status":
+            # Only general info that doesn't fit better elsewhere
+            if self._installed_version_static:  # The current installed version
+                attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
+            # PID and Uptime moved to CPU/Memory sensors
+            # World name is handled by the Level Name sensor
 
-            # Dynamic properties if available from coordinator
-            server_properties_dyn = data.get("properties", {})
-            if server_properties_dyn.get("level-name"):
-                attrs[f"current_{KEY_LEVEL_NAME}"] = server_properties_dyn["level-name"]
-
-            if isinstance(process_info, dict):
-                if process_info.get(ATTR_PID) is not None:
-                    attrs[ATTR_PID] = process_info[ATTR_PID]
-                if process_info.get(ATTR_UPTIME) is not None:
-                    attrs[ATTR_UPTIME] = process_info[ATTR_UPTIME]
-
-        elif key in [
-            ATTR_CPU_PERCENT,
-            ATTR_MEMORY_MB,
-        ]:  # Attributes for CPU/Memory sensors
+        elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
+            # Process-specific info for CPU and Memory sensors
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
                     attrs[ATTR_PID] = process_info[ATTR_PID]
@@ -463,26 +442,25 @@ class MinecraftServerSensor(
                 p.get("name") for p in allowlist_data if isinstance(p, dict)
             ]
         elif key == KEY_LEVEL_NAME:
+            # The Level Name sensor's state is the current level name.
+            # Attributes include the full server properties dictionary.
             attrs[ATTR_SERVER_PROPERTIES] = data.get("properties", {})
-            if self._installed_version_static:
-                attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
+            # ATTR_INSTALLED_VERSION is on the 'status' sensor.
+            # Static world name is not needed here as an attribute.
 
         return attrs if attrs else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Dynamically update device SW version if coordinator provides it and it changed
         if (
             self.coordinator.last_update_success
             and isinstance(self.coordinator.data, dict)
             and self._attr_device_info
         ):
-
             dynamic_version_from_coord = self.coordinator.data.get(
                 "current_installed_version"
-            )  # Example key
-
+            )
             current_device_sw_version = self._attr_device_info.get("sw_version")
 
             if (
@@ -490,7 +468,6 @@ class MinecraftServerSensor(
                 and dynamic_version_from_coord != "Unknown"
                 and dynamic_version_from_coord != current_device_sw_version
             ):
-
                 _LOGGER.debug(
                     "Server '%s' version '%s' from coordinator differs from device SW version '%s'. Updating device.",
                     self._server_name,
@@ -498,7 +475,6 @@ class MinecraftServerSensor(
                     current_device_sw_version,
                 )
                 device_registry = dr.async_get(self.hass)
-                # Ensure self._attr_device_info['identifiers'] is correctly formatted for async_get_device
                 device_entry = device_registry.async_get_device(
                     identifiers=self._attr_device_info["identifiers"]
                 )
@@ -507,12 +483,8 @@ class MinecraftServerSensor(
                     device_registry.async_update_device(
                         device_entry.id, sw_version=dynamic_version_from_coord
                     )
-                    # Update local cache to prevent repeated updates if HA takes time to reflect
                     self._attr_device_info["sw_version"] = dynamic_version_from_coord
-                    self._installed_version_static = (
-                        dynamic_version_from_coord  # Keep this in sync
-                    )
-
+                    self._installed_version_static = dynamic_version_from_coord
         super()._handle_coordinator_update()
 
 
@@ -525,19 +497,18 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         self,
         coordinator: ManagerDataCoordinator,
         description: SensorEntityDescription,
-        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id)
+        manager_identifier: Tuple[str, str],
     ):
         """Initialize the manager sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._manager_host_port_id = manager_identifier[1]  # e.g., "host:port"
+        self._manager_host_port_id = manager_identifier[1]
 
         self._attr_unique_id = (
             f"{DOMAIN}_{self._manager_host_port_id}_{description.key}".lower().replace(
                 ":", "_"
             )
         )
-        # All manager sensors are attached to the main manager device
         self._attr_device_info = dr.DeviceInfo(identifiers={manager_identifier})
 
     @property
@@ -550,12 +521,12 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         )
 
     @property
-    def native_value(self) -> Optional[int]:  # Most manager sensors here are counts
+    def native_value(self) -> Optional[Any]:  # Can be int or str now
         """Return the state of the sensor."""
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
 
-        data = self.coordinator.data  # Data from ManagerDataCoordinator
+        data = self.coordinator.data
         key = self.entity_description.key
 
         if key == KEY_GLOBAL_PLAYERS_COUNT:
@@ -564,6 +535,11 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             return len(data.get("available_worlds", []))
         elif key == KEY_AVAILABLE_ADDONS_COUNT:
             return len(data.get("available_addons", []))
+        elif key == KEY_MANAGER_APP_VERSION:  # New sensor's state
+            manager_info_payload = data.get("info", {})
+            if isinstance(manager_info_payload, dict):
+                return manager_info_payload.get("app_version", "Unknown")
+            return "Unknown"  # Fallback if 'info' is not a dict
 
         _LOGGER.warning(
             "Unhandled manager sensor key '%s' for native_value in %s",
@@ -588,15 +564,13 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             attrs[ATTR_AVAILABLE_WORLDS_LIST] = data.get("available_worlds", [])
         elif key == KEY_AVAILABLE_ADDONS_COUNT:
             attrs[ATTR_AVAILABLE_ADDONS_LIST] = data.get("available_addons", [])
-
-        # Add manager OS and App Version to all manager sensors for convenience
-        manager_info_payload = data.get(
-            "info", {}
-        )  # 'info' contains {'os_type': ..., 'app_version': ...}
-        if isinstance(manager_info_payload, dict):
-            attrs["manager_os_type"] = manager_info_payload.get("os_type", "Unknown")
-            attrs["manager_app_version"] = manager_info_payload.get(
-                "app_version", "Unknown"
-            )
+        elif key == KEY_MANAGER_APP_VERSION:
+            manager_info_payload = data.get("info", {})
+            if isinstance(manager_info_payload, dict):
+                attrs[ATTR_MANAGER_OS_TYPE] = manager_info_payload.get(
+                    "os_type", "Unknown"
+                )
+            else:
+                attrs[ATTR_MANAGER_OS_TYPE] = "Unknown"
 
         return attrs if attrs else None
