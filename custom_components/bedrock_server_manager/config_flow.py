@@ -83,7 +83,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
         password=data[CONF_PASSWORD],
         session=session,
         use_ssl=data.get(CONF_USE_SSL, False),
-        verify_ssl=data.get(CONF_VERIFY_SSL, True)
+        verify_ssl=data.get(CONF_VERIFY_SSL, True),
     )
 
     try:

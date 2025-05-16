@@ -35,7 +35,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
     CONF_USE_SSL,
-    CONF_VERIFY_SSL
+    CONF_VERIFY_SSL,
 )
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from . import services
@@ -66,7 +66,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
     use_ssl = entry.data.get(CONF_USE_SSL, False)  # Get use_ssl, default to False
-    verify_ssl = entry.data.get(CONF_VERIFY_SSL, True) # Get verify_ssl, default to True
+    verify_ssl = entry.data.get(
+        CONF_VERIFY_SSL, True
+    )  # Get verify_ssl, default to True
 
     session = async_get_clientsession(hass)
     api_client = BedrockServerManagerApi(
