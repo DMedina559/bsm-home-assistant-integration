@@ -10,7 +10,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import (
     HomeAssistant,
     callback,
-)  # callback not used here, but often in entities
+)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.exceptions import HomeAssistantError
@@ -22,9 +22,9 @@ from .const import (
     CONF_USE_SSL,
     ATTR_INSTALLED_VERSION,
 )
-
+from .utils import sanitize_host_port_string
 from pybedrock_server_manager import (
-    BedrockServerManagerApi,  # For type hinting self.coordinator.api
+    BedrockServerManagerApi,
     APIError,
     AuthError,
     CannotConnectError,
@@ -52,7 +52,9 @@ async def async_setup_entry(
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
         servers_config_data: Dict[str, Dict[str, Any]] = entry_data.get("servers", {})
-        manager_identifier = cast(Tuple[str, str], entry_data["manager_identifier"])
+        original_manager_identifier_tuple = cast(
+            Tuple[str, str], entry_data["manager_identifier"]
+        )
     except KeyError as e:
         _LOGGER.error(
             "Switch setup failed for entry %s: Missing expected data (Key: %s). "
@@ -68,6 +70,24 @@ async def async_setup_entry(
             entry.title,
         )
         return
+
+    # Sanitize the host-port string part of the manager_identifier
+    original_manager_id_str = original_manager_identifier_tuple[1]
+    sanitized_manager_id_str = sanitize_host_port_string(original_manager_id_str)
+
+    if sanitized_manager_id_str != original_manager_id_str:
+        _LOGGER.info(
+            "Sanitized manager identifier string from '%s' to '%s' for entry %s",
+            original_manager_id_str,
+            sanitized_manager_id_str,
+            entry.entry_id,
+        )
+    # Create a new, sanitized manager_identifier tuple to be used by sensors
+    # The first part of the tuple is typically the DOMAIN.
+    manager_identifier_for_switches = (
+        original_manager_identifier_tuple[0],
+        sanitized_manager_id_str,
+    )
 
     switches_to_add: List[MinecraftServerSwitch] = []
     for server_name, server_data_dict in servers_config_data.items():
@@ -97,7 +117,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     description=SWITCH_DESCRIPTION,
                     server_name=server_name,
-                    manager_identifier=manager_identifier,
+                    manager_identifier=manager_identifier_for_switches,
                     installed_version_static=installed_version_static,
                 )
             )
@@ -130,59 +150,102 @@ class MinecraftServerSwitch(
     def __init__(
         self,
         coordinator: MinecraftBedrockCoordinator,
-        description: SwitchEntityDescription,
-        server_name: str,
-        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id)
-        installed_version_static: Optional[str],
+        description: SwitchEntityDescription,  # Make sure this is SwitchEntityDescription
+        server_name: str,  # The configured name of the server (e.g., "s1", "my_world")
+        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id string)
+        installed_version_static: Optional[
+            str
+        ],  # Can be None, used as fallback for sw_version
     ) -> None:
         """Initialize the server switch."""
-        super().__init__(coordinator)
+        super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
-        self._attr_installed_version_static = installed_version_static
+        # installed_version_static is used for sw_version in DeviceInfo.
 
-        self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower().replace(
-            ":", "_"
-        )
+        # Construct unique_id for the switch entity itself
+        self._attr_unique_id = (
+            f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower()
+            .replace(":", "_")
+            .replace(".", "_")
+        )  # Make it a safe string for an entity ID
 
         _LOGGER.debug(
-            "Initializing ServerSwitch for '%s' (Manager: %s), Unique ID: %s",
-            self._server_name,  # Using self._server_name as description.name might be just "Server Power"
+            "Init ServerSwitch '%s' for server '%s' (Manager ID: %s), UniqueID: %s",
+            description.key,  # Log the key for dev clarity, UI name will be entity_description.name
+            self._server_name,
             self._manager_host_port_id,
             self._attr_unique_id,
         )
 
-        server_device_identifier_value = (
-            f"{self._manager_host_port_id}_{self._server_name}"
-        )
+        # --- Construct configuration_url for the DeviceInfo ---
+        # This URL should point to the BSM manager's UI.
+        config_entry_data = (
+            coordinator.config_entry.data
+        )  # Main config data for the BSM manager
+        bsm_host = config_entry_data[CONF_HOST]
+        bsm_use_ssl = config_entry_data.get(CONF_USE_SSL, False)
 
-        config_data = coordinator.config_entry.data
-        host_val = config_data[CONF_HOST]
-        try:
-            # Ensure port is a clean integer for the URL
-            port_val = int(float(config_data[CONF_PORT]))
-        except (ValueError, TypeError) as e:
-            _LOGGER.error(
-                "Invalid port value '%s' for switch on server '%s', device configuration_url. Defaulting to 0. Error: %s",
-                config_data.get(CONF_PORT),
-                self._server_name,
-                e,
-            )
-            port_val = 0  # Fallback
+        port_from_config = config_entry_data.get(CONF_PORT)  # Safely get, could be None
+        bsm_effective_port: Optional[int] = None
+        display_port_str_for_url = ""  # For constructing the URL part like ":8080"
 
-        protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
-        safe_config_url = f"{protocol}://{host_val}:{port_val}"
-        # --- End of corrected configuration_url construction ---
+        if port_from_config is not None:
+            port_input_str = str(port_from_config).strip()
+            if port_input_str:  # Only process if not empty
+                try:
+                    # Robust parsing: try float then int, to handle "123.0"
+                    port_float = float(port_input_str)
+                    if port_float == int(port_float):  # Check if it's a whole number
+                        port_val_int = int(port_float)
+                        if 1 <= port_val_int <= 65535:  # Validate range
+                            bsm_effective_port = port_val_int
+                        else:
+                            _LOGGER.warning(
+                                "Switch DeviceInfo for server '%s': Invalid BSM manager port range '%s' from config.",
+                                self._server_name,
+                                port_input_str,
+                            )
+                    else:
+                        _LOGGER.warning(
+                            "Switch DeviceInfo for server '%s': BSM manager port '%s' from config is not a whole number.",
+                            self._server_name,
+                            port_input_str,
+                        )
+                except ValueError:
+                    _LOGGER.warning(
+                        "Switch DeviceInfo for server '%s': BSM manager port '%s' from config is not a valid number.",
+                        self._server_name,
+                        port_input_str,
+                    )
 
+        if bsm_effective_port is not None:
+            display_port_str_for_url = f":{bsm_effective_port}"
+
+        protocol = "https" if bsm_use_ssl else "http"
+
+        safe_config_url: str
+        if ":" in bsm_host and bsm_effective_port is None:
+            safe_config_url = f"{protocol}://{bsm_host}"
+        else:
+            safe_config_url = f"{protocol}://{bsm_host}{display_port_str_for_url}"
+        # --- End of configuration_url construction ---
+
+        # Define the device for this specific Minecraft server.
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, server_device_identifier_value)},
-            name=f"{self._server_name} ({host_val})",  # Use host_val
+            identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
+            name=f"Minecraft Server: {self._server_name}",  # Use the configured server name
             manufacturer="Bedrock Server Manager",
-            model="Minecraft Bedrock Server",
-            sw_version=self._attr_installed_version_static or "Unknown",
+            model=f"Managed Server ({self._server_name})",
+            # Try to get dynamic version from coordinator, then static, then Unknown
+            sw_version=(
+                self.coordinator.data.get("version") if self.coordinator.data else None
+            )
+            or installed_version_static
+            or "Unknown",
             via_device=manager_identifier,
-            configuration_url=safe_config_url,  # Use the safely constructed URL
+            configuration_url=safe_config_url,
         )
 
     @property

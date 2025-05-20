@@ -23,7 +23,7 @@ from homeassistant.components.persistent_notification import (
 
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from .const import DOMAIN, CONF_USE_SSL, ATTR_INSTALLED_VERSION
-
+from .utils import sanitize_host_port_string
 from pybedrock_server_manager import (
     BedrockServerManagerApi,
     APIError,
@@ -92,7 +92,9 @@ async def async_setup_entry(
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
         api_client = cast(BedrockServerManagerApi, entry_data["api"])
-        manager_identifier = cast(Tuple[str, str], entry_data["manager_identifier"])
+        original_manager_identifier_tuple = cast(
+            Tuple[str, str], entry_data["manager_identifier"]
+        )
         manager_coordinator = cast(
             Optional[ManagerDataCoordinator], entry_data.get("manager_coordinator")
         )
@@ -106,12 +108,31 @@ async def async_setup_entry(
         )
         return
 
+    # Sanitize the host-port string part of the manager_identifier
+    original_manager_id_str = original_manager_identifier_tuple[1]
+    sanitized_manager_id_str = sanitize_host_port_string(original_manager_id_str)
+
+    if sanitized_manager_id_str != original_manager_id_str:
+        _LOGGER.info(
+            "Sanitized manager identifier string from '%s' to '%s' for entry %s",
+            original_manager_id_str,
+            sanitized_manager_id_str,
+            entry.entry_id,
+        )
+    # Create a new, sanitized manager_identifier tuple to be used by sensors
+    # The first part of the tuple is typically the DOMAIN.
+    manager_identifier_for_buttons = (
+        original_manager_identifier_tuple[0],
+        sanitized_manager_id_str,
+    )
+
     entities_to_add: List[ButtonEntity] = []
 
     # Setup Manager Buttons
     if manager_coordinator:
         _LOGGER.debug(
-            "Setting up manager-level buttons for BSM: %s", manager_identifier[1]
+            "Setting up manager-level buttons for BSM: %s",
+            manager_identifier_for_buttons[1],
         )
         for description in MANAGER_BUTTON_DESCRIPTIONS:
             entities_to_add.append(
@@ -119,7 +140,7 @@ async def async_setup_entry(
                     config_entry_id=entry.entry_id,  # Pass config_entry_id for API client retrieval
                     api_client=api_client,  # Can pass directly or retrieve via hass.data
                     description=description,
-                    manager_identifier=manager_identifier,
+                    manager_identifier=manager_identifier_for_buttons,
                     manager_coordinator=manager_coordinator,  # Pass for potential refresh
                 )
             )
@@ -158,7 +179,7 @@ async def async_setup_entry(
                         coordinator=coordinator,
                         description=description,
                         server_name=server_name,
-                        manager_identifier=manager_identifier,
+                        manager_identifier=manager_identifier_for_buttons,
                         installed_version_static=installed_version_static,
                     )
                 )
@@ -192,56 +213,117 @@ class MinecraftServerButton(
         self,
         coordinator: MinecraftBedrockCoordinator,
         description: ButtonEntityDescription,
-        server_name: str,
-        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id)
-        installed_version_static: Optional[str],
+        server_name: str,  # This is the key from config flow (e.g., "s1", "survival_world")
+        manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id string)
+        installed_version_static: Optional[str],  # Can be None
     ) -> None:
         """Initialize the server button."""
-        super().__init__(coordinator)
+        super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
-        self._server_name = server_name
-        self._manager_host_port_id = manager_identifier[1]
-        self._attr_installed_version_static = installed_version_static
-
-        self._attr_unique_id = f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower().replace(
-            ":", "_"
+        self._server_name = (
+            server_name  # Store the server name (e.g., "s1", "my_world")
         )
+        self._manager_host_port_id = manager_identifier[1]
+
+        # Construct unique_id for the button entity itself
+        # Uses manager_host_port_id to ensure uniqueness across BSM instances if host/port are part of it.
+        self._attr_unique_id = (
+            f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower()
+            .replace(":", "_")
+            .replace(".", "_")
+        )  # Make it a safe string for an entity ID
+
         _LOGGER.debug(
-            "Init ServerButton '%s' for server '%s' (Manager: %s), UniqueID: %s",
-            description.name,  # Use self.entity_description.name for consistency if _attr_has_entity_name = True
+            "Init ServerButton '%s' for server '%s' (Manager ID: %s), UniqueID: %s",
+            description.name,  # The specific action name like "Restart Server"
             self._server_name,
             self._manager_host_port_id,
             self._attr_unique_id,
         )
 
-        server_device_id_value = f"{self._manager_host_port_id}_{self._server_name}"
+        # --- Construct configuration_url for the DeviceInfo ---
+        # This URL should point to the BSM manager's UI.
+        # We need the BSM manager's host, protocol (http/https), and effective port.
+        # These come from the main config_entry.data, accessed via the coordinator.
+        config_entry_data = coordinator.config_entry.data
+        bsm_host = config_entry_data[CONF_HOST]  # Hostname/IP of the BSM manager
+        bsm_use_ssl = config_entry_data.get(
+            CONF_USE_SSL, False
+        )  # SSL preference for BSM manager
 
-        config_data = coordinator.config_entry.data
-        host_val = config_data[CONF_HOST]
-        try:
-            port_val = int(float(config_data[CONF_PORT]))
-        except (ValueError, TypeError) as e:
-            _LOGGER.error(
-                "Invalid port value '%s' for button on server '%s' device configuration_url. Defaulting to 0. Error: %s",
-                config_data.get(CONF_PORT),
-                self._server_name,
-                e,
-            )
-            port_val = 0  # Fallback port
+        port_from_config = config_entry_data.get(
+            CONF_PORT
+        )  # Safely get, could be None or empty string
+        bsm_effective_port: Optional[int] = None
+        display_port_str_for_url = ""  # For constructing the URL part like ":8080"
 
-        protocol = "https" if config_data.get(CONF_USE_SSL, False) else "http"
-        safe_config_url = (
-            f"{protocol}://{host_val}:{port_val}"  # Use the cleaned port_val
-        )
+        if port_from_config is not None:  # Only process if CONF_PORT was in entry.data
+            port_input_str = str(port_from_config).strip()
+            if port_input_str:  # Only process if not an empty string
+                try:
+                    # Robust parsing: try float then int, to handle "123.0"
+                    port_float = float(port_input_str)
+                    if port_float == int(port_float):  # Check if it's a whole number
+                        port_val_int = int(port_float)
+                        if 1 <= port_val_int <= 65535:  # Validate range
+                            bsm_effective_port = port_val_int
+                        else:
+                            _LOGGER.warning(
+                                "Button DeviceInfo for server '%s': Invalid BSM manager port range '%s' from config.",
+                                self._server_name,
+                                port_input_str,
+                            )
+                    else:
+                        _LOGGER.warning(
+                            "Button DeviceInfo for server '%s': BSM manager port '%s' from config is not a whole number.",
+                            self._server_name,
+                            port_input_str,
+                        )
+                except ValueError:
+                    _LOGGER.warning(
+                        "Button DeviceInfo for server '%s': BSM manager port '%s' from config is not a valid number.",
+                        self._server_name,
+                        port_input_str,
+                    )
 
+        # If bsm_effective_port was successfully parsed and is valid, format it for the URL
+        if bsm_effective_port is not None:
+            display_port_str_for_url = f":{bsm_effective_port}"
+        # If bsm_effective_port is None (due to missing, empty, or invalid port in config),
+        # display_port_str_for_url remains "", so no explicit port is added to the URL.
+
+        protocol = "https" if bsm_use_ssl else "http"
+
+        # Construct the configuration URL, avoiding double port if host already contains one
+        # and no explicit port was effectively determined.
+        safe_config_url: str
+        if ":" in bsm_host and bsm_effective_port is None:
+            # e.g., bsm_host = "example.com:1234", bsm_effective_port = None
+            # URL should be "http(s)://example.com:1234"
+            safe_config_url = f"{protocol}://{bsm_host}"
+        else:
+            # e.g., bsm_host = "example.com", bsm_effective_port = 8080 => "http(s)://example.com:8080"
+            # e.g., bsm_host = "example.com", bsm_effective_port = None => "http(s)://example.com"
+            safe_config_url = f"{protocol}://{bsm_host}{display_port_str_for_url}"
+        # --- End of configuration_url construction ---
+
+        # Define the device for this specific Minecraft server.
+        # It's linked to the main BSM Manager device via `via_device`.
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, server_device_id_value)},
-            name=f"{self._server_name} ({host_val})",  # Use host_val
+            identifiers={
+                (DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")
+            },  # Unique identifier for this server's device
+            name=f"Minecraft Server: {self._server_name}",
             manufacturer="Bedrock Server Manager",
-            model="Minecraft Bedrock Server",
-            sw_version=self._attr_installed_version_static or "Unknown",
-            via_device=manager_identifier,
-            configuration_url=safe_config_url,  # Use the corrected URL
+            model=f"Managed Server ({self._server_name})",
+            # Try to get a dynamic version from coordinator first, then static, then Unknown
+            sw_version=(
+                self.coordinator.data.get("version") if self.coordinator.data else None
+            )
+            or installed_version_static
+            or "Unknown",
+            via_device=manager_identifier,  # Link this server device TO the BSM manager device
+            configuration_url=safe_config_url,  # URL to the BSM manager interface (where this server is managed)
         )
 
     @property
