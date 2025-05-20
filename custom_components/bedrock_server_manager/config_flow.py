@@ -38,7 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Required(CONF_PORT, default=DEFAULT_PORT): selector.NumberSelector(
+        vol.Optional(CONF_PORT, default=DEFAULT_PORT): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1, max=65535, mode=selector.NumberSelectorMode.BOX
             )
