@@ -232,8 +232,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manager_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier_tuple},  # Uses sanitized ID in tuple
-        name=f"Bedrock Server Manager @ {manager_host_port_id}",  # Display name can use the sanitized ID
-        manufacturer="Bedrock Server Manager",
+        name=f"BSM @ {manager_host_port_id}",  # Display name can use the sanitized ID
+        manufacturer="DMedina559",
         model=f"{manager_os_type.capitalize() if manager_os_type != 'unknown' else 'Unknown OS'}",
         sw_version=manager_app_version,
         configuration_url=configuration_url_for_device,  # Use the carefully constructed URL

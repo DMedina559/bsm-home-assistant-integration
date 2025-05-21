@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
-from .coordinator import MinecraftBedrockCoordinator
+from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from .const import (
     DOMAIN,
     CONF_USE_SSL,
@@ -55,6 +55,9 @@ async def async_setup_entry(
         original_manager_identifier_tuple = cast(
             Tuple[str, str], entry_data["manager_identifier"]
         )
+        manager_coordinator = cast(
+            Optional[ManagerDataCoordinator], entry_data.get("manager_coordinator")
+        )
     except KeyError as e:
         _LOGGER.error(
             "Switch setup failed for entry %s: Missing expected data (Key: %s). "
@@ -90,6 +93,30 @@ async def async_setup_entry(
     )
 
     switches_to_add: List[MinecraftServerSwitch] = []
+
+    # Get BSM OS Type to pass to server switches
+    bsm_os_type_for_servers: str = "Unknown"  # Default value
+    if (
+        manager_coordinator
+        and manager_coordinator.last_update_success
+        and manager_coordinator.data
+    ):
+        manager_info = manager_coordinator.data.get("info", {})
+        if isinstance(manager_info, dict):
+            bsm_os_type_for_servers = manager_info.get("os_type", "Unknown")
+        _LOGGER.debug(
+            "BSM OS type determined as: %s for entry %s (switch setup)",
+            bsm_os_type_for_servers,
+            entry.title,
+        )
+    else:
+        _LOGGER.warning(
+            "ManagerDataCoordinator for BSM '%s' not available, has no data, or last update failed; "
+            "BSM OS type for server switch devices will default to '%s'.",
+            entry.title,
+            bsm_os_type_for_servers,
+        )
+
     for server_name, server_data_dict in servers_config_data.items():
         coordinator = cast(
             Optional[MinecraftBedrockCoordinator], server_data_dict.get("coordinator")
@@ -119,6 +146,7 @@ async def async_setup_entry(
                     server_name=server_name,
                     manager_identifier=manager_identifier_for_switches,
                     installed_version_static=installed_version_static,
+                    bsm_os_type=bsm_os_type_for_servers,
                 )
             )
         else:
@@ -156,13 +184,15 @@ class MinecraftServerSwitch(
         installed_version_static: Optional[
             str
         ],  # Can be None, used as fallback for sw_version
+        bsm_os_type: Optional[str],
     ) -> None:
         """Initialize the server switch."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
-        # installed_version_static is used for sw_version in DeviceInfo.
+        self._attr_installed_version_static = installed_version_static
+        self._bsm_os_type = bsm_os_type
 
         # Construct unique_id for the switch entity itself
         self._attr_unique_id = (
@@ -232,12 +262,26 @@ class MinecraftServerSwitch(
             safe_config_url = f"{protocol}://{bsm_host}{display_port_str_for_url}"
         # --- End of configuration_url construction ---
 
+        # Construct the model string
+        base_model_name = "Minecraft Bedrock Server"
+        model_name_with_os = base_model_name
+        uninformative_os_types = ["Unknown", None, ""]
+        if self._bsm_os_type and self._bsm_os_type not in uninformative_os_types:
+            model_name_with_os = f"{base_model_name} ({self._bsm_os_type})"
+        else:
+            _LOGGER.debug(
+                "BSM OS type for server switch device '%s' is '%s' (or uninformative), using base model name: '%s'.",
+                self._server_name,
+                self._bsm_os_type,
+                base_model_name,
+            )
+
         # Define the device for this specific Minecraft server.
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
-            name=f"Minecraft Server: {self._server_name}",  # Use the configured server name
+            name=f"{self._server_name} ({bsm_host}{display_port_str_for_url})",  # Use the configured server name
             manufacturer="Bedrock Server Manager",
-            model=f"Managed Server ({self._server_name})",
+            model=model_name_with_os,
             # Try to get dynamic version from coordinator, then static, then Unknown
             sw_version=(
                 self.coordinator.data.get("version") if self.coordinator.data else None

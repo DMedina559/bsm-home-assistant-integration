@@ -128,6 +128,28 @@ async def async_setup_entry(
 
     entities_to_add: List[ButtonEntity] = []
 
+    bsm_os_type_for_servers: str = "Unknown"  # Default value
+    if (
+        manager_coordinator
+        and manager_coordinator.last_update_success
+        and manager_coordinator.data
+    ):
+        manager_info = manager_coordinator.data.get("info", {})
+        if isinstance(manager_info, dict):
+            bsm_os_type_for_servers = manager_info.get("os_type", "Unknown")
+        _LOGGER.debug(
+            "BSM OS type determined as: %s for entry %s",
+            bsm_os_type_for_servers,
+            entry.title,
+        )
+    else:
+        _LOGGER.warning(
+            "ManagerDataCoordinator for BSM '%s' not available, has no data, or last update failed; "
+            "BSM OS type for server devices will default to '%s'.",
+            entry.title,
+            bsm_os_type_for_servers,
+        )
+
     # Setup Manager Buttons
     if manager_coordinator:
         _LOGGER.debug(
@@ -181,6 +203,7 @@ async def async_setup_entry(
                         server_name=server_name,
                         manager_identifier=manager_identifier_for_buttons,
                         installed_version_static=installed_version_static,
+                        bsm_os_type=bsm_os_type_for_servers,
                     )
                 )
         else:
@@ -216,6 +239,7 @@ class MinecraftServerButton(
         server_name: str,  # This is the key from config flow (e.g., "s1", "survival_world")
         manager_identifier: Tuple[str, str],  # (DOMAIN, manager_host_port_id string)
         installed_version_static: Optional[str],  # Can be None
+        bsm_os_type: Optional[str],
     ) -> None:
         """Initialize the server button."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
@@ -224,6 +248,7 @@ class MinecraftServerButton(
             server_name  # Store the server name (e.g., "s1", "my_world")
         )
         self._manager_host_port_id = manager_identifier[1]
+        self._bsm_os_type = bsm_os_type
 
         # Construct unique_id for the button entity itself
         # Uses manager_host_port_id to ensure uniqueness across BSM instances if host/port are part of it.
@@ -307,15 +332,30 @@ class MinecraftServerButton(
             safe_config_url = f"{protocol}://{bsm_host}{display_port_str_for_url}"
         # --- End of configuration_url construction ---
 
+        # Construct the model string
+        base_model_name = "Minecraft Bedrock Server"
+        model_name_with_os = base_model_name
+        # Define uninformative OS types that shouldn't alter the base model name
+        uninformative_os_types = ["Unknown", None, ""]
+        if self._bsm_os_type and self._bsm_os_type not in uninformative_os_types:
+            model_name_with_os = f"{base_model_name} ({self._bsm_os_type})"
+        else:
+            _LOGGER.debug(
+                "BSM OS type for server '%s' is '%s' (or uninformative), using base model name: '%s'.",
+                server_name,
+                self._bsm_os_type,
+                base_model_name,
+            )
+
         # Define the device for this specific Minecraft server.
         # It's linked to the main BSM Manager device via `via_device`.
         self._attr_device_info = dr.DeviceInfo(
             identifiers={
                 (DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")
             },  # Unique identifier for this server's device
-            name=f"Minecraft Server: {self._server_name}",
+            name=f"{self._server_name} ({bsm_host}{display_port_str_for_url})",
             manufacturer="Bedrock Server Manager",
-            model=f"Managed Server ({self._server_name})",
+            model=model_name_with_os,
             # Try to get a dynamic version from coordinator first, then static, then Unknown
             sw_version=(
                 self.coordinator.data.get("version") if self.coordinator.data else None

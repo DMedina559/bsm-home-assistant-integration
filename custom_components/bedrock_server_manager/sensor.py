@@ -183,7 +183,12 @@ async def async_setup_entry(
 
     entities_to_add: List[SensorEntity] = []
 
+    bsm_os_type_for_servers: str = "Unknown"  # Default value
     if manager_coordinator.last_update_success and manager_coordinator.data:
+        manager_info = manager_coordinator.data.get("info", {})
+        if isinstance(manager_info, dict):
+            bsm_os_type_for_servers = manager_info.get("os_type", "Unknown")
+
         for description in MANAGER_SENSOR_DESCRIPTIONS:
             entities_to_add.append(
                 ManagerInfoSensor(
@@ -195,8 +200,9 @@ async def async_setup_entry(
     else:
         _LOGGER.warning(
             "ManagerDataCoordinator for BSM '%s' has no data or last update failed; "
-            "skipping manager-level sensors.",
+            "skipping manager-level sensors. BSM OS type for server devices will be '%s'.",
             entry.title,
+            bsm_os_type_for_servers,
         )
 
     if not servers_config_data:
@@ -277,6 +283,7 @@ async def async_setup_entry(
                         manager_identifier=manager_identifier_for_sensors,
                         installed_version_static=version_static,
                         world_name_static=world_name_static,
+                        bsm_os_type=bsm_os_type_for_servers,
                     )
                 )
         else:
@@ -311,11 +318,13 @@ class MinecraftServerSensor(
         manager_identifier: Tuple[str, str],
         installed_version_static: Optional[str],
         world_name_static: Optional[str],
+        bsm_os_type: Optional[str],
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
+        self._bsm_os_type = bsm_os_type
 
         # Explicitly log what's being set
         _LOGGER.debug(
@@ -383,11 +392,26 @@ class MinecraftServerSensor(
         if self.coordinator.data:
             dynamic_sw_version = self.coordinator.data.get("version")
 
+        # Construct the model string
+        base_model_name = "Minecraft Bedrock Server"
+        model_name_with_os = base_model_name
+        # Define uninformative OS types that shouldn't alter the base model name
+        uninformative_os_types = ["Unknown", None, ""]
+        if self._bsm_os_type and self._bsm_os_type not in uninformative_os_types:
+            model_name_with_os = f"{base_model_name} ({self._bsm_os_type})"
+        else:
+            _LOGGER.debug(
+                "BSM OS type for server '%s' is '%s' (or uninformative), using base model name: '%s'.",
+                server_name,
+                self._bsm_os_type,
+                base_model_name,
+            )
+
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
-            name=f"Minecraft Server: {self._server_name}",
+            name=f"{self._server_name} ({bsm_host}{display_port_str_for_url})",
             manufacturer="Bedrock Server Manager",
-            model=f"Managed Server ({self._server_name})",
+            model=model_name_with_os,
             sw_version=dynamic_sw_version
             or self._installed_version_static
             or "Unknown",
