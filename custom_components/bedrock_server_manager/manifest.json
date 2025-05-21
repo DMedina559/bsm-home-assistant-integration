@@ -17,7 +17,7 @@
     "pybedrock_server_manager"
   ],
   "requirements": [
-    "pybedrock_server_manager>=0.4.0,<0.5.0"
+    "pybedrock_server_manager>=0.5.0,<0.6.0"
   ],
-  "version": "0.10.0"
+  "version": "0.11.0"
 }
