@@ -30,7 +30,7 @@ from .const import (
     DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
 )
 
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     APIError,
     AuthError,

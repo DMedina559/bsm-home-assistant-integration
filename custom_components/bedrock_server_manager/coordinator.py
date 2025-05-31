@@ -13,7 +13,7 @@ from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
 )  # Standard HA exception for auth issues
 
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     APIError,
     AuthError,
@@ -68,7 +68,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "properties": {},  # from /read_properties
             "server_permissions": [],  # from /permissions_data
             "world_backups": [],  # from /backups/list/world
-            "config_backups": [],  # from /backups/list/config
+            "allowlist_backups": [],  # from /backups/list/allowlist
+            "permissions_backups": [],  # from /backups/list/permissions
+            "properties_backups": [],  # from /backups/list/properties
         }
 
         try:
@@ -80,7 +82,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_get_server_properties(self.server_name),
                     self.api.async_get_server_permissions_data(self.server_name),
                     self.api.async_list_server_backups(self.server_name, "world"),
-                    self.api.async_list_server_backups(self.server_name, "config"),
+                    self.api.async_list_server_backups(self.server_name, "allowlist"),
+                    self.api.async_list_server_backups(self.server_name, "permissions"),
+                    self.api.async_list_server_backups(self.server_name, "properties"),
                     return_exceptions=True,  # Catch exceptions from individual calls
                 )
 
@@ -90,7 +94,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 properties_result,
                 permissions_result,
                 world_backups_result,
-                config_backups_result,
+                allowlist_backups_result,
+                permissions_backups_result,
+                properties_backups_result,
             ) = results
 
             fetch_errors_details = []  # To collect detailed error messages
@@ -199,21 +205,55 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"WorldBackups: Invalid response ({world_backups_result})"
                 )
 
-            # Config Backups
-            if isinstance(config_backups_result, Exception):
+            # Allowlist Backups
+            if isinstance(allowlist_backups_result, Exception):
                 fetch_errors_details.append(
-                    f"ConfigBackups: {type(config_backups_result).__name__} ({config_backups_result})"
+                    f"ConfigBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
                 )
             elif (
-                isinstance(config_backups_result, dict)
-                and config_backups_result.get("status") == "success"
+                isinstance(allowlist_backups_result, dict)
+                and allowlist_backups_result.get("status") == "success"
             ):
-                coordinator_data["config_backups"] = config_backups_result.get(
+                coordinator_data["allowlist_backups"] = allowlist_backups_result.get(
                     "backups", []
                 )
             else:
                 fetch_errors_details.append(
-                    f"ConfigBackups: Invalid response ({config_backups_result})"
+                    f"ConfigBackups: Invalid response ({allowlist_backups_result})"
+                )
+
+            # Permissions Backups
+            if isinstance(permissions_backups_result, Exception):
+                fetch_errors_details.append(
+                    f"ConfigBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
+                )
+            elif (
+                isinstance(permissions_backups_result, dict)
+                and permissions_backups_result.get("status") == "success"
+            ):
+                coordinator_data["permissions_backups"] = permissions_backups_result.get(
+                    "backups", []
+                )
+            else:
+                fetch_errors_details.append(
+                    f"ConfigBackups: Invalid response ({permissions_backups_result})"
+                )
+
+            # Properties Backups
+            if isinstance(properties_backups_result, Exception):
+                fetch_errors_details.append(
+                    f"ConfigBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
+                )
+            elif (
+                isinstance(properties_backups_result, dict)
+                and properties_backups_result.get("status") == "success"
+            ):
+                coordinator_data["properties_backups"] = properties_backups_result.get(
+                    "backups", []
+                )
+            else:
+                fetch_errors_details.append(
+                    f"ConfigBackups: Invalid response ({properties_backups_result})"
                 )
 
             if fetch_errors_details:

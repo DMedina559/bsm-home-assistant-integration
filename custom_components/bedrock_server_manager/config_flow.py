@@ -21,7 +21,7 @@ from .const import (
     CONF_VERIFY_SSL,
 )
 
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     APIError,
     AuthError,
@@ -237,7 +237,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
         # If api_client has a .close() that is safe to call (e.g. idempotent or handles shared session), it's okay.
         if api_client and hasattr(api_client, "close"):
             # Assuming api_client.close() is safe for shared sessions or no-op if not needed.
-            await api_client.close()  # pybedrock_server_manager ClientBase.close() is safe
+            await api_client.close()  # bsm_api_client ClientBase.close() is safe
             _LOGGER.debug(
                 "Temporary API client for validation (using HA session) was closed (if applicable)."
             )

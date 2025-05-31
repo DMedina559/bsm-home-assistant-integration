@@ -24,7 +24,7 @@ from homeassistant.components.persistent_notification import (
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from .const import DOMAIN, CONF_USE_SSL, ATTR_INSTALLED_VERSION
 from .utils import sanitize_host_port_string
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     APIError,
     AuthError,

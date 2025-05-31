@@ -95,7 +95,9 @@ restore_backup:
         select:
           options:
             - "world"
-            - "config"
+            - "allowlist"
+            - "permissions" 
+            - "properties"
           mode: dropdown
     backup_file:
       name: Backup Filename

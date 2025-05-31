@@ -33,7 +33,9 @@ from .const import (
     ATTR_INSTALLED_VERSION,
     ATTR_ALLOWLISTED_PLAYERS,
     ATTR_SERVER_PROPERTIES,
-    ATTR_CONFIG_BACKUPS_LIST,
+    ATTR_ALLOWLIST_BACKUPS_LIST,
+    ATTR_PERMISSIONS_BACKUPS_LIST,
+    ATTR_PROPERTIES_BACKUPS_LIST,
     ATTR_WORLD_BACKUPS_LIST,
     ATTR_AVAILABLE_ADDONS_LIST,
     ATTR_AVAILABLE_WORLDS_LIST,
@@ -41,7 +43,9 @@ from .const import (
     KEY_LEVEL_NAME,
     KEY_ALLOWLIST_COUNT,
     KEY_SERVER_PERMISSIONS_COUNT,
-    KEY_CONFIG_BACKUPS_COUNT,
+    KEY_ALLOWLIST_BACKUPS_COUNT,
+    KEY_PROPERTIES_BACKUPS_COUNT,
+    KEY_PERMISSIONS_BACKUPS_COUNT,
     KEY_WORLD_BACKUPS_COUNT,
     KEY_AVAILABLE_ADDONS_COUNT,
     KEY_AVAILABLE_WORLDS_COUNT,
@@ -51,7 +55,7 @@ from .const import (
     ATTR_MANAGER_OS_TYPE,
 )
 
-from pybedrock_server_manager import BedrockServerManagerApi
+from bsm_api_client import BedrockServerManagerApi, ApiError
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,8 +95,22 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
-        key=KEY_CONFIG_BACKUPS_COUNT,
-        name="Config Backups",
+        key=KEY_ALLOWLIST_BACKUPS_COUNT,
+        name="Allowlist Backups",
+        icon="mdi:file-settings-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
+    SensorEntityDescription(
+        key=KEY_PROPERTIES_BACKUPS_COUNT,
+        name="Properties Backups",
+        icon="mdi:file-settings-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+    ),
+    SensorEntityDescription(
+        key=KEY_PERMISSIONS_BACKUPS_COUNT,
+        name="Permissions Backups",
         icon="mdi:file-settings-outline",
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
@@ -447,8 +465,12 @@ class MinecraftServerSensor(
             return len(data.get("server_permissions", []))
         if key == KEY_WORLD_BACKUPS_COUNT:
             return len(data.get("world_backups", []))
-        if key == KEY_CONFIG_BACKUPS_COUNT:
-            return len(data.get("config_backups", []))
+        if key == KEY_ALLOWLIST_BACKUPS_COUNT:
+            return len(data.get("allowlist_backups", []))
+        if key == KEY_PERMISSIONS_BACKUPS_COUNT:
+            return len(data.get("permissions_backups", []))
+        if key == KEY_PROPERTIES_BACKUPS_COUNT:
+            return len(data.get("properties_backups", []))
         if key == KEY_ALLOWLIST_COUNT:
             return len(data.get("allowlist", []))
         if key == KEY_LEVEL_NAME:
@@ -487,8 +509,14 @@ class MinecraftServerSensor(
             attrs[ATTR_SERVER_PERMISSIONS_LIST] = data.get("server_permissions", [])
         elif key == KEY_WORLD_BACKUPS_COUNT:
             attrs[ATTR_WORLD_BACKUPS_LIST] = data.get("world_backups", [])
-        elif key == KEY_CONFIG_BACKUPS_COUNT:
-            attrs[ATTR_CONFIG_BACKUPS_LIST] = data.get("config_backups", [])
+        elif key == KEY_ALLOWLIST_BACKUPS_COUNT:
+            attrs[ATTR_ALLOWLIST_BACKUPS_LIST] = data.get("allowlist_backups", [])
+        elif key == KEY_PROPERTIES_BACKUPS_COUNT:
+            attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
+        elif key == KEY_PERMISSIONS_BACKUPS_COUNT:
+            attrs[ATTR_PERMISSIONS_BACKUPS_LIST] = data.get("permissions_backups", [])
+        elif key == KEY_PROPERTIES_BACKUPS_COUNT:
+            attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
         elif key == KEY_ALLOWLIST_COUNT:
             attrs[ATTR_ALLOWLISTED_PLAYERS] = [
                 p.get("name") for p in data.get("allowlist", []) if isinstance(p, dict)

@@ -2,7 +2,10 @@
 """Constants for the Bedrock Server Manager integration."""
 
 import json
+import logging
 from pathlib import Path
+
+_LOGGER = logging.getLogger(__name__)
 
 # --- Frontend Card URL Base ---
 FRONTEND_URL_BASE = "/bsm_cards"  # Used by frontend.py to register JS modules
@@ -50,7 +53,9 @@ ATTR_SERVER_PROPERTIES = "server_properties"  # Full dict from server.properties
 ATTR_GLOBAL_PLAYERS_LIST = "global_players_list"  # Full list of known players
 ATTR_SERVER_PERMISSIONS_LIST = "server_permissions"  # Full list from permissions.json
 ATTR_WORLD_BACKUPS_LIST = "world_backups_list"
-ATTR_CONFIG_BACKUPS_LIST = "config_backups_list"
+ATTR_ALLOWLIST_BACKUPS_LIST = "allowlist_backups_list"
+ATTR_PERMISSIONS_BACKUPS_LIST = "permissions_backups_list"
+ATTR_PROPERTIES_BACKUPS_LIST = "properties_backups_list"
 ATTR_AVAILABLE_WORLDS_LIST = "available_worlds_list"  # From BSM content dir
 ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"  # From BSM content dir
 
@@ -60,7 +65,9 @@ ATTR_MANAGER_OS_TYPE = "bsm_host"
 KEY_GLOBAL_PLAYERS_COUNT = "global_players_count"
 KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
 KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
-KEY_CONFIG_BACKUPS_COUNT = "config_backups_count"
+KEY_ALLOWLIST_BACKUPS_COUNT = "allowlist_backups_count"
+KEY_PROPERTIES_BACKUPS_COUNT = "properties_backups_count"
+KEY_PERMISSIONS_BACKUPS_COUNT = "permissions_backups_count"
 KEY_AVAILABLE_WORLDS_COUNT = "available_worlds_count"
 KEY_AVAILABLE_ADDONS_COUNT = "available_addons_count"
 KEY_LEVEL_NAME = "level_name"

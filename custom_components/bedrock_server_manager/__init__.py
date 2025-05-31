@@ -20,7 +20,7 @@ from homeassistant.exceptions import (
     ConfigEntryNotReady,
 )
 
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     AuthError,
     CannotConnectError,

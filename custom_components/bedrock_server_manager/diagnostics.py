@@ -33,7 +33,7 @@ from .coordinator import (
     ManagerDataCoordinator,
 )
 
-from pybedrock_server_manager import BedrockServerManagerApi  # For type hinting
+from bsm_api_client import BedrockServerManagerApi  # For type hinting
 
 _LOGGER = logging.getLogger(__name__)
 

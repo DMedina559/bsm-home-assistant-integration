@@ -56,7 +56,7 @@ from .const import (
     FIELD_AUTOSTART,
 )
 
-from pybedrock_server_manager import (
+from bsm_api_client import (
     BedrockServerManagerApi,
     APIError,
     AuthError,
@@ -99,7 +99,7 @@ TRIGGER_BACKUP_SERVICE_SCHEMA = vol.Schema(
 )
 RESTORE_BACKUP_SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(FIELD_RESTORE_TYPE): vol.In(["world", "config"]),
+        vol.Required(FIELD_RESTORE_TYPE): vol.In(["world", "allowlist", "properties", "permissions"]),
         vol.Required(FIELD_BACKUP_FILE): cv.string,
         **TARGETING_SCHEMA_FIELDS,
     }
