@@ -55,7 +55,7 @@ from .const import (
     ATTR_MANAGER_OS_TYPE,
 )
 
-from bsm_api_client import BedrockServerManagerApi, ApiError
+from bsm_api_client import BedrockServerManagerApi
 
 
 _LOGGER = logging.getLogger(__name__)
