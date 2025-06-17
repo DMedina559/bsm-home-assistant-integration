@@ -227,6 +227,23 @@ set_permissions:
       selector:
         object: {}
 
+reset_world:
+  name: Delete Minecraft World
+  description: "Permanently deletes ALL world data for the target server instance(s). THIS ACTION IS IRREVERSIBLE. USE WITH EXTREME CAUTION!"
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    confirm_deletion:
+      name: Confirm Deletion
+      description: "MUST be set to 'true' to confirm you understand this action is irreversible and will permanently delete all selected server world data."
+      required: true
+      selector:
+        boolean: {}
+
 update_properties:
   name: Update Server Properties
   description: "Updates specified server properties (e.g., 'max-players', 'difficulty') for the target server(s). Only properties allowed by the BSM API can be changed."

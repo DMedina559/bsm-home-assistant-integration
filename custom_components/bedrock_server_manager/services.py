@@ -31,6 +31,7 @@ from .const import (
     SERVICE_ADD_TO_ALLOWLIST,
     SERVICE_REMOVE_FROM_ALLOWLIST,
     SERVICE_SET_PERMISSIONS,
+    SERVICE_RESET_WORLD,
     SERVICE_UPDATE_PROPERTIES,
     SERVICE_INSTALL_WORLD,
     SERVICE_INSTALL_ADDON,
@@ -99,7 +100,9 @@ TRIGGER_BACKUP_SERVICE_SCHEMA = vol.Schema(
 )
 RESTORE_BACKUP_SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(FIELD_RESTORE_TYPE): vol.In(["world", "allowlist", "properties", "permissions"]),
+        vol.Required(FIELD_RESTORE_TYPE): vol.In(
+            ["world", "allowlist", "properties", "permissions"]
+        ),
         vol.Required(FIELD_BACKUP_FILE): cv.string,
         **TARGETING_SCHEMA_FIELDS,
     }
@@ -248,7 +251,7 @@ async def _base_api_call_handler(
         ) from err
 
 
-# Simplified handlers
+# --- Handlers ---
 async def _async_handle_send_command(
     api: BedrockServerManagerApi, server: str, command: str
 ):
@@ -394,7 +397,7 @@ async def _async_handle_install_server(
             raise ServiceValidationError(
                 description=msg,
                 translation_domain=DOMAIN,
-                translation_key="service_install_server_confirm_needed",  # Updated key
+                translation_key="service_install_server_confirm_needed",
                 translation_placeholders={"server_name": server_name_to_install},
             )
         _LOGGER.info(
@@ -511,6 +514,63 @@ async def _async_handle_delete_server(
         _LOGGER.exception("Delete server %s: Unexpected error.", log_context)
         raise HomeAssistantError(
             f"Delete server {log_context}: Unexpected error - {type(err).__name__}"
+        ) from err
+
+
+async def _async_handle_reset_world(
+    hass: HomeAssistant,
+    api: BedrockServerManagerApi,
+    server_to_delete: str,
+    manager_host_port_id: str,
+):
+    log_context = f"for server '{server_to_delete}' on manager '{manager_host_port_id}'"
+    _LOGGER.critical("EXECUTING IRREVERSIBLE WORLD RESET %s", log_context)
+
+    try:
+        response = await api.async_reset_server_world(server_name=server_to_delete)
+        if response and response.get("status") == "success":
+
+            return {
+                "status": "success",
+                "message": response.get("message"),
+            }
+        else:
+            msg = (
+                f"Manager API did not confirm reset {log_context}. Response: {response}"
+            )
+            _LOGGER.error(msg)
+            raise HomeAssistantError(msg)
+    except (
+        AuthError,
+        CannotConnectError,
+        APIError,
+        ValueError,
+        InvalidInputError,
+    ) as err:
+        error_prefix = f"World reset {log_context}"
+        err_msg = (
+            err.api_message
+            if hasattr(err, "api_message") and err.api_message
+            else str(err)
+        )
+        status_code_msg = (
+            f"(Status: {err.status_code})"
+            if hasattr(err, "status_code") and err.status_code
+            else ""
+        )
+        full_error_msg = (
+            f"{error_prefix}: {type(err).__name__} {status_code_msg} - {err_msg}"
+        )
+        _LOGGER.error(full_error_msg)
+        if isinstance(
+            err, (ValueError, InvalidInputError)
+        ):  # Could be client-side validation if any was added to delete_server
+            raise ServiceValidationError(description=full_error_msg) from err
+        raise HomeAssistantError(full_error_msg) from err
+    except Exception as err:
+        _LOGGER.exception("World reset %s: Unexpected error.", log_context)
+        raise HomeAssistantError(
+            f"World reset {log_context}: Unexpected error - {type(err).__name__}"
         ) from err
 
 
@@ -1109,6 +1169,133 @@ async def async_handle_set_permissions_service(
 ):
     await _execute_targeted_service(
         service, hass, _async_handle_set_permissions, service.data[FIELD_PERMISSIONS]
+    )
+
+
+async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssistant):
+    _LOGGER.warning(
+        "Executing reset_world service call. User confirmation was: %s",
+        service.data[FIELD_CONFIRM_DELETE],
+    )
+
+    try:
+        resolved_targets = await _resolve_server_targets(service, hass)
+    except (HomeAssistantError, ServiceValidationError) as e:
+        _LOGGER.error("Failed to resolve targets for reset_world service: %s", e)
+        raise
+
+    tasks = []
+    processed_targets_for_notification: List[Dict[str, Any]] = []
+
+    for config_entry_id, server_name_to_delete in resolved_targets.items():
+        try:
+            entry_data = hass.data[DOMAIN][config_entry_id]
+            api_client: BedrockServerManagerApi = entry_data["api"]
+            manager_host_port_id = entry_data["manager_identifier"][1]
+
+            tasks.append(
+                _async_handle_reset_world(
+                    hass, api_client, server_name_to_delete, manager_host_port_id
+                )
+            )
+            processed_targets_for_notification.append(
+                {
+                    "server_name": server_name_to_delete,
+                    "manager_id": manager_host_port_id,
+                    "config_entry_id": config_entry_id,
+                }
+            )
+        except KeyError:
+            _LOGGER.error(
+                "Data missing for config entry %s (server %s) for reset_world service. Skipping.",
+                config_entry_id,
+                server_name_to_delete,
+            )
+            processed_targets_for_notification.append(
+                {
+                    "server_name": server_name_to_delete,
+                    "error_queuing": "Missing entry data",
+                    "manager_id": "Unknown",
+                }
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Error queueing reset_world for server %s (entry %s)",
+                server_name_to_delete,
+                config_entry_id,
+            )
+            processed_targets_for_notification.append(
+                {
+                    "server_name": server_name_to_delete,
+                    "error_queuing": "Exception during queueing",
+                    "manager_id": "Unknown",
+                }
+            )
+
+    if not tasks and resolved_targets:
+        async_create(
+            hass,
+            "Could not queue reset for any targeted servers due to setup issues. Check logs.",
+            "Minecraft Server Reset Problem",
+            f"bsm_delete_{service.context.id}_queue_fail",
+        )
+        return
+    if not tasks:
+        return
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    success_messages: List[str] = []
+    failure_messages: List[str] = []
+
+    for i, result_or_exc in enumerate(results):
+        target_info = processed_targets_for_notification[i]
+        sname = target_info["server_name"]
+
+        if target_info.get("error_queuing"):
+            failure_messages.append(
+                f"'{sname}': Failed to queue for deletion ({target_info['error_queuing']})."
+            )
+            continue
+
+        if isinstance(result_or_exc, Exception):
+            err_msg = (
+                result_or_exc.args[0] if result_or_exc.args else str(result_or_exc)
+            )
+            failure_messages.append(
+                f"'{sname}': Failed ({type(result_or_exc).__name__} - {err_msg})."
+            )
+            # Error already logged by _async_handle_delete_server or _base_api_call_handler
+        elif (
+            isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
+        ):
+            msg = f"'{sname}': API reset successful."
+            if result_or_exc.get("ha_device_removed"):
+                msg += " HA device removed."
+            else:
+                msg += " HA device not found or not removed from HA."
+            success_messages.append(msg)
+        else:
+            failure_messages.append(
+                f"'{sname}': API deletion status unclear or failed (Result: {result_or_exc})."
+            )
+
+    final_notification_parts = []
+    if success_messages:
+        final_notification_parts.append(f"Successes: {'; '.join(success_messages)}")
+    if failure_messages:
+        final_notification_parts.append(f"Failures: {'; '.join(failure_messages)}")
+
+    if not final_notification_parts:
+        final_notification_parts.append(
+            "No reset actions were completed or status is unclear. Check logs for details."
+        )
+
+    async_create(
+        hass=hass,
+        message=" ".join(final_notification_parts),
+        title="Minecraft Server Reset Results",
+        notification_id=f"bsm_delete_results_{service.context.id}",
     )
 
 
