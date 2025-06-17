@@ -24,8 +24,9 @@ from .const import (
     DOMAIN,
     CONF_SERVER_NAMES,
     CONF_MANAGER_SCAN_INTERVAL,
-    CONF_SERVER_SCAN_INTERVAL,  # Defined as CONF_SCAN_INTERVAL in HA const, but can be custom
-    CONF_USE_SSL,  # Assuming this is in your const.py
+    CONF_SERVER_SCAN_INTERVAL,
+    CONF_USE_SSL,
+    CONF_VERIFY_SSL,  # Make sure this is in your const.py
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
 )
@@ -46,17 +47,14 @@ STEP_CREDENTIALS_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): selector.TextSelector(
             selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
         ),
-        # Optionally, if you want to allow changing SSL during credential update
-        # vol.Optional(CONF_USE_SSL): bool,
     }
 )
-# Use CONF_SERVER_SCAN_INTERVAL for clarity if it's a custom constant
 STEP_SERVER_POLLING_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SERVER_SCAN_INTERVAL): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=10,  # Increased min from 5 for realism
-                max=3600,  # 1 hour
+                min=10,
+                max=3600,
                 step=1,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="seconds",
@@ -68,8 +66,8 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_MANAGER_SCAN_INTERVAL): selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=60,  # 1 minute
-                max=86400,  # 24 hours
+                min=60,
+                max=86400,
                 step=10,
                 mode=selector.NumberSelectorMode.BOX,
                 unit_of_measurement="seconds",
@@ -79,51 +77,107 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 )
 
 
+# Helper to get a clean port string (integer string or empty string)
+# This logic is similar to _clean_port_string_component in config_flow.py
+# Consider moving to a shared utils.py if used in many places.
+def _get_cleaned_port_str(port_input: Any) -> str:
+    """Returns a clean integer string for a port, or an empty string."""
+    if port_input is None:
+        return ""
+    port_str = str(port_input).strip()
+    if not port_str:
+        return ""
+    try:
+        port_float = float(port_str)
+        if port_float == int(port_float):
+            port_int = int(port_float)
+            # No range validation here, as it's for display/ID string representation
+            return str(port_int)
+        _LOGGER.debug(
+            "Port input '%s' is a non-whole float, treating as no port for string representation in options flow.",
+            port_str,
+        )
+        return (
+            ""  # Or return port_str if non-whole floats are acceptable in IDs/display
+        )
+    except ValueError:
+        _LOGGER.debug(
+            "Port input '%s' is not a valid number, treating as no port for string representation in options flow.",
+            port_str,
+        )
+        return ""  # Or return port_str if non-numeric strings are acceptable
+
+
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Bedrock Server Manager options."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize BSM options flow."""
         self.config_entry = config_entry
-        self._discovered_servers: Optional[List[str]] = (
-            None  # Store fetched server names
-        )
-        # Store a short-lived API client instance if needed across steps within this flow instance
+        self._discovered_servers: Optional[List[str]] = None
         self._api_client_instance: Optional[BedrockServerManagerApi] = None
 
     async def _get_api_client(
         self, data_override: Optional[Dict[str, Any]] = None
     ) -> BedrockServerManagerApi:
         """Get an API client instance, potentially with overridden data for validation."""
-        # Use existing instance if available and no override, otherwise create new
         if self._api_client_instance and not data_override:
-            # Check if credentials match, if they could have changed (not typical in options flow for this)
-            # For simplicity, we might just always create a new one if data_override is present.
-            pass  # Consider if re-using is safe or always create new with overrides
+            # Consider if re-using is safe or always create new with overrides
+            pass
 
-        # Effective data combines current entry data with any overrides
         current_data = self.config_entry.data
         effective_data = {**current_data, **(data_override or {})}
 
-        host = effective_data[CONF_HOST]
-        port = int(effective_data[CONF_PORT])
-        username = effective_data[CONF_USERNAME]
-        password = effective_data[CONF_PASSWORD]
+        host = effective_data[CONF_HOST]  # Assumed to always exist
+
+        # --- Handle optional port ---
+        port_input = effective_data.get(CONF_PORT)  # Get value, could be None
+        api_client_port: Optional[int] = None
+        if port_input is not None:
+            port_input_str = str(port_input).strip()
+            if port_input_str:
+                try:
+                    port_float = float(port_input_str)
+                    if port_float == int(port_float):  # Check if it's a whole number
+                        port_val = int(port_float)
+                        if 1 <= port_val <= 65535:
+                            api_client_port = port_val
+                        else:
+                            _LOGGER.warning(
+                                "Port %s from effective_data is out of valid range (1-65535) in options flow. "
+                                "Treating as if no port specified for API client.",
+                                port_val,
+                            )
+                    else:  # Is a float, but not a whole number (e.g. 123.5)
+                        _LOGGER.warning(
+                            "Non-integer port value '%s' from effective_data in options flow. "
+                            "Treating as if no port specified for API client.",
+                            port_input_str,
+                        )
+                except (ValueError, TypeError):  # float() or int() conversion failed
+                    _LOGGER.warning(
+                        "Invalid port format '%s' from effective_data in options flow. "
+                        "Treating as if no port specified for API client.",
+                        port_input_str,
+                    )
+        # --- End handle optional port ---
+
+        username = effective_data[CONF_USERNAME]  # Assumed to always exist
+        password = effective_data[CONF_PASSWORD]  # Assumed to always exist
         use_ssl = effective_data.get(CONF_USE_SSL, False)
+        verify_ssl = effective_data.get(CONF_VERIFY_SSL, True)  # Use verify_ssl
 
         # Always create a new session for short-lived validation/option tasks
-        # to avoid issues with closed sessions if the main integration's session is closed.
-        session = async_get_clientsession(self.hass)
+        session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
 
-        # Store the created client if it's for general use in this flow instance
-        # If only for one-off validation, no need to store on self.
         api_client = BedrockServerManagerApi(
             host=host,
-            port=port,
+            port=api_client_port,  # Pass the processed integer port or None
             username=username,
             password=password,
             session=session,
             use_ssl=use_ssl,
+            verify_ssl=verify_ssl,  # Pass to API client if it supports/needs it
         )
         if not data_override:  # Store if it's using the main config for multiple steps
             self._api_client_instance = api_client
@@ -135,11 +189,25 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             await self._api_client_instance.close()
             self._api_client_instance = None
 
+    def _get_manager_display_name(self) -> str:
+        """Helper to get a display string for the manager (host or host:port)."""
+        host_val = self.config_entry.data.get(CONF_HOST, "Unknown BSM Host")
+        port_input = self.config_entry.data.get(
+            CONF_PORT
+        )  # This is the original value (None, int, float, str)
+        cleaned_port_str = _get_cleaned_port_str(
+            port_input
+        )  # Get a display-friendly string
+
+        if cleaned_port_str:
+            return f"{host_val}:{cleaned_port_str}"
+        return host_val
+
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
         """Manage the options menu."""
-        manager_host = self.config_entry.data.get(CONF_HOST, "Unknown BSM Host")
+        manager_display_name = self._get_manager_display_name()
         return self.async_show_menu(
             step_id="init",
             menu_options=[
@@ -148,7 +216,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 "update_server_interval",
                 "update_manager_interval",
             ],
-            description_placeholders={"host": manager_host},
+            description_placeholders={"host": manager_display_name},
         )
 
     async def async_step_update_credentials(
@@ -157,13 +225,17 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle updating credentials."""
         errors: Dict[str, str] = {}
         description_placeholders: Optional[Dict[str, str]] = None
+        manager_display_name = self._get_manager_display_name()
 
         if user_input is not None:
-            # Create a temporary data dict for validation, including existing host/port/ssl
+            # Create a temporary data dict for validation, including existing host/port/ssl/verify_ssl
             validation_data = {
                 CONF_HOST: self.config_entry.data[CONF_HOST],
-                CONF_PORT: self.config_entry.data[CONF_PORT],
+                CONF_PORT: self.config_entry.data.get(CONF_PORT),  # Port might be None
                 CONF_USE_SSL: self.config_entry.data.get(CONF_USE_SSL, False),
+                CONF_VERIFY_SSL: self.config_entry.data.get(
+                    CONF_VERIFY_SSL, True
+                ),  # Add verify_ssl
                 CONF_USERNAME: user_input[CONF_USERNAME],
                 CONF_PASSWORD: user_input[CONF_PASSWORD],
             }
@@ -172,7 +244,6 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 temp_api_client = await self._get_api_client(
                     data_override=validation_data
                 )
-                # authenticate() raises AuthError or other connection errors on failure
                 await temp_api_client.authenticate()
                 _LOGGER.info(
                     "New credentials validated successfully for BSM: %s",
@@ -183,7 +254,6 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=new_data
                 )
-                # Abort to close the flow and indicate success. HA will reload the entry.
                 return self.async_abort(reason="credentials_updated")
             except AuthError as err:
                 _LOGGER.warning(
@@ -205,15 +275,13 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 description_placeholders = {
                     "error_details": err.args[0] if err.args else str(err)
                 }
-            except APIError as err:  # Catch other API errors
+            except APIError as err:
                 _LOGGER.error(
                     "API error validating new credentials for BSM %s: %s",
                     self.config_entry.title,
                     err.api_message or err,
                 )
-                errors["base"] = (
-                    "api_error"  # Or a more generic key like "unknown_error"
-                )
+                errors["base"] = "api_error"
                 description_placeholders = {
                     "error_details": err.api_message or str(err)
                 }
@@ -228,13 +296,11 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 if temp_api_client:
                     await temp_api_client.close()
 
-        # Show form
         current_data = self.config_entry.data
         schema_with_suggestions = self.add_suggested_values_to_schema(
             STEP_CREDENTIALS_SCHEMA,
             suggested_values={
                 CONF_USERNAME: current_data.get(CONF_USERNAME, ""),
-                # Do not pre-fill password
             },
         )
         return self.async_show_form(
@@ -242,7 +308,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=schema_with_suggestions,
             errors=errors,
             description_placeholders=description_placeholders
-            or {"host": current_data.get(CONF_HOST)},
+            or {"host": manager_display_name},
         )
 
     async def async_step_select_servers(
@@ -251,11 +317,13 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         """Handle server selection."""
         errors: Dict[str, str] = {}
         description_placeholders: Optional[Dict[str, str]] = None
+        manager_display_name = self._get_manager_display_name()
 
         # Fetch server list if not already fetched in this flow instance
         if self._discovered_servers is None:
             api_client_for_list = None
             try:
+                # _get_api_client now handles optional port correctly
                 api_client_for_list = await self._get_api_client()
 
                 self._discovered_servers = (
@@ -356,14 +424,19 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             servers_to_disassociate = old_selected_servers - newly_selected_servers_set
             if servers_to_disassociate:
                 dev_reg = dr.async_get(self.hass)
-                # --- Construct manager_id_suffix based on how server devices are identified ---
-                manager_host = self.config_entry.data[CONF_HOST]
-                manager_port = self.config_entry.data[CONF_PORT]
-                manager_host_port_id = f"{manager_host}:{manager_port}"
+                # --- Construct manager_id_suffix (host or host:port) ---
+                manager_host = self.config_entry.data[CONF_HOST]  # Assumed to exist
+                manager_port_input = self.config_entry.data.get(
+                    CONF_PORT
+                )  # Get optional port
+                cleaned_port_str_for_id = _get_cleaned_port_str(manager_port_input)
+
+                manager_host_port_id = manager_host
+                if cleaned_port_str_for_id:
+                    manager_host_port_id = f"{manager_host}:{cleaned_port_str_for_id}"
                 # --- End suffix construction ---
 
                 for server_name_to_remove in servers_to_disassociate:
-                    # Adjust identifier construction if your server devices are identified differently
                     server_device_identifier_value = (
                         f"{server_name_to_remove}_{manager_host_port_id}"
                     )
@@ -408,16 +481,13 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             )  # title="" means use existing, data= updates options
 
         # Prepare form for display
-        # Ensure _discovered_servers is a list of strings for the selector options
         options_for_selector = (
             self._discovered_servers if self._discovered_servers else []
         )
 
-        # Default selection should be current valid selection from options
         current_selection_from_options = self.config_entry.options.get(
             CONF_SERVER_NAMES, []
         )
-        # Filter current selection to only include servers that are still discoverable
         valid_current_selection = [
             s for s in current_selection_from_options if s in options_for_selector
         ]
@@ -440,10 +510,10 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders = {}
             if not options_for_selector and not errors:
                 description_placeholders["fetch_error"] = (
-                    "No Minecraft servers were found on this BSM manager. "
+                    f"No Minecraft servers were found on this BSM manager ({manager_display_name}). "
                     "Verify configurations on your BSM host or add servers there first."
                 )
-        description_placeholders["host"] = self.config_entry.data.get(CONF_HOST)
+        description_placeholders["host"] = manager_display_name
 
         return self.async_show_form(
             step_id="select_servers",
@@ -459,13 +529,12 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         errors: Dict[str, str] = {}
         if user_input is not None:
             scan_interval_val = user_input.get(CONF_SERVER_SCAN_INTERVAL)
-            # Validate the input
+            interval: Optional[int] = None  # Define interval before try block
+
             if scan_interval_val is not None:
                 try:
-                    # Voluptuous schema validation is usually done by async_show_form implicitly,
-                    # but manual check can be more precise for range.
                     interval = int(scan_interval_val)
-                    if not (10 <= interval <= 3600):  # Matches selector config
+                    if not (10 <= interval <= 3600):
                         errors[CONF_SERVER_SCAN_INTERVAL] = (
                             "invalid_server_scan_interval_range"
                         )
@@ -473,10 +542,10 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                     errors[CONF_SERVER_SCAN_INTERVAL] = (
                         "invalid_server_scan_interval_type"
                     )
-            else:  # If key is missing but form submitted (should not happen with Optional(default))
+            else:
                 errors[CONF_SERVER_SCAN_INTERVAL] = "value_required"
 
-            if not errors:
+            if not errors and interval is not None:  # Check interval is assigned
                 new_options = {
                     **self.config_entry.options,
                     CONF_SERVER_SCAN_INTERVAL: interval,
@@ -488,7 +557,6 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 )
                 return self.async_create_entry(title="", data=new_options)
 
-        # Get current or default value for pre-filling the form
         current_interval = self.config_entry.options.get(
             CONF_SERVER_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
         )
@@ -509,10 +577,12 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         errors: Dict[str, str] = {}
         if user_input is not None:
             manager_interval_val = user_input.get(CONF_MANAGER_SCAN_INTERVAL)
+            interval: Optional[int] = None  # Define interval before try block
+
             if manager_interval_val is not None:
                 try:
                     interval = int(manager_interval_val)
-                    if not (60 <= interval <= 86400):  # Matches selector config
+                    if not (60 <= interval <= 86400):
                         errors[CONF_MANAGER_SCAN_INTERVAL] = (
                             "invalid_manager_scan_interval_range"
                         )
@@ -523,7 +593,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             else:
                 errors[CONF_MANAGER_SCAN_INTERVAL] = "value_required"
 
-            if not errors:
+            if not errors and interval is not None:  # Check interval is assigned
                 new_options = {
                     **self.config_entry.options,
                     CONF_MANAGER_SCAN_INTERVAL: interval,
@@ -554,4 +624,4 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             "Options flow: Config entry %s is being removed.",
             self.config_entry.entry_id,
         )
-        await self._close_api_client_if_created()  # Ensure any client created by this flow is closed.
+        await self._close_api_client_if_created()

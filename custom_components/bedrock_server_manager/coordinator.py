@@ -26,7 +26,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 # Define a minimum sensible timeout for API calls if scan_interval is very short
-MIN_API_TIMEOUT = 10  # seconds
+MIN_API_TIMEOUT = 180  # seconds
 
 
 class MinecraftBedrockCoordinator(DataUpdateCoordinator):
@@ -41,13 +41,12 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
     ) -> None:
         self.api = api_client
         self.server_name = server_name
-        # Ensure timeout is reasonable, slightly less than scan_interval but not too short
         self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 5)
 
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN} Server Coordinator ({server_name})",  # More specific name
+            name=f"{DOMAIN} Server Coordinator ({server_name})",
             update_interval=timedelta(seconds=scan_interval),
         )
         _LOGGER.debug(
@@ -59,22 +58,20 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
-        # Initialize with default/error state
         coordinator_data = {
-            "status": "error",  # Overall status of this data fetch operation
+            "status": "error",
             "message": "Update data collection failed",
-            "process_info": None,  # from /status_info
-            "allowlist": [],  # from /allowlist
-            "properties": {},  # from /read_properties
-            "server_permissions": [],  # from /permissions_data
-            "world_backups": [],  # from /backups/list/world
-            "allowlist_backups": [],  # from /backups/list/allowlist
-            "permissions_backups": [],  # from /backups/list/permissions
-            "properties_backups": [],  # from /backups/list/properties
+            "process_info": None,
+            "allowlist": [],
+            "properties": {},
+            "server_permissions": [],
+            "world_backups": [],
+            "allowlist_backups": [],
+            "permissions_backups": [],
+            "properties_backups": [],
         }
 
         try:
-            # Using async_timeout for the entire block of API calls
             async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_server_status_info(self.server_name),
@@ -85,7 +82,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_list_server_backups(self.server_name, "allowlist"),
                     self.api.async_list_server_backups(self.server_name, "permissions"),
                     self.api.async_list_server_backups(self.server_name, "properties"),
-                    return_exceptions=True,  # Catch exceptions from individual calls
+                    return_exceptions=True,
                 )
 
             (
@@ -99,13 +96,66 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 properties_backups_result,
             ) = results
 
-            fetch_errors_details = []  # To collect detailed error messages
+            fetch_errors_details = []
+            status_info_handled_as_offline = False
 
             # --- Process Status Info (Considered critical for the coordinator's success) ---
             if isinstance(status_info_result, Exception):
-                self._handle_critical_exception(
-                    "status_info", status_info_result
-                )  # Helper will raise
+                # Check if it's an APIError that signifies the server process is not running
+                # but the API itself responded (e.g., HTTP 200 with an error message in payload).
+                if isinstance(status_info_result, APIError):
+                    msg = getattr(
+                        status_info_result, "api_message", str(status_info_result)
+                    ).lower()
+                    # Check for your specific "process not found" message
+                    # Also include a general "not running" check for robustness if API changes slightly
+                    if (
+                        "not found or information is inaccessible" in msg
+                        and "server process" in msg
+                    ) or ("server process" in msg and "not running" in msg):
+                        _LOGGER.info(
+                            "Server '%s' status_info resulted in APIError but message indicates process not running/inaccessible: '%s'. "
+                            "Treating as server offline.",
+                            self.server_name,
+                            getattr(
+                                status_info_result,
+                                "api_message",
+                                str(status_info_result),
+                            ),
+                        )
+                        coordinator_data["process_info"] = (
+                            None  # Explicitly set to None
+                        )
+                        coordinator_data["status"] = (
+                            "success"  # Overall fetch considered successful for this state
+                        )
+                        coordinator_data["message"] = getattr(
+                            status_info_result,
+                            "api_message",
+                            f"Server process '{self.server_name}' not running or info inaccessible.",
+                        )
+                        status_info_handled_as_offline = (
+                            True  # Mark that we handled this specific APIError
+                        )
+                    else:
+                        # Other APIErrors are still critical and should be handled by _handle_critical_exception
+                        _LOGGER.warning(
+                            "Unhandled APIError for status_info for '%s', passing to critical handler.",
+                            self.server_name,
+                        )
+                        self._handle_critical_exception(
+                            "status_info", status_info_result
+                        )  # This will raise
+                else:
+                    # Other exceptions (CannotConnectError, AuthError, etc.) are critical
+                    _LOGGER.warning(
+                        "Non-APIError exception for status_info for '%s', passing to critical handler.",
+                        self.server_name,
+                    )
+                    self._handle_critical_exception(
+                        "status_info", status_info_result
+                    )  # This will raise
+
             elif (
                 isinstance(status_info_result, dict)
                 and status_info_result.get("status") == "success"
@@ -113,31 +163,34 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 coordinator_data["process_info"] = status_info_result.get(
                     "process_info"
                 )
-                coordinator_data["status"] = (
-                    "success"  # Mark overall success if this critical part passes
-                )
+                coordinator_data["status"] = "success"
                 coordinator_data["message"] = status_info_result.get(
                     "message", "Status fetched successfully"
                 )
                 if (
                     coordinator_data["process_info"] is None
+                    and coordinator_data["message"]
+                    is not None  # Ensure message is not None before .lower()
                     and "not running" in coordinator_data["message"].lower()
                 ):
                     _LOGGER.debug(
-                        "Server '%s' reported as not running by status_info.",
+                        "Server '%s' reported as not running by status_info (API success response).",
                         self.server_name,
                     )
-            else:  # Unexpected structure or API error status for critical data
+            elif (
+                not status_info_handled_as_offline
+            ):  # Only if not already handled as a specific APIError case
                 _LOGGER.error(
-                    "Invalid or API error response for status_info for '%s': %s",
+                    "Invalid or unexpected API response structure for status_info for '%s': %s",
                     self.server_name,
                     status_info_result,
                 )
                 raise UpdateFailed(
-                    f"Invalid response for critical status_info for server '{self.server_name}'"
+                    f"Invalid response structure for critical status_info for server '{self.server_name}'"
                 )
 
             # --- Process Non-Critical Data Points ---
+            # (Your existing logic for non-critical data points remains the same)
             # Allowlist
             if isinstance(allowlist_result, Exception):
                 fetch_errors_details.append(
@@ -208,7 +261,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             # Allowlist Backups
             if isinstance(allowlist_backups_result, Exception):
                 fetch_errors_details.append(
-                    f"ConfigBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
+                    f"AllowlistBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
                 )
             elif (
                 isinstance(allowlist_backups_result, dict)
@@ -219,13 +272,13 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
             else:
                 fetch_errors_details.append(
-                    f"ConfigBackups: Invalid response ({allowlist_backups_result})"
+                    f"AllowlistBackups: Invalid response ({allowlist_backups_result})"
                 )
 
             # Permissions Backups
             if isinstance(permissions_backups_result, Exception):
                 fetch_errors_details.append(
-                    f"ConfigBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
+                    f"PermissionsBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
                 )
             elif (
                 isinstance(permissions_backups_result, dict)
@@ -236,13 +289,13 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
             else:
                 fetch_errors_details.append(
-                    f"ConfigBackups: Invalid response ({permissions_backups_result})"
+                    f"PermissionsBackups: Invalid response ({permissions_backups_result})"
                 )
 
             # Properties Backups
             if isinstance(properties_backups_result, Exception):
                 fetch_errors_details.append(
-                    f"ConfigBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
+                    f"PropertiesBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
                 )
             elif (
                 isinstance(properties_backups_result, dict)
@@ -253,7 +306,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
             else:
                 fetch_errors_details.append(
-                    f"ConfigBackups: Invalid response ({properties_backups_result})"
+                    f"PropertiesBackups: Invalid response ({properties_backups_result})"
                 )
 
             if fetch_errors_details:
@@ -262,31 +315,42 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.server_name,
                     "; ".join(fetch_errors_details),
                 )
-                coordinator_data[
-                    "message"
-                ] += f" (Partial failures: {len(fetch_errors_details)} items)"
+                if (
+                    coordinator_data["status"] == "success"
+                ):  # If status_info was handled as offline successfully
+                    coordinator_data[
+                        "message"
+                    ] += f". Partial failures on other items: {len(fetch_errors_details)}."
+                else:  # Should not happen if status_info error handling is complete
+                    coordinator_data["status"] = "partial_error"  # Or keep 'error'
+                    coordinator_data["message"] = (
+                        f"Failed some non-critical data points: {'; '.join(fetch_errors_details)}"
+                    )
 
             _LOGGER.debug(
-                "Coordinator update processed for server '%s'. Data: %s",
+                "Coordinator update processed for server '%s'. Overall Status: %s, Message: %s, process_info is %s.",
                 self.server_name,
-                coordinator_data,
+                coordinator_data["status"],
+                coordinator_data["message"],
+                "present" if coordinator_data["process_info"] else "None",
             )
             return coordinator_data
 
         except (
-            ConfigEntryAuthFailed
-        ):  # Re-raise if handled by _handle_critical_exception
-            _LOGGER.error(
-                "Authentication failure during update for server '%s'", self.server_name
+            ConfigEntryAuthFailed,
+            UpdateFailed,
+        ) as e:  # Catch specific raised exceptions
+            _LOGGER.log(
+                (
+                    logging.ERROR
+                    if isinstance(e, ConfigEntryAuthFailed)
+                    else logging.WARNING
+                ),
+                "Update for server '%s' failed critically: %s",
+                self.server_name,
+                e,
             )
-            raise
-        except (
-            UpdateFailed
-        ):  # Re-raise if handled by _handle_critical_exception or other logic
-            _LOGGER.warning(
-                "Update failed for server '%s' coordinator.", self.server_name
-            )
-            raise
+            raise  # Re-raise to let HA handle it
         except asyncio.TimeoutError as err:
             _LOGGER.warning(
                 "Timeout fetching data for server '%s': %s", self.server_name, err
@@ -294,7 +358,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Timeout communicating with API for server {self.server_name}"
             ) from err
-        except Exception as err:  # Catch-all for unexpected issues
+        except Exception as err:  # Catch-all for truly unexpected issues
             _LOGGER.exception(
                 "Unexpected error fetching data for server '%s'", self.server_name
             )
@@ -303,7 +367,10 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             ) from err
 
     def _handle_critical_exception(self, data_key: str, error: Exception):
-        """Helper to handle exceptions for critical data points."""
+        """Helper to handle exceptions for critical data points.
+        NOTE: This will now only be called for status_info if the APIError
+              message doesn't match the "process not found/inaccessible" criteria.
+        """
         if isinstance(error, AuthError):
             _LOGGER.error(
                 "Auth error fetching %s for %s: %s", data_key, self.server_name, error
@@ -321,7 +388,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Server not found for {data_key}: {error.api_message or error}"
             ) from error
-        if isinstance(error, (APIError, CannotConnectError)):
+        if isinstance(
+            error, (APIError, CannotConnectError)
+        ):  # APIError here means it wasn't the "process not found" type
             _LOGGER.error(
                 "API/Connection error fetching %s for %s: %s",
                 data_key,
@@ -334,7 +403,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
 
         _LOGGER.exception(
             "Unexpected error fetching %s for %s", data_key, self.server_name
-        )  # Logs full traceback
+        )
         raise UpdateFailed(f"Unexpected error for {data_key}: {error}") from error
 
 
