@@ -231,8 +231,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 isinstance(permissions_backups_result, dict)
                 and permissions_backups_result.get("status") == "success"
             ):
-                coordinator_data["permissions_backups"] = permissions_backups_result.get(
-                    "backups", []
+                coordinator_data["permissions_backups"] = (
+                    permissions_backups_result.get("backups", [])
                 )
             else:
                 fetch_errors_details.append(
