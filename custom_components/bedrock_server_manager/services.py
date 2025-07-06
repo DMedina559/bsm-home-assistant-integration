@@ -313,7 +313,7 @@ async def _async_handle_remove_from_allowlist(
     api: BedrockServerManagerApi, server: str, player_name: str
 ):
     return await _base_api_call_handler(
-        api.async_remove_server_allowlist_player(server, player_name),
+        api.async_remove_server_allowlist_players(server, [player_name]),
         "Remove from allowlist",
         server,
     )
