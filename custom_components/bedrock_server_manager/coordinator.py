@@ -74,7 +74,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
         try:
             async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
-                    self.api.async_get_server_status_info(self.server_name),
+                    self.api.async_get_server_process_info(self.server_name),
                     self.api.async_get_server_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
                     self.api.async_get_server_permissions_data(self.server_name),
@@ -86,7 +86,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
 
             (
-                status_info_result,
+                process_info_result,
                 allowlist_result,
                 properties_result,
                 permissions_result,
@@ -100,12 +100,12 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             status_info_handled_as_offline = False
 
             # --- Process Status Info (Considered critical for the coordinator's success) ---
-            if isinstance(status_info_result, Exception):
+            if isinstance(process_info_result, Exception):
                 # Check if it's an APIError that signifies the server process is not running
                 # but the API itself responded (e.g., HTTP 200 with an error message in payload).
-                if isinstance(status_info_result, APIError):
+                if isinstance(process_info_result, APIError):
                     msg = getattr(
-                        status_info_result, "api_message", str(status_info_result)
+                        process_info_result, "api_message", str(process_info_result)
                     ).lower()
                     # Check for your specific "process not found" message
                     # Also include a general "not running" check for robustness if API changes slightly
@@ -118,9 +118,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                             "Treating as server offline.",
                             self.server_name,
                             getattr(
-                                status_info_result,
+                                process_info_result,
                                 "api_message",
-                                str(status_info_result),
+                                str(process_info_result),
                             ),
                         )
                         coordinator_data["process_info"] = (
@@ -130,7 +130,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                             "success"  # Overall fetch considered successful for this state
                         )
                         coordinator_data["message"] = getattr(
-                            status_info_result,
+                            process_info_result,
                             "api_message",
                             f"Server process '{self.server_name}' not running or info inaccessible.",
                         )
@@ -144,7 +144,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                             self.server_name,
                         )
                         self._handle_critical_exception(
-                            "status_info", status_info_result
+                            "status_info", process_info_result
                         )  # This will raise
                 else:
                     # Other exceptions (CannotConnectError, AuthError, etc.) are critical
@@ -153,18 +153,18 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                         self.server_name,
                     )
                     self._handle_critical_exception(
-                        "status_info", status_info_result
+                        "status_info", process_info_result
                     )  # This will raise
 
             elif (
-                isinstance(status_info_result, dict)
-                and status_info_result.get("status") == "success"
+                isinstance(process_info_result, dict)
+                and process_info_result.get("status") == "success"
             ):
-                coordinator_data["process_info"] = status_info_result.get(
+                coordinator_data["process_info"] = process_info_result.get(
                     "process_info"
                 )
                 coordinator_data["status"] = "success"
-                coordinator_data["message"] = status_info_result.get(
+                coordinator_data["message"] = process_info_result.get(
                     "message", "Status fetched successfully"
                 )
                 if (
@@ -183,7 +183,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 _LOGGER.error(
                     "Invalid or unexpected API response structure for status_info for '%s': %s",
                     self.server_name,
-                    status_info_result,
+                    process_info_result,
                 )
                 raise UpdateFailed(
                     f"Invalid response structure for critical status_info for server '{self.server_name}'"
