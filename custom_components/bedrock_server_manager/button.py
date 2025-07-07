@@ -584,7 +584,10 @@ class MinecraftManagerButton(
                 )
 
                 # Refresh manager coordinator if the action might have changed its data
-                if action_key in ["scan_players", "reload_plugins"] and self._manager_coordinator:
+                if (
+                    action_key in ["scan_players", "reload_plugins"]
+                    and self._manager_coordinator
+                ):
                     _LOGGER.debug(
                         "Requesting refresh of ManagerDataCoordinator after action '%s'.",
                         action_key,

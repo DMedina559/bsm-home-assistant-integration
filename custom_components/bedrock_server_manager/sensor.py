@@ -623,8 +623,8 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         if key == KEY_PLUGIN_STATUSES:
             plugins_data = data.get("plugins_status", {})
             if isinstance(plugins_data, dict):
-                return len(plugins_data) # Total number of plugins
-            return 0 # Default to 0 if data is not as expected
+                return len(plugins_data)  # Total number of plugins
+            return 0  # Default to 0 if data is not as expected
 
         _LOGGER.warning(
             "Unhandled manager sensor key '%s' for native_value in %s",

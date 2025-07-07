@@ -440,7 +440,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             "global_players": [],  # from async_get_players -> 'players' list
             "available_worlds": [],  # from async_get_content_worlds -> 'files' list
             "available_addons": [],  # from async_get_content_addons -> 'files' list
-            "plugins_status": None, # from async_get_plugin_statuses -> 'plugins' dict
+            "plugins_status": None,  # from async_get_plugin_statuses -> 'plugins' dict
         }
 
         fetch_errors_details = []  # To collect detailed error messages
@@ -456,7 +456,13 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                     return_exceptions=True,
                 )
 
-            info_result, players_result, worlds_result, addons_result, plugins_status_result = results
+            (
+                info_result,
+                players_result,
+                worlds_result,
+                addons_result,
+                plugins_status_result,
+            ) = results
             at_least_one_success = False
 
             # Process Manager Info (No Auth Required for this specific call)
@@ -533,13 +539,14 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 isinstance(plugins_status_result, dict)
                 and plugins_status_result.get("status") == "success"
             ):
-                manager_data["plugins_status"] = plugins_status_result.get("plugins", {}) # Store the nested 'plugins' dict
+                manager_data["plugins_status"] = plugins_status_result.get(
+                    "plugins", {}
+                )  # Store the nested 'plugins' dict
                 at_least_one_success = True
             else:
                 fetch_errors_details.append(
                     f"PluginsStatus: Invalid response ({plugins_status_result})"
                 )
-
 
             if at_least_one_success:
                 manager_data["status"] = "success"

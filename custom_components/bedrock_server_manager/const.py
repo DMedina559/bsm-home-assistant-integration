@@ -58,7 +58,7 @@ ATTR_PERMISSIONS_BACKUPS_LIST = "permissions_backups_list"
 ATTR_PROPERTIES_BACKUPS_LIST = "properties_backups_list"
 ATTR_AVAILABLE_WORLDS_LIST = "available_worlds_list"  # From BSM content dir
 ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"  # From BSM content dir
-ATTR_PLUGINS_DATA = "plugins_data" # Full dict of plugins status
+ATTR_PLUGINS_DATA = "plugins_data"  # Full dict of plugins status
 
 ATTR_MANAGER_OS_TYPE = "bsm_host"
 
@@ -94,7 +94,7 @@ SERVICE_RESET_WORLD = "reset_world"
 SERVICE_INSTALL_ADDON = "install_addon"
 SERVICE_CONFIGURE_OS_SERVICE = "configure_os_service"
 SERVICE_ADD_GLOBAL_PLAYERS = "add_global_players"
-SERVICE_SCAN_PLAYERS = "scan_players" 
+SERVICE_SCAN_PLAYERS = "scan_players"
 SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 
