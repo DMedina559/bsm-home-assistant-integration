@@ -53,6 +53,8 @@ from .const import (
     ATTR_SERVER_PERMISSIONS_LIST,
     KEY_MANAGER_APP_VERSION,
     ATTR_MANAGER_OS_TYPE,
+    KEY_PLUGIN_STATUSES,
+    ATTR_PLUGINS_DATA,
 )
 
 from bsm_api_client import BedrockServerManagerApi
@@ -152,6 +154,11 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         name="Manager App Version",
         icon="mdi:information-outline",
         entity_registry_enabled_default=False,
+    ),
+    SensorEntityDescription(
+        key=KEY_PLUGIN_STATUSES,
+        name="Plugin Statuses",
+        icon="mdi:puzzle-outline",
     ),
 )
 
@@ -613,6 +620,12 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
                 if isinstance(info, dict)
                 else "Unknown"
             )
+        if key == KEY_PLUGIN_STATUSES:
+            plugins_data = data.get("plugins_status", {})
+            if isinstance(plugins_data, dict):
+                return len(plugins_data) # Total number of plugins
+            return 0 # Default to 0 if data is not as expected
+
         _LOGGER.warning(
             "Unhandled manager sensor key '%s' for native_value in %s",
             key,
@@ -638,4 +651,11 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             attrs[ATTR_MANAGER_OS_TYPE] = (
                 info.get("os_type", "Unknown") if isinstance(info, dict) else "Unknown"
             )
+        if key == KEY_PLUGIN_STATUSES:
+            plugins_raw_data = data.get("plugins_status", {})
+            if isinstance(plugins_raw_data, dict):
+                attrs[ATTR_PLUGINS_DATA] = plugins_raw_data
+            else:
+                attrs[ATTR_PLUGINS_DATA] = {}
+
         return attrs if attrs else None

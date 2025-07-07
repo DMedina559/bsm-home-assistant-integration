@@ -8,6 +8,56 @@ send_command:
       integration: bedrock_server_manager
     device:
       integration: bedrock_server_manager
+
+set_plugin_enabled:
+  name: Set Plugin Enabled Status
+  description: Enables or disables a specific plugin on the BSM manager. Targets a BSM manager instance.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    plugin_name:
+      name: Plugin Name
+      description: "The name of the plugin (filename without .py extension)."
+      required: true
+      example: "MyPlugin"
+      selector:
+        text: {}
+    plugin_enabled:
+      name: Enabled
+      description: "Set to true to enable the plugin, false to disable it."
+      required: true
+      example: true
+      selector:
+        boolean: {}
+
+trigger_plugin_event:
+  name: Trigger Plugin Event
+  description: Triggers a custom plugin event on the BSM manager, optionally with a JSON payload. Targets a BSM manager instance.
+  target:
+    entity:
+      domain: sensor # Or button, or any entity associated with the manager
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    event_name:
+      name: Event Name
+      description: "The namespaced name of the custom event to trigger (e.g., 'my_plugin:custom_action')."
+      required: true
+      example: "my_plugin:some_event"
+      selector:
+        text: {}
+    event_payload:
+      name: Payload (JSON)
+      description: "(Optional) A JSON object (as a string or dictionary) containing data to pass to event listeners."
+      required: false
+      example: '{"key": "value", "count": 10}'
+      selector:
+        object: {} # Allows dictionary input in UI, will be JSON for API
   fields:
     command:
       name: Command

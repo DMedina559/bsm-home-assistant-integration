@@ -41,7 +41,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
     ) -> None:
         self.api = api_client
         self.server_name = server_name
-        self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 5)
+        self._api_call_timeout = MIN_API_TIMEOUT
 
         super().__init__(
             hass,
@@ -440,6 +440,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             "global_players": [],  # from async_get_players -> 'players' list
             "available_worlds": [],  # from async_get_content_worlds -> 'files' list
             "available_addons": [],  # from async_get_content_addons -> 'files' list
+            "plugins_status": None, # from async_get_plugin_statuses -> 'plugins' dict
         }
 
         fetch_errors_details = []  # To collect detailed error messages
@@ -451,10 +452,11 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                     self.api.async_get_players(),
                     self.api.async_get_content_worlds(),
                     self.api.async_get_content_addons(),
+                    self.api.async_get_plugin_statuses(),
                     return_exceptions=True,
                 )
 
-            info_result, players_result, worlds_result, addons_result = results
+            info_result, players_result, worlds_result, addons_result, plugins_status_result = results
             at_least_one_success = False
 
             # Process Manager Info (No Auth Required for this specific call)
@@ -521,6 +523,23 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"AvailableAddons: Invalid response ({addons_result})"
                 )
+
+            # Process Plugin Statuses (Requires Auth)
+            if isinstance(plugins_status_result, Exception):
+                self._handle_exception_for_manager_data(
+                    "plugins_status", plugins_status_result, fetch_errors_details
+                )
+            elif (
+                isinstance(plugins_status_result, dict)
+                and plugins_status_result.get("status") == "success"
+            ):
+                manager_data["plugins_status"] = plugins_status_result.get("plugins", {}) # Store the nested 'plugins' dict
+                at_least_one_success = True
+            else:
+                fetch_errors_details.append(
+                    f"PluginsStatus: Invalid response ({plugins_status_result})"
+                )
+
 
             if at_least_one_success:
                 manager_data["status"] = "success"

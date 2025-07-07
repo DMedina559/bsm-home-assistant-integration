@@ -79,6 +79,12 @@ MANAGER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
         icon="mdi:account-search-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    ButtonEntityDescription(
+        key="reload_plugins",
+        name="Reload Plugins",
+        icon="mdi:puzzle-outline",
+        entity_category=EntityCategory.CONFIG,
+    ),
 )
 
 
@@ -558,6 +564,9 @@ class MinecraftManagerButton(
         try:
             if action_key == "scan_players":
                 api_call_coro = self._api.async_scan_players()
+            elif action_key == "reload_plugins":
+                api_call_coro = self._api.async_reload_plugins()
+                success_notification_message = "Plugin reload initiated successfully."
             else:
                 _LOGGER.error("Unhandled manager button action key: '%s'", action_key)
                 raise HomeAssistantError(f"Unknown manager button action: {action_key}")
@@ -575,7 +584,7 @@ class MinecraftManagerButton(
                 )
 
                 # Refresh manager coordinator if the action might have changed its data
-                if action_key == "scan_players" and self._manager_coordinator:
+                if action_key in ["scan_players", "reload_plugins"] and self._manager_coordinator:
                     _LOGGER.debug(
                         "Requesting refresh of ManagerDataCoordinator after action '%s'.",
                         action_key,

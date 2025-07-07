@@ -21,6 +21,8 @@ from .const import (
     DOMAIN,
     SERVICE_ADD_GLOBAL_PLAYERS,
     SERVICE_SCAN_PLAYERS,
+    SERVICE_SET_PLUGIN_ENABLED, 
+    SERVICE_TRIGGER_PLUGIN_EVENT,
     SERVICE_SEND_COMMAND,
     SERVICE_PRUNE_DOWNLOADS,
     SERVICE_RESTORE_BACKUP,
@@ -55,6 +57,10 @@ from .const import (
     FIELD_FILENAME,
     FIELD_AUTOUPDATE,
     FIELD_AUTOSTART,
+    FIELD_PLUGIN_NAME, # New
+    FIELD_PLUGIN_ENABLED, # New
+    FIELD_EVENT_NAME, # New
+    FIELD_EVENT_PAYLOAD, # New
 )
 
 from bsm_api_client import (
@@ -185,6 +191,21 @@ ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA = vol.Schema(
 )
 SCAN_PLAYERS_SERVICE_SCHEMA = vol.Schema(
     {
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+SET_PLUGIN_ENABLED_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PLUGIN_NAME): cv.string,
+        vol.Required(FIELD_PLUGIN_ENABLED): cv.boolean,
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_EVENT_NAME): cv.string,
+        vol.Optional(FIELD_EVENT_PAYLOAD): vol.Schema(dict), 
         **TARGETING_SCHEMA_FIELDS,
     }
 )
@@ -378,6 +399,23 @@ async def _async_handle_scan_players(api: BedrockServerManagerApi, manager_id: s
         api.async_scan_players(), "Scan players", manager_id
     )
 
+async def _async_handle_set_plugin_enabled(
+    api: BedrockServerManagerApi, plugin_name: str, enabled: bool, manager_id: str
+):
+    return await _base_api_call_handler(
+        api.async_set_plugin_status(plugin_name, enabled),
+        f"Set plugin '{plugin_name}' to {enabled}",
+        manager_id
+    )
+
+async def _async_handle_trigger_plugin_event(
+    api: BedrockServerManagerApi, event_name: str, payload: Optional[Dict[str, Any]], manager_id: str
+):
+    return await _base_api_call_handler(
+        api.async_trigger_plugin_event(event_name, payload),
+        f"Trigger plugin event '{event_name}'",
+        manager_id
+    )
 
 async def _async_handle_install_server(
     api: BedrockServerManagerApi,
@@ -885,12 +923,13 @@ async def _execute_manager_targeted_service(
 
             current_handler_args = [api_client]
             current_handler_args.extend(handler_args)
-            # Pass manager_host_port_id as the last arg for handlers that need it for context/logging
             if handler_coro.__name__ in [
                 "_async_handle_prune_downloads",
                 "_async_handle_install_server",
                 "_async_handle_add_global_players",
                 "_async_handle_scan_players",
+                "_async_handle_set_plugin_enabled", 
+                "_async_handle_trigger_plugin_event", 
             ]:
                 current_handler_args.append(manager_host_port_id)
 
@@ -899,10 +938,12 @@ async def _execute_manager_targeted_service(
                 {"cid": config_entry_id, "manager_id": manager_host_port_id}
             )
 
+            # Refresh coordinator for actions that change manager-level data
             if handler_coro.__name__ in [
                 "_async_handle_add_global_players",
                 "_async_handle_scan_players",
                 "_async_handle_install_server",
+                "_async_handle_set_plugin_enabled", # Refresh after changing plugin state
             ]:
                 coordinator: Optional[ManagerDataCoordinator] = entry_data.get(
                     "manager_coordinator"
@@ -1013,6 +1054,24 @@ async def async_handle_install_server_service(
 async def async_handle_scan_players_service(service: ServiceCall, hass: HomeAssistant):
     await _execute_manager_targeted_service(service, hass, _async_handle_scan_players)
 
+
+async def async_handle_set_plugin_enabled_service(service: ServiceCall, hass: HomeAssistant):
+    await _execute_manager_targeted_service(
+        service,
+        hass,
+        _async_handle_set_plugin_enabled,
+        service.data[FIELD_PLUGIN_NAME],
+        service.data[FIELD_PLUGIN_ENABLED],
+    )
+
+async def async_handle_trigger_plugin_event_service(service: ServiceCall, hass: HomeAssistant):
+    await _execute_manager_targeted_service(
+        service,
+        hass,
+        _async_handle_trigger_plugin_event,
+        service.data[FIELD_EVENT_NAME],
+        service.data.get(FIELD_EVENT_PAYLOAD),
+    )
 
 async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
     _LOGGER.warning(
@@ -1462,6 +1521,14 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_ADD_GLOBAL_PLAYERS: (
             async_handle_add_global_players_service,
             ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
+        ),
+        SERVICE_SET_PLUGIN_ENABLED: (
+            async_handle_set_plugin_enabled_service,
+            SET_PLUGIN_ENABLED_SERVICE_SCHEMA,
+        ),
+        SERVICE_TRIGGER_PLUGIN_EVENT: (
+            async_handle_trigger_plugin_event_service,
+            TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA,
         ),
     }
 

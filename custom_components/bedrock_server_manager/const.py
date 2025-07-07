@@ -58,10 +58,12 @@ ATTR_PERMISSIONS_BACKUPS_LIST = "permissions_backups_list"
 ATTR_PROPERTIES_BACKUPS_LIST = "properties_backups_list"
 ATTR_AVAILABLE_WORLDS_LIST = "available_worlds_list"  # From BSM content dir
 ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"  # From BSM content dir
+ATTR_PLUGINS_DATA = "plugins_data" # Full dict of plugins status
 
 ATTR_MANAGER_OS_TYPE = "bsm_host"
 
 # --- State/Key Constants  ---
+KEY_PLUGIN_STATUSES = "plugin_statuses"
 KEY_GLOBAL_PLAYERS_COUNT = "global_players_count"
 KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
 KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
@@ -92,7 +94,9 @@ SERVICE_RESET_WORLD = "reset_world"
 SERVICE_INSTALL_ADDON = "install_addon"
 SERVICE_CONFIGURE_OS_SERVICE = "configure_os_service"
 SERVICE_ADD_GLOBAL_PLAYERS = "add_global_players"
-SERVICE_SCAN_PLAYERS = "scan_players"  # Added based on client method async_scan_players
+SERVICE_SCAN_PLAYERS = "scan_players" 
+SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
+SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
@@ -118,6 +122,10 @@ FIELD_PROPERTIES = "properties"  # Dict of server properties
 FIELD_FILENAME = "filename"  # For world/addon install, backup restore
 FIELD_AUTOUPDATE = "autoupdate"  # For OS service config
 FIELD_AUTOSTART = "autostart"  # For OS service config (Linux)
+FIELD_PLUGIN_NAME = "plugin_name"
+FIELD_PLUGIN_ENABLED = "plugin_enabled"
+FIELD_EVENT_NAME = "event_name"
+FIELD_EVENT_PAYLOAD = "event_payload"
 
 
 # --- Integration Version Helper ---
@@ -181,5 +189,15 @@ JS_MODULES = [
         "filename": "bsm-content-card.js",
         "version": INTEGRATION_VERSION,
         "name": "BSM Content Installer Card",
+    },
+    {
+        "filename": "bsm-plugins-card.js",
+        "version": INTEGRATION_VERSION,
+        "name": "BSM Plugins Card",
+    },
+    {
+        "filename": "bsm-event-trigger-card.js",
+        "version": INTEGRATION_VERSION,
+        "name": "BSM Event Trigger Card",
     },
 ]
