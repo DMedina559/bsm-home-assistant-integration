@@ -97,6 +97,9 @@ SERVICE_ADD_GLOBAL_PLAYERS = "add_global_players"
 SERVICE_SCAN_PLAYERS = "scan_players"
 SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
+SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
+SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
+SERVICE_RESTORE_SELECT_BACKUP_TYPE = "restore_select_backup_type" # New
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
@@ -126,6 +129,8 @@ FIELD_PLUGIN_NAME = "plugin_name"
 FIELD_PLUGIN_ENABLED = "plugin_enabled"
 FIELD_EVENT_NAME = "event_name"
 FIELD_EVENT_PAYLOAD = "event_payload"
+FIELD_SETTING_KEY = "key"  # New - for set_global_setting
+FIELD_SETTING_VALUE = "value"  # New - for set_global_setting
 
 
 # --- Integration Version Helper ---

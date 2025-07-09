@@ -2,6 +2,7 @@
 """Service handlers for the Bedrock Server Manager integration."""
 
 import asyncio
+import json # Added for parsing setting values
 import logging
 from typing import cast, Dict, Optional, List, Any, Set, Coroutine
 
@@ -57,10 +58,15 @@ from .const import (
     FIELD_FILENAME,
     FIELD_AUTOUPDATE,
     FIELD_AUTOSTART,
-    FIELD_PLUGIN_NAME,  # New
-    FIELD_PLUGIN_ENABLED,  # New
-    FIELD_EVENT_NAME,  # New
-    FIELD_EVENT_PAYLOAD,  # New
+    FIELD_PLUGIN_NAME,
+    FIELD_PLUGIN_ENABLED,
+    FIELD_EVENT_NAME,
+    FIELD_EVENT_PAYLOAD,
+    SERVICE_SET_GLOBAL_SETTING,  # New
+    SERVICE_RELOAD_GLOBAL_SETTINGS,  # New
+    SERVICE_RESTORE_SELECT_BACKUP_TYPE,  # New
+    FIELD_SETTING_KEY,  # New
+    FIELD_SETTING_VALUE,  # New
 )
 
 from bsm_api_client import (
@@ -210,6 +216,28 @@ TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA = vol.Schema(
     }
 )
 
+SET_GLOBAL_SETTING_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_SETTING_KEY): cv.string,
+        vol.Required(FIELD_SETTING_VALUE): cv.string, # Using cv.string for initial flexibility as per YAML
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA = vol.Schema(
+    {
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_RESTORE_TYPE): vol.In(
+            ["world", "allowlist", "properties", "permissions"] # Match other restore types
+        ),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
 
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(
@@ -421,6 +449,85 @@ async def _async_handle_trigger_plugin_event(
         f"Trigger plugin event '{event_name}'",
         manager_id,
     )
+
+
+async def _async_handle_set_global_setting(
+    api: BedrockServerManagerApi, key: str, value: Any, manager_id: str
+):
+    # The 'value' comes as a string from Voluptuous schema (cv.string).
+    # We attempt to parse it as JSON if it looks like a JSON object or array.
+    # Otherwise, we pass it as a string. Bools/numbers might need specific handling
+    # if the API is strict and doesn't auto-convert from string.
+    # For now, sending as string, or parsed JSON. API client might do further conversions.
+    parsed_value = value
+    if isinstance(value, str):
+        stripped_value = value.strip()
+        if (stripped_value.startswith("{") and stripped_value.endswith("}")) or \
+           (stripped_value.startswith("[") and stripped_value.endswith("]")):
+            try:
+                parsed_value = json.loads(stripped_value)
+            except json.JSONDecodeError:
+                _LOGGER.warning(
+                    "Value for setting '%s' looked like JSON but failed to parse: %s. Sending as string.",
+                    key,
+                    value,
+                )
+                # Keep parsed_value as the original string if JSON parsing fails
+        # TODO: Consider explicit bool/int/float conversion if API needs it and client doesn't handle
+        # elif value.lower() in ["true", "false"]:
+        #     parsed_value = value.lower() == "true"
+        # else:
+        # try:
+        # parsed_value = int(value)
+        # except ValueError:
+        # try:
+        # parsed_value = float(value)
+        # except ValueError:
+        # pass # Keep as string
+
+    return await _base_api_call_handler(
+        api.async_set_setting(key, parsed_value),
+        f"Set global setting '{key}'",
+        manager_id,
+    )
+
+
+async def _async_handle_reload_global_settings(
+    api: BedrockServerManagerApi, manager_id: str
+):
+    return await _base_api_call_handler(
+        api.async_reload_settings(), "Reload global settings", manager_id
+    )
+
+
+async def _async_handle_restore_select_backup_type(
+    hass: HomeAssistant, api: BedrockServerManagerApi, server: str, restore_type: str, manager_id: str
+):
+    response = await _base_api_call_handler(
+        api.async_restore_select_backup_type(server, restore_type),
+        f"Select restore type '{restore_type}' for server '{server}'",
+        manager_id,
+    )
+    if response and isinstance(response, dict):
+        redirect_url = response.get("redirect_url")
+        message = response.get("message", f"Selected restore type '{restore_type}' for '{server}'.")
+        if redirect_url:
+            message += f" API returned redirect URL for next step: {redirect_url}"
+            # Create a persistent notification for the redirect URL
+            async_create(
+                hass,
+                message=f"For server '{server}': {message}",
+                title="BSM Restore Step",
+                notification_id=f"bsm_restore_select_{server}_{restore_type}",
+            )
+        _LOGGER.info(
+            "Restore select backup type for server '%s' (manager '%s'): %s. Full response: %s",
+            server,
+            manager_id,
+            message,
+            response
+        )
+    return response
 
 
 async def _async_handle_install_server(
@@ -852,19 +959,31 @@ async def _execute_targeted_service(
             api_client: BedrockServerManagerApi = entry_data["api"]
             manager_host_port_id = entry_data["manager_identifier"][1]
 
-            current_handler_args = [api_client, target_server_name]
-            # Special argument handling for _async_handle_delete_server
-            if handler_coro.__name__ == "_async_handle_delete_server":
-                current_handler_args = [
-                    hass,
-                    api_client,
-                    target_server_name,
-                    manager_host_port_id,
-                ]
-            else:  # For other handlers, just extend with common args
-                current_handler_args.extend(handler_args)
+            # Base arguments for most server-targeted handlers
+            base_args = [api_client, target_server_name]
+            base_args.extend(handler_args) # Add service-specific args from service_call.data
 
-            tasks.append(handler_coro(*current_handler_args))
+            # Argument list to be passed to the handler
+            actual_handler_args = []
+
+            # Specific handlers require different arguments
+            if handler_coro.__name__ == "_async_handle_restore_select_backup_type":
+                # Needs: hass, api, server, *service_args (restore_type), manager_id
+                actual_handler_args = [hass, api_client, target_server_name]
+                actual_handler_args.extend(handler_args)
+                actual_handler_args.append(manager_host_port_id)
+            elif handler_coro.__name__ == "_async_handle_configure_os_service":
+                # Needs: api, server, *service_args (payload), manager_id
+                actual_handler_args = [api_client, target_server_name]
+                actual_handler_args.extend(handler_args)
+                actual_handler_args.append(manager_host_port_id)
+            # Note: _async_handle_delete_server and _async_handle_reset_world are NOT called via _execute_targeted_service
+            # They have their own top-level service handlers that prepare arguments including hass and manager_id.
+            else:
+                # Default for other server-targeted handlers
+                actual_handler_args = base_args
+
+            tasks.append(handler_coro(*actual_handler_args))
             processed_targets_info.append(
                 {
                     "cid": config_entry_id,
@@ -1470,6 +1589,40 @@ async def async_handle_add_global_players_service(
     )
 
 
+async def async_handle_set_global_setting_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_manager_targeted_service(
+        service,
+        hass,
+        _async_handle_set_global_setting,
+        service.data[FIELD_SETTING_KEY],
+        service.data[FIELD_SETTING_VALUE],
+        # manager_id is appended by _execute_manager_targeted_service
+    )
+
+
+async def async_handle_reload_global_settings_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_manager_targeted_service(
+        service,
+        hass,
+        _async_handle_reload_global_settings,
+        # manager_id is appended by _execute_manager_targeted_service
+    )
+
+async def async_handle_restore_select_backup_type_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_restore_select_backup_type,
+        service.data[FIELD_RESTORE_TYPE],
+        # hass, api_client, server_name, restore_type, manager_id are passed by _execute_targeted_service
+    )
+
 # --- Service Registration/Removal ---
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register services with Home Assistant."""
@@ -1541,6 +1694,18 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_TRIGGER_PLUGIN_EVENT: (
             async_handle_trigger_plugin_event_service,
             TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA,
+        ),
+        SERVICE_SET_GLOBAL_SETTING: ( # New
+            async_handle_set_global_setting_service,
+            SET_GLOBAL_SETTING_SERVICE_SCHEMA,
+        ),
+        SERVICE_RELOAD_GLOBAL_SETTINGS: ( # New
+            async_handle_reload_global_settings_service,
+            RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA,
+        ),
+        SERVICE_RESTORE_SELECT_BACKUP_TYPE: ( # New
+            async_handle_restore_select_backup_type_service,
+            RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA,
         ),
     }
 
@@ -1623,6 +1788,11 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
             SERVICE_ADD_GLOBAL_PLAYERS,
+            SERVICE_SET_PLUGIN_ENABLED, # Was missing here
+            SERVICE_TRIGGER_PLUGIN_EVENT, # Was missing here
+            SERVICE_SET_GLOBAL_SETTING, # New
+            SERVICE_RELOAD_GLOBAL_SETTINGS, # New
+            SERVICE_RESTORE_SELECT_BACKUP_TYPE, # New
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):

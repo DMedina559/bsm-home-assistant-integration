@@ -160,9 +160,13 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 isinstance(process_info_result, dict)
                 and process_info_result.get("status") == "success"
             ):
-                coordinator_data["process_info"] = process_info_result.get(
-                    "process_info"
-                )
+                # Assuming process_info_result is the full API response dictionary
+                # and client hasn't pre-processed .get("data").get("process_info")
+                process_info_data_nested = process_info_result.get("data", {})
+                coordinator_data["process_info"] = process_info_data_nested.get(
+                    "process_info" 
+                ) # Will be None if server not running, as per API spec
+
                 coordinator_data["status"] = "success"
                 coordinator_data["message"] = process_info_result.get(
                     "message", "Status fetched successfully"
@@ -200,9 +204,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 isinstance(allowlist_result, dict)
                 and allowlist_result.get("status") == "success"
             ):
-                coordinator_data["allowlist"] = allowlist_result.get(
-                    "existing_players", []
-                )
+                # Corrected key from "existing_players" to "players"
+                coordinator_data["allowlist"] = allowlist_result.get("players", [])
             else:
                 fetch_errors_details.append(
                     f"Allowlist: Invalid response ({allowlist_result})"
@@ -474,10 +477,9 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             elif (
                 isinstance(info_result, dict) and info_result.get("status") == "success"
             ):
-                # api.async_get_info() returns {"status": "success", "data": {"os_type": ..., "app_version": ...}}
-                manager_data["info"] = info_result.get(
-                    "data", {}
-                )  # Store the nested 'data' object
+                # api.async_get_info() returns {"status": "success", "info": {"os_type": ..., "app_version": ...}}
+                # Corrected key from "data" to "info"
+                manager_data["info"] = info_result.get("info", {})
                 at_least_one_success = True
             else:  # Unexpected structure
                 fetch_errors_details.append(f"Info: Invalid response ({info_result})")
@@ -539,9 +541,8 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 isinstance(plugins_status_result, dict)
                 and plugins_status_result.get("status") == "success"
             ):
-                manager_data["plugins_status"] = plugins_status_result.get(
-                    "plugins", {}
-                )  # Store the nested 'plugins' dict
+                # Corrected key from "plugins" to "data"
+                manager_data["plugins_status"] = plugins_status_result.get("data", {})
                 at_least_one_success = True
             else:
                 fetch_errors_details.append(
