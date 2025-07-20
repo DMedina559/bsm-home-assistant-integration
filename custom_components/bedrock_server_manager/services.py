@@ -2,7 +2,7 @@
 """Service handlers for the Bedrock Server Manager integration."""
 
 import asyncio
-import json # Added for parsing setting values
+import json  # Added for parsing setting values
 import logging
 from typing import cast, Dict, Optional, List, Any, Set, Coroutine
 
@@ -259,6 +259,7 @@ RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA = vol.Schema(
     }
 )
 
+
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(
     api_call_coro: Coroutine[Any, Any, Any],
@@ -347,7 +348,9 @@ async def _async_handle_trigger_backup(
     backup_type: str,
     file_to_backup: Optional[str],
 ):
-    payload = BackupActionPayload(backup_type=backup_type, file_to_backup=file_to_backup)
+    payload = BackupActionPayload(
+        backup_type=backup_type, file_to_backup=file_to_backup
+    )
     return await _base_api_call_handler(
         api.async_trigger_server_backup(server, payload),
         "Trigger backup",
@@ -440,7 +443,10 @@ async def _async_handle_install_addon(
 
 
 async def _async_handle_configure_os_service(
-    api: BedrockServerManagerApi, server: str, payload_dict: Dict[str, bool], manager_id: str
+    api: BedrockServerManagerApi,
+    server: str,
+    payload_dict: Dict[str, bool],
+    manager_id: str,
 ):
     payload = ServiceUpdatePayload(**payload_dict)
     return await _base_api_call_handler(
@@ -496,8 +502,9 @@ async def _async_handle_set_global_setting(
     parsed_value = value
     if isinstance(value, str):
         stripped_value = value.strip()
-        if (stripped_value.startswith("{") and stripped_value.endswith("}")) or \
-           (stripped_value.startswith("[") and stripped_value.endswith("]")):
+        if (stripped_value.startswith("{") and stripped_value.endswith("}")) or (
+            stripped_value.startswith("[") and stripped_value.endswith("]")
+        ):
             try:
                 parsed_value = json.loads(stripped_value)
             except json.JSONDecodeError:
@@ -524,7 +531,11 @@ async def _async_handle_reload_global_settings(
 
 
 async def _async_handle_restore_select_backup_type(
-    hass: HomeAssistant, api: BedrockServerManagerApi, server: str, restore_type: str, manager_id: str
+    hass: HomeAssistant,
+    api: BedrockServerManagerApi,
+    server: str,
+    restore_type: str,
+    manager_id: str,
 ):
     payload = RestoreTypePayload(restore_type=restore_type)
     response = await _base_api_call_handler(
@@ -533,7 +544,10 @@ async def _async_handle_restore_select_backup_type(
         manager_id,
     )
     if response and response.redirect_url:
-        message = response.message or f"Selected restore type '{restore_type}' for '{server}'."
+        message = (
+            response.message
+            or f"Selected restore type '{restore_type}' for '{server}'."
+        )
         message += f" API returned redirect URL for next step: {response.redirect_url}"
         async_create(
             hass,
@@ -546,7 +560,7 @@ async def _async_handle_restore_select_backup_type(
             server,
             manager_id,
             message,
-            response
+            response,
         )
     return response
 
@@ -680,9 +694,7 @@ async def _async_handle_delete_server(
             f"{error_prefix}: {type(err).__name__} {status_code_msg} - {err_msg}"
         )
         _LOGGER.error(full_error_msg)
-        if isinstance(
-            err, (ValueError, InvalidInputError)
-        ):
+        if isinstance(err, (ValueError, InvalidInputError)):
             raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
@@ -737,9 +749,7 @@ async def _async_handle_reset_world(
             f"{error_prefix}: {type(err).__name__} {status_code_msg} - {err_msg}"
         )
         _LOGGER.error(full_error_msg)
-        if isinstance(
-            err, (ValueError, InvalidInputError)
-        ):
+        if isinstance(err, (ValueError, InvalidInputError)):
             raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
@@ -778,9 +788,7 @@ async def _resolve_server_targets(
                 expected_prefix = manager_host_port_id + "_"
                 if identifier_value.startswith(expected_prefix):
                     prefix_len = len(expected_prefix)
-                    if (
-                        len(identifier_value) > prefix_len
-                    ):
+                    if len(identifier_value) > prefix_len:
                         parsed_server_name = identifier_value[prefix_len:]
                         break
 
@@ -1623,6 +1631,7 @@ async def async_handle_reload_global_settings_service(
         _async_handle_reload_global_settings,
     )
 
+
 async def async_handle_restore_select_backup_type_service(
     service: ServiceCall, hass: HomeAssistant
 ):
@@ -1632,6 +1641,7 @@ async def async_handle_restore_select_backup_type_service(
         _async_handle_restore_select_backup_type,
         service.data[FIELD_RESTORE_TYPE],
     )
+
 
 # --- Service Registration/Removal ---
 async def async_register_services(hass: HomeAssistant) -> None:

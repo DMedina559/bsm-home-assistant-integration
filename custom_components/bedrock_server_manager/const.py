@@ -99,7 +99,7 @@ SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
 SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
-SERVICE_RESTORE_SELECT_BACKUP_TYPE = "restore_select_backup_type" # New
+SERVICE_RESTORE_SELECT_BACKUP_TYPE = "restore_select_backup_type"  # New
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
