@@ -118,14 +118,6 @@ trigger_plugin_event:
       example: '{"key": "value", "count": 10}'
       selector:
         object: {} # Allows dictionary input in UI, will be JSON for API
-  fields:
-    command:
-      name: Command
-      description: The command string to send to the server console (without the leading '/').
-      required: true
-      example: "say Hello World from Home Assistant!"
-      selector:
-        text: {}
 
 prune_download_cache:
   name: Prune Download Cache

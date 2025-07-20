@@ -251,28 +251,14 @@ async def async_setup_entry(
         world_name_static = server_entry_data.get(ATTR_WORLD_NAME)
         version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
-        if world_name_static is None or version_static is None:
+        if version_static is None:
             _LOGGER.debug(
-                "Attempting to fetch initial static info (world/version) for server '%s' during sensor setup.",
+                "Attempting to fetch initial static info (version) for server '%s' during sensor setup.",
                 server_name,
             )
             try:
                 async with asyncio.timeout(10):
-                    results = await asyncio.gather(
-                        api_client.async_get_server_world_name(server_name),
-                        api_client.async_get_server_version(server_name),
-                        return_exceptions=True,
-                    )
-                world_name_res, version_res = results
-
-                if isinstance(world_name_res, Exception):
-                    _LOGGER.warning(
-                        "Failed to fetch initial world name for '%s': %s",
-                        server_name,
-                        world_name_res,
-                    )
-                elif isinstance(world_name_res, str):
-                    world_name_static = world_name_res
+                    version_res = await api_client.async_get_server_version(server_name)
 
                 if isinstance(version_res, Exception):
                     _LOGGER.warning(
@@ -283,7 +269,6 @@ async def async_setup_entry(
                 elif isinstance(version_res, str):
                     version_static = version_res
 
-                server_entry_data[ATTR_WORLD_NAME] = world_name_static
                 server_entry_data[ATTR_INSTALLED_VERSION] = version_static
 
             except TimeoutError:
@@ -465,9 +450,9 @@ class MinecraftServerSensor(
             return "Running" if isinstance(process_info, dict) else "Stopped"
         if isinstance(process_info, dict):
             if key == ATTR_CPU_PERCENT:
-                return process_info.get(ATTR_CPU_PERCENT)
+                return process_info.get("cpu_percent")
             if key == ATTR_MEMORY_MB:
-                return process_info.get(ATTR_MEMORY_MB)
+                return process_info.get("memory_mb")
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
         if key == KEY_WORLD_BACKUPS_COUNT:

@@ -13,7 +13,6 @@ from homeassistant.const import (
     CONF_PASSWORD,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import device_registry as dr
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
@@ -66,7 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
     use_ssl = entry.data.get(CONF_USE_SSL, False)
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
-    verify_ssl_flag = entry.data.get(CONF_VERIFY_SSL, True)
 
     # Safely get and process the port
     port_from_config_entry = entry.data.get(CONF_PORT)
@@ -121,13 +119,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"Invalid port value '{port_input_str}' in configuration for {host}."
                 )
 
-    ha_session = async_get_clientsession(hass, verify_ssl=verify_ssl_flag)
     api_client = BedrockServerManagerApi(
         host=host,
         port=processed_port,
         username=username,
         password=password,
-        session=ha_session,
         use_ssl=use_ssl,
         verify_ssl=verify_ssl,
     )

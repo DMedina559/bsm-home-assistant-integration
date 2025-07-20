@@ -62,11 +62,11 @@ from .const import (
     FIELD_PLUGIN_ENABLED,
     FIELD_EVENT_NAME,
     FIELD_EVENT_PAYLOAD,
-    SERVICE_SET_GLOBAL_SETTING,  # New
-    SERVICE_RELOAD_GLOBAL_SETTINGS,  # New
-    SERVICE_RESTORE_SELECT_BACKUP_TYPE,  # New
-    FIELD_SETTING_KEY,  # New
-    FIELD_SETTING_VALUE,  # New
+    SERVICE_SET_GLOBAL_SETTING,
+    SERVICE_RELOAD_GLOBAL_SETTINGS,
+    SERVICE_RESTORE_SELECT_BACKUP_TYPE,
+    FIELD_SETTING_KEY,
+    FIELD_SETTING_VALUE,
 )
 
 from bsm_api_client import (
@@ -78,6 +78,26 @@ from bsm_api_client import (
     InvalidInputError,
     ServerNotFoundError,
 )
+from bsm_api_client.models import (
+    CommandPayload,
+    PruneDownloadsPayload,
+    BackupActionPayload,
+    RestoreActionPayload,
+    AllowlistAddPayload,
+    AllowlistRemovePayload,
+    PlayerPermissionItem,
+    PermissionsSetPayload,
+    PropertiesPayload,
+    FileNamePayload,
+    ServiceUpdatePayload,
+    AddPlayersPayload,
+    PluginStatusSetPayload,
+    TriggerEventPayload,
+    SettingItem,
+    RestoreTypePayload,
+    InstallServerPayload,
+)
+
 
 from .coordinator import ManagerDataCoordinator
 
@@ -219,7 +239,7 @@ TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA = vol.Schema(
 SET_GLOBAL_SETTING_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_SETTING_KEY): cv.string,
-        vol.Required(FIELD_SETTING_VALUE): cv.string, # Using cv.string for initial flexibility as per YAML
+        vol.Required(FIELD_SETTING_VALUE): cv.string,
         **TARGETING_SCHEMA_FIELDS,
     }
 )
@@ -233,7 +253,7 @@ RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA = vol.Schema(
 RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_RESTORE_TYPE): vol.In(
-            ["world", "allowlist", "properties", "permissions"] # Match other restore types
+            ["world", "allowlist", "properties", "permissions"]
         ),
         **TARGETING_SCHEMA_FIELDS,
     }
@@ -267,9 +287,9 @@ async def _base_api_call_handler(
         msg = f"{error_message_prefix}{context_msg}: Invalid input provided. (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise ServiceValidationError(
-            description=msg,  # Fallback description
+            description=msg,
             translation_domain=DOMAIN,
-            translation_key="service_invalid_input_api",  # Key for strings.json (under config.error)
+            translation_key="service_invalid_input_api",
             translation_placeholders={"details": err.api_message or str(err)},
         ) from err
     except AuthError as err:
@@ -284,13 +304,13 @@ async def _base_api_call_handler(
         msg = f"{error_message_prefix}{context_msg}: BSM API Error (Status: {err.status_code}). (API: {err.api_message or err})"
         _LOGGER.error(msg)
         raise HomeAssistantError(msg) from err
-    except ValueError as err:  # From client's internal validation
+    except ValueError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input value provided. ({err})"
         _LOGGER.error(msg)
         raise ServiceValidationError(
-            description=msg,  # Fallback
+            description=msg,
             translation_domain=DOMAIN,
-            translation_key="service_invalid_value_client",  # Key for strings.json
+            translation_key="service_invalid_value_client",
             translation_placeholders={"details": str(err)},
         ) from err
     except Exception as err:
@@ -304,16 +324,18 @@ async def _base_api_call_handler(
 async def _async_handle_send_command(
     api: BedrockServerManagerApi, server: str, command: str
 ):
+    payload = CommandPayload(command=command)
     return await _base_api_call_handler(
-        api.async_send_server_command(server, command), "Send command", server
+        api.async_send_server_command(server, payload), "Send command", server
     )
 
 
 async def _async_handle_prune_downloads(
     api: BedrockServerManagerApi, directory: str, keep: Optional[int], manager_id: str
 ):
+    payload = PruneDownloadsPayload(directory=directory, keep=keep)
     return await _base_api_call_handler(
-        api.async_prune_downloads(directory=directory, keep=keep),
+        api.async_prune_downloads(payload),
         "Prune downloads",
         manager_id,
     )
@@ -325,8 +347,9 @@ async def _async_handle_trigger_backup(
     backup_type: str,
     file_to_backup: Optional[str],
 ):
+    payload = BackupActionPayload(backup_type=backup_type, file_to_backup=file_to_backup)
     return await _base_api_call_handler(
-        api.async_trigger_server_backup(server, backup_type, file_to_backup),
+        api.async_trigger_server_backup(server, payload),
         "Trigger backup",
         server,
     )
@@ -335,14 +358,16 @@ async def _async_handle_trigger_backup(
 async def _async_handle_restore_backup(
     api: BedrockServerManagerApi, server: str, restore_type: str, backup_file: str
 ):
+    payload = RestoreActionPayload(restore_type=restore_type, backup_file=backup_file)
     return await _base_api_call_handler(
-        api.async_restore_server_backup(server, restore_type, backup_file),
+        api.async_restore_server_backup(server, payload),
         "Restore backup",
         server,
     )
 
 
 async def _async_handle_restore_latest_all(api: BedrockServerManagerApi, server: str):
+    payload = RestoreActionPayload(restore_type="all")
     return await _base_api_call_handler(
         api.async_restore_server_latest_all(server), "Restore latest all", server
     )
@@ -351,8 +376,9 @@ async def _async_handle_restore_latest_all(api: BedrockServerManagerApi, server:
 async def _async_handle_add_to_allowlist(
     api: BedrockServerManagerApi, server: str, players: List[str], ignore_limit: bool
 ):
+    payload = AllowlistAddPayload(players=players, ignoresPlayerLimit=ignore_limit)
     return await _base_api_call_handler(
-        api.async_add_server_allowlist(server, players, ignore_limit),
+        api.async_add_server_allowlist(server, payload),
         "Add to allowlist",
         server,
     )
@@ -361,8 +387,9 @@ async def _async_handle_add_to_allowlist(
 async def _async_handle_remove_from_allowlist(
     api: BedrockServerManagerApi, server: str, player_name: str
 ):
+    payload = AllowlistRemovePayload(players=[player_name])
     return await _base_api_call_handler(
-        api.async_remove_server_allowlist_players(server, [player_name]),
+        api.async_remove_server_allowlist_players(server, payload),
         "Remove from allowlist",
         server,
     )
@@ -371,8 +398,13 @@ async def _async_handle_remove_from_allowlist(
 async def _async_handle_set_permissions(
     api: BedrockServerManagerApi, server: str, permissions_dict: Dict[str, str]
 ):
+    permissions = [
+        PlayerPermissionItem(xuid=xuid, name=name, permission_level=level)
+        for name, (xuid, level) in permissions_dict.items()
+    ]
+    payload = PermissionsSetPayload(permissions=permissions)
     return await _base_api_call_handler(
-        api.async_set_server_permissions(server, permissions_dict),
+        api.async_set_server_permissions(server, payload),
         "Set permissions",
         server,
     )
@@ -381,8 +413,9 @@ async def _async_handle_set_permissions(
 async def _async_handle_update_properties(
     api: BedrockServerManagerApi, server: str, properties_dict: Dict[str, Any]
 ):
+    payload = PropertiesPayload(properties=properties_dict)
     return await _base_api_call_handler(
-        api.async_update_server_properties(server, properties_dict),
+        api.async_update_server_properties(server, payload),
         "Update properties",
         server,
     )
@@ -391,22 +424,25 @@ async def _async_handle_update_properties(
 async def _async_handle_install_world(
     api: BedrockServerManagerApi, server: str, filename: str
 ):
+    payload = FileNamePayload(filename=filename)
     return await _base_api_call_handler(
-        api.async_install_server_world(server, filename), "Install world", server
+        api.async_install_server_world(server, payload), "Install world", server
     )
 
 
 async def _async_handle_install_addon(
     api: BedrockServerManagerApi, server: str, filename: str
 ):
+    payload = FileNamePayload(filename=filename)
     return await _base_api_call_handler(
-        api.async_install_server_addon(server, filename), "Install addon", server
+        api.async_install_server_addon(server, payload), "Install addon", server
     )
 
 
 async def _async_handle_configure_os_service(
-    api: BedrockServerManagerApi, server: str, payload: Dict[str, bool], manager_id: str
+    api: BedrockServerManagerApi, server: str, payload_dict: Dict[str, bool], manager_id: str
 ):
+    payload = ServiceUpdatePayload(**payload_dict)
     return await _base_api_call_handler(
         api.async_configure_server_os_service(server, payload),
         "Configure OS service",
@@ -417,8 +453,9 @@ async def _async_handle_configure_os_service(
 async def _async_handle_add_global_players(
     api: BedrockServerManagerApi, players_data: List[str], manager_id: str
 ):
+    payload = AddPlayersPayload(players=players_data)
     return await _base_api_call_handler(
-        api.async_add_players(players_data), "Add global players", manager_id
+        api.async_add_players(payload), "Add global players", manager_id
     )
 
 
@@ -431,8 +468,9 @@ async def _async_handle_scan_players(api: BedrockServerManagerApi, manager_id: s
 async def _async_handle_set_plugin_enabled(
     api: BedrockServerManagerApi, plugin_name: str, enabled: bool, manager_id: str
 ):
+    payload = PluginStatusSetPayload(enabled=enabled)
     return await _base_api_call_handler(
-        api.async_set_plugin_status(plugin_name, enabled),
+        api.async_set_plugin_status(plugin_name, payload),
         f"Set plugin '{plugin_name}' to {enabled}",
         manager_id,
     )
@@ -441,11 +479,12 @@ async def _async_handle_set_plugin_enabled(
 async def _async_handle_trigger_plugin_event(
     api: BedrockServerManagerApi,
     event_name: str,
-    payload: Optional[Dict[str, Any]],
+    payload_dict: Optional[Dict[str, Any]],
     manager_id: str,
 ):
+    payload = TriggerEventPayload(event_name=event_name, payload=payload_dict)
     return await _base_api_call_handler(
-        api.async_trigger_plugin_event(event_name, payload),
+        api.async_trigger_plugin_event(payload),
         f"Trigger plugin event '{event_name}'",
         manager_id,
     )
@@ -454,11 +493,6 @@ async def _async_handle_trigger_plugin_event(
 async def _async_handle_set_global_setting(
     api: BedrockServerManagerApi, key: str, value: Any, manager_id: str
 ):
-    # The 'value' comes as a string from Voluptuous schema (cv.string).
-    # We attempt to parse it as JSON if it looks like a JSON object or array.
-    # Otherwise, we pass it as a string. Bools/numbers might need specific handling
-    # if the API is strict and doesn't auto-convert from string.
-    # For now, sending as string, or parsed JSON. API client might do further conversions.
     parsed_value = value
     if isinstance(value, str):
         stripped_value = value.strip()
@@ -472,21 +506,10 @@ async def _async_handle_set_global_setting(
                     key,
                     value,
                 )
-                # Keep parsed_value as the original string if JSON parsing fails
-        # TODO: Consider explicit bool/int/float conversion if API needs it and client doesn't handle
-        # elif value.lower() in ["true", "false"]:
-        #     parsed_value = value.lower() == "true"
-        # else:
-        # try:
-        # parsed_value = int(value)
-        # except ValueError:
-        # try:
-        # parsed_value = float(value)
-        # except ValueError:
-        # pass # Keep as string
 
+    payload = SettingItem(key=key, value=parsed_value)
     return await _base_api_call_handler(
-        api.async_set_setting(key, parsed_value),
+        api.async_set_setting(payload),
         f"Set global setting '{key}'",
         manager_id,
     )
@@ -503,23 +526,21 @@ async def _async_handle_reload_global_settings(
 async def _async_handle_restore_select_backup_type(
     hass: HomeAssistant, api: BedrockServerManagerApi, server: str, restore_type: str, manager_id: str
 ):
+    payload = RestoreTypePayload(restore_type=restore_type)
     response = await _base_api_call_handler(
-        api.async_restore_select_backup_type(server, restore_type),
+        api.async_restore_select_backup_type(server, payload),
         f"Select restore type '{restore_type}' for server '{server}'",
         manager_id,
     )
-    if response and isinstance(response, dict):
-        redirect_url = response.get("redirect_url")
-        message = response.get("message", f"Selected restore type '{restore_type}' for '{server}'.")
-        if redirect_url:
-            message += f" API returned redirect URL for next step: {redirect_url}"
-            # Create a persistent notification for the redirect URL
-            async_create(
-                hass,
-                message=f"For server '{server}': {message}",
-                title="BSM Restore Step",
-                notification_id=f"bsm_restore_select_{server}_{restore_type}",
-            )
+    if response and response.redirect_url:
+        message = response.message or f"Selected restore type '{restore_type}' for '{server}'."
+        message += f" API returned redirect URL for next step: {response.redirect_url}"
+        async_create(
+            hass,
+            message=f"For server '{server}': {message}",
+            title="BSM Restore Step",
+            notification_id=f"bsm_restore_select_{server}_{restore_type}",
+        )
         _LOGGER.info(
             "Restore select backup type for server '%s' (manager '%s'): %s. Full response: %s",
             server,
@@ -538,11 +559,14 @@ async def _async_handle_install_server(
     manager_id: str,
 ):
     log_context = f"for server '{server_name_to_install}' on manager '{manager_id}'"
+    payload = InstallServerPayload(
+        server_name=server_name_to_install,
+        server_version=server_version,
+        overwrite=overwrite,
+    )
     try:
-        response = await api.async_install_new_server(
-            server_name_to_install, server_version, overwrite
-        )
-        if response.get("status") == "confirm_needed":
+        response = await api.async_install_new_server(payload)
+        if response.status == "confirm_needed":
             msg = f"Install server {log_context}: Server already exists and overwrite was false. Set 'overwrite: true' to replace it or use the 'delete_server' service first."
             _LOGGER.warning(msg)
             raise ServiceValidationError(
@@ -554,7 +578,7 @@ async def _async_handle_install_server(
         _LOGGER.info(
             "Successfully requested install %s. API Message: %s",
             log_context,
-            response.get("message", "N/A"),
+            response.message or "N/A",
         )
         return response
     except (
@@ -600,7 +624,7 @@ async def _async_handle_delete_server(
     device_removed_from_ha = False
     try:
         response = await api.async_delete_server(server_name=server_to_delete)
-        if response and response.get("status") == "success":
+        if response and response.status == "success":
             _LOGGER.info(
                 "Manager API confirmed deletion of server '%s'. Attempting HA device removal.",
                 server_to_delete,
@@ -627,7 +651,7 @@ async def _async_handle_delete_server(
                 )
             return {
                 "status": "success",
-                "message": response.get("message"),
+                "message": response.message,
                 "ha_device_removed": device_removed_from_ha,
             }
         else:
@@ -658,7 +682,7 @@ async def _async_handle_delete_server(
         _LOGGER.error(full_error_msg)
         if isinstance(
             err, (ValueError, InvalidInputError)
-        ):  # Could be client-side validation if any was added to delete_server
+        ):
             raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
@@ -679,11 +703,11 @@ async def _async_handle_reset_world(
 
     try:
         response = await api.async_reset_server_world(server_name=server_to_delete)
-        if response and response.get("status") == "success":
+        if response and response.status == "success":
 
             return {
                 "status": "success",
-                "message": response.get("message"),
+                "message": response.message,
             }
         else:
             msg = (
@@ -715,7 +739,7 @@ async def _async_handle_reset_world(
         _LOGGER.error(full_error_msg)
         if isinstance(
             err, (ValueError, InvalidInputError)
-        ):  # Could be client-side validation if any was added to delete_server
+        ):
             raise ServiceValidationError(description=full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
@@ -756,7 +780,7 @@ async def _resolve_server_targets(
                     prefix_len = len(expected_prefix)
                     if (
                         len(identifier_value) > prefix_len
-                    ):  # Ensure there's something after the prefix
+                    ):
                         parsed_server_name = identifier_value[prefix_len:]
                         break
 
@@ -959,28 +983,20 @@ async def _execute_targeted_service(
             api_client: BedrockServerManagerApi = entry_data["api"]
             manager_host_port_id = entry_data["manager_identifier"][1]
 
-            # Base arguments for most server-targeted handlers
             base_args = [api_client, target_server_name]
-            base_args.extend(handler_args) # Add service-specific args from service_call.data
+            base_args.extend(handler_args)
 
-            # Argument list to be passed to the handler
             actual_handler_args = []
 
-            # Specific handlers require different arguments
             if handler_coro.__name__ == "_async_handle_restore_select_backup_type":
-                # Needs: hass, api, server, *service_args (restore_type), manager_id
                 actual_handler_args = [hass, api_client, target_server_name]
                 actual_handler_args.extend(handler_args)
                 actual_handler_args.append(manager_host_port_id)
             elif handler_coro.__name__ == "_async_handle_configure_os_service":
-                # Needs: api, server, *service_args (payload), manager_id
                 actual_handler_args = [api_client, target_server_name]
                 actual_handler_args.extend(handler_args)
                 actual_handler_args.append(manager_host_port_id)
-            # Note: _async_handle_delete_server and _async_handle_reset_world are NOT called via _execute_targeted_service
-            # They have their own top-level service handlers that prepare arguments including hass and manager_id.
             else:
-                # Default for other server-targeted handlers
                 actual_handler_args = base_args
 
             tasks.append(handler_coro(*actual_handler_args))
@@ -1063,12 +1079,11 @@ async def _execute_manager_targeted_service(
                 {"cid": config_entry_id, "manager_id": manager_host_port_id}
             )
 
-            # Refresh coordinator for actions that change manager-level data
             if handler_coro.__name__ in [
                 "_async_handle_add_global_players",
                 "_async_handle_scan_players",
                 "_async_handle_install_server",
-                "_async_handle_set_plugin_enabled",  # Refresh after changing plugin state
+                "_async_handle_set_plugin_enabled",
             ]:
                 coordinator: Optional[ManagerDataCoordinator] = entry_data.get(
                     "manager_coordinator"
@@ -1297,7 +1312,6 @@ async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAss
             failure_messages.append(
                 f"'{sname}': Failed ({type(result_or_exc).__name__} - {err_msg})."
             )
-            # Error already logged by _async_handle_delete_server or _base_api_call_handler
         elif (
             isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
         ):
@@ -1455,7 +1469,6 @@ async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssis
             failure_messages.append(
                 f"'{sname}': Failed ({type(result_or_exc).__name__} - {err_msg})."
             )
-            # Error already logged by _async_handle_delete_server or _base_api_call_handler
         elif (
             isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
         ):
@@ -1572,7 +1585,7 @@ async def async_handle_configure_os_service_service(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for i, result in enumerate(results):
             target_info = processed_targets_info[i]
-            if isinstance(result, Exception):  # Check if result is an exception
+            if isinstance(result, Exception):
                 _LOGGER.debug(
                     "OS Service config for server '%s' (manager '%s') resulted in an exception (already logged by handler): %s",
                     target_info["sname"],
@@ -1598,7 +1611,6 @@ async def async_handle_set_global_setting_service(
         _async_handle_set_global_setting,
         service.data[FIELD_SETTING_KEY],
         service.data[FIELD_SETTING_VALUE],
-        # manager_id is appended by _execute_manager_targeted_service
     )
 
 
@@ -1609,7 +1621,6 @@ async def async_handle_reload_global_settings_service(
         service,
         hass,
         _async_handle_reload_global_settings,
-        # manager_id is appended by _execute_manager_targeted_service
     )
 
 async def async_handle_restore_select_backup_type_service(
@@ -1620,7 +1631,6 @@ async def async_handle_restore_select_backup_type_service(
         hass,
         _async_handle_restore_select_backup_type,
         service.data[FIELD_RESTORE_TYPE],
-        # hass, api_client, server_name, restore_type, manager_id are passed by _execute_targeted_service
     )
 
 # --- Service Registration/Removal ---
@@ -1695,15 +1705,15 @@ async def async_register_services(hass: HomeAssistant) -> None:
             async_handle_trigger_plugin_event_service,
             TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA,
         ),
-        SERVICE_SET_GLOBAL_SETTING: ( # New
+        SERVICE_SET_GLOBAL_SETTING: (
             async_handle_set_global_setting_service,
             SET_GLOBAL_SETTING_SERVICE_SCHEMA,
         ),
-        SERVICE_RELOAD_GLOBAL_SETTINGS: ( # New
+        SERVICE_RELOAD_GLOBAL_SETTINGS: (
             async_handle_reload_global_settings_service,
             RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA,
         ),
-        SERVICE_RESTORE_SELECT_BACKUP_TYPE: ( # New
+        SERVICE_RESTORE_SELECT_BACKUP_TYPE: (
             async_handle_restore_select_backup_type_service,
             RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA,
         ),
@@ -1748,7 +1758,6 @@ async def async_register_services(hass: HomeAssistant) -> None:
                         call.domain,
                         call.service,
                     )
-                    # Raise a generic HomeAssistantError to provide some feedback to the user
                     raise HomeAssistantError(
                         f"Unexpected error executing service {call.domain}.{call.service}: {type(exc).__name__} - {exc}"
                     ) from exc
@@ -1788,18 +1797,18 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
             SERVICE_ADD_GLOBAL_PLAYERS,
-            SERVICE_SET_PLUGIN_ENABLED, # Was missing here
-            SERVICE_TRIGGER_PLUGIN_EVENT, # Was missing here
-            SERVICE_SET_GLOBAL_SETTING, # New
-            SERVICE_RELOAD_GLOBAL_SETTINGS, # New
-            SERVICE_RESTORE_SELECT_BACKUP_TYPE, # New
+            SERVICE_SET_PLUGIN_ENABLED,
+            SERVICE_TRIGGER_PLUGIN_EVENT,
+            SERVICE_SET_GLOBAL_SETTING,
+            SERVICE_RELOAD_GLOBAL_SETTINGS,
+            SERVICE_RESTORE_SELECT_BACKUP_TYPE,
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):
                 _LOGGER.debug("Removing service: %s.%s", DOMAIN, service_name)
                 hass.services.async_remove(DOMAIN, service_name)
 
-        if domain_data:  # Check again as it might have been modified by another process
+        if domain_data:
             domain_data.pop("_services_registered", None)
             if not domain_data:
                 hass.data.pop(DOMAIN, None)

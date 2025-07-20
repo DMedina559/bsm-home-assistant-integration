@@ -170,7 +170,6 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
             port=port_to_api,  # Pass the processed integer port or None
             username=data[CONF_USERNAME],
             password=data[CONF_PASSWORD],
-            session=validation_session,  # Use the HA-managed session for validation
             use_ssl=user_requests_use_ssl,
             verify_ssl=user_requests_verify_ssl,  # Let API client know user's preference
         )
