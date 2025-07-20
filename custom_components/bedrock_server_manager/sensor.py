@@ -451,7 +451,7 @@ class MinecraftServerSensor(
         if isinstance(process_info, dict):
             if key == ATTR_CPU_PERCENT:
                 return process_info.get("cpu_percent")
-            if key == ATTR_MEMORY_MB:
+            elif key == ATTR_MEMORY_MB:
                 return process_info.get("memory_mb")
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))

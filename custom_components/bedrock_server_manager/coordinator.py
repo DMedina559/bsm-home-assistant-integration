@@ -20,7 +20,12 @@ from bsm_api_client import (
     CannotConnectError,
     ServerNotFoundError,
 )
-from bsm_api_client.models import GeneralApiResponse, BackupRestoreResponse, PluginApiResponse, ContentListResponse
+from bsm_api_client.models import (
+    GeneralApiResponse,
+    BackupRestoreResponse,
+    PluginApiResponse,
+    ContentListResponse,
+)
 
 from .const import DOMAIN
 
@@ -141,15 +146,17 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                         "Non-APIError exception for status_info for '%s', passing to critical handler.",
                         self.server_name,
                     )
-                    self._handle_critical_exception(
-                        "status_info", process_info_result
-                    )
+                    self._handle_critical_exception("status_info", process_info_result)
 
             elif isinstance(process_info_result, GeneralApiResponse):
                 if process_info_result.data:
-                    coordinator_data["process_info"] = process_info_result.data.get("process_info")
+                    coordinator_data["process_info"] = process_info_result.data.get(
+                        "process_info"
+                    )
                 coordinator_data["status"] = "success"
-                coordinator_data["message"] = process_info_result.message or "Status fetched successfully"
+                coordinator_data["message"] = (
+                    process_info_result.message or "Status fetched successfully"
+                )
                 if (
                     coordinator_data["process_info"] is None
                     and coordinator_data["message"]
@@ -159,9 +166,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                         "Server '%s' reported as not running by status_info (API success response).",
                         self.server_name,
                     )
-            elif (
-                not status_info_handled_as_offline
-            ):
+            elif not status_info_handled_as_offline:
                 _LOGGER.error(
                     "Invalid or unexpected API response structure for status_info for '%s': %s",
                     self.server_name,
@@ -200,7 +205,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
             elif isinstance(permissions_result, GeneralApiResponse):
                 if permissions_result.data:
-                    coordinator_data["server_permissions"] = permissions_result.data.get("permissions", [])
+                    coordinator_data["server_permissions"] = (
+                        permissions_result.data.get("permissions", [])
+                    )
             else:
                 fetch_errors_details.append(
                     f"Permissions: Invalid response ({permissions_result})"
@@ -222,7 +229,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"AllowlistBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
                 )
             elif isinstance(allowlist_backups_result, BackupRestoreResponse):
-                coordinator_data["allowlist_backups"] = allowlist_backups_result.backups or []
+                coordinator_data["allowlist_backups"] = (
+                    allowlist_backups_result.backups or []
+                )
             else:
                 fetch_errors_details.append(
                     f"AllowlistBackups: Invalid response ({allowlist_backups_result})"
@@ -233,7 +242,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"PermissionsBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
                 )
             elif isinstance(permissions_backups_result, BackupRestoreResponse):
-                coordinator_data["permissions_backups"] = permissions_backups_result.backups or []
+                coordinator_data["permissions_backups"] = (
+                    permissions_backups_result.backups or []
+                )
             else:
                 fetch_errors_details.append(
                     f"PermissionsBackups: Invalid response ({permissions_backups_result})"
@@ -244,12 +255,13 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"PropertiesBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
                 )
             elif isinstance(properties_backups_result, BackupRestoreResponse):
-                coordinator_data["properties_backups"] = properties_backups_result.backups or []
+                coordinator_data["properties_backups"] = (
+                    properties_backups_result.backups or []
+                )
             else:
                 fetch_errors_details.append(
                     f"PropertiesBackups: Invalid response ({properties_backups_result})"
                 )
-
 
             if fetch_errors_details:
                 _LOGGER.warning(
@@ -257,9 +269,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.server_name,
                     "; ".join(fetch_errors_details),
                 )
-                if (
-                    coordinator_data["status"] == "success"
-                ):
+                if coordinator_data["status"] == "success":
                     coordinator_data[
                         "message"
                     ] += f". Partial failures on other items: {len(fetch_errors_details)}."
@@ -326,9 +336,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Server not found for {data_key}: {error.api_message or error}"
             ) from error
-        if isinstance(
-            error, (APIError, CannotConnectError)
-        ):
+        if isinstance(error, (APIError, CannotConnectError)):
             _LOGGER.error(
                 "API/Connection error fetching %s for %s: %s",
                 data_key,
@@ -420,6 +428,9 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             elif isinstance(players_result, GeneralApiResponse):
                 manager_data["global_players"] = players_result.players or []
                 at_least_one_success = True
+            elif isinstance(players_result, dict) and "players" in players_result:
+                manager_data["global_players"] = players_result["players"] or []
+                at_least_one_success = True
             else:
                 fetch_errors_details.append(
                     f"GlobalPlayers: Invalid response ({players_result})"
@@ -488,9 +499,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             )
             return manager_data
 
-        except (
-            ConfigEntryAuthFailed
-        ):
+        except ConfigEntryAuthFailed:
             _LOGGER.error("Authentication failure during manager data update.")
             raise
         except UpdateFailed:
