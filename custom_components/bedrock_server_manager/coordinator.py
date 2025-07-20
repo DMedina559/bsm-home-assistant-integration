@@ -81,6 +81,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_server_process_info(self.server_name),
+                    self.api.async_get_server_version(self.server_name),
                     self.api.async_get_server_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
                     self.api.async_get_server_permissions_data(self.server_name),
@@ -93,6 +94,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
 
             (
                 process_info_result,
+                version_result,
                 allowlist_result,
                 properties_result,
                 permissions_result,
@@ -103,6 +105,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             ) = results
 
             fetch_errors_details = []
+
             status_info_handled_as_offline = False
 
             # --- Process Status Info (Considered critical for the coordinator's success) ---
@@ -174,6 +177,18 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
                 raise UpdateFailed(
                     f"Invalid response structure for critical status_info for server '{self.server_name}'"
+                )
+
+            if isinstance(version_result, Exception):
+                fetch_errors_details.append(
+                    f"Version: {type(version_result).__name__} ({version_result})"
+                )
+            elif isinstance(version_result, GeneralApiResponse):
+                if version_result.data:
+                    coordinator_data["version"] = version_result.data.get("version")
+            else:
+                fetch_errors_details.append(
+                    f"Version: Invalid response ({version_result})"
                 )
 
             # --- Process Non-Critical Data Points ---
@@ -284,7 +299,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 self.server_name,
                 coordinator_data["status"],
                 coordinator_data["message"],
-                "present" if coordinator_data["process_info"] else "None",
+                "present" if coordinator_data.get("process_info") else "None",
             )
             return coordinator_data
 

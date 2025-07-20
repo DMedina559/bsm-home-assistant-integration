@@ -494,7 +494,7 @@ class MinecraftServerSensor(
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
-                    attrs[ATTR_PID] = process_info[ATTR_PID]
+                    attrs[ATTR_PID] = f"\u00a0{process_info[ATTR_PID]}"
                 if process_info.get(ATTR_UPTIME) is not None:
                     attrs[ATTR_UPTIME] = process_info[ATTR_UPTIME]
         elif key == KEY_SERVER_PERMISSIONS_COUNT:
