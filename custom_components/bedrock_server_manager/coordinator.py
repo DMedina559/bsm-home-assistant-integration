@@ -440,9 +440,6 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 self._handle_exception_for_manager_data(
                     "global_players", players_result, fetch_errors_details
                 )
-            elif isinstance(players_result, GeneralApiResponse):
-                manager_data["global_players"] = players_result.players or []
-                at_least_one_success = True
             elif isinstance(players_result, dict) and "players" in players_result:
                 manager_data["global_players"] = players_result["players"] or []
                 at_least_one_success = True

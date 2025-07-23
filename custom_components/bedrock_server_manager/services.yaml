@@ -322,10 +322,10 @@ set_permissions:
       integration: bedrock_server_manager
   fields:
     permissions:
-      name: Permissions Dictionary
-      description: "A dictionary mapping Player XUIDs (as strings) to permission level strings (e.g., 'visitor', 'member', 'operator')."
+      name: Permissions List
+      description: "A list of player permission objects, where each object has 'name', 'xuid', and 'permission_level'."
       required: true
-      example: '{"2535416409681153": "operator", "2535457894355891": "member"}'
+      example: '[{"name": "Steve", "xuid": "2535416409681153", "permission_level": "operator"}]'
       selector:
         object: {}
 

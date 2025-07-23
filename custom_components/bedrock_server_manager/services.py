@@ -85,7 +85,7 @@ from bsm_api_client.models import (
     RestoreActionPayload,
     AllowlistAddPayload,
     AllowlistRemovePayload,
-    PlayerPermissionItem,
+    PlayerPermission,
     PermissionsSetPayload,
     PropertiesPayload,
     FileNamePayload,
@@ -173,8 +173,19 @@ REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
 )
 SET_PERMISSIONS_SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(FIELD_PERMISSIONS): vol.Schema(
-            {cv.string: vol.In(["visitor", "member", "operator"])}
+        vol.Required(FIELD_PERMISSIONS): vol.All(
+            cv.ensure_list,
+            [
+                vol.Schema(
+                    {
+                        vol.Required("name"): cv.string,
+                        vol.Required("xuid"): cv.string,
+                        vol.Required("permission_level"): vol.In(
+                            ["visitor", "member", "operator"]
+                        ),
+                    }
+                )
+            ],
         ),
         **TARGETING_SCHEMA_FIELDS,
     }
@@ -372,7 +383,7 @@ async def _async_handle_restore_backup(
 async def _async_handle_restore_latest_all(api: BedrockServerManagerApi, server: str):
     payload = RestoreActionPayload(restore_type="all")
     return await _base_api_call_handler(
-        api.async_restore_server_latest_all(server), "Restore latest all", server
+        api.async_restore_server_backup(server, payload), "Restore latest all", server
     )
 
 
@@ -392,19 +403,16 @@ async def _async_handle_remove_from_allowlist(
 ):
     payload = AllowlistRemovePayload(players=[player_name])
     return await _base_api_call_handler(
-        api.async_remove_server_allowlist_players(server, payload),
+        api.async_remove_server_allowlist(server, payload),
         "Remove from allowlist",
         server,
     )
 
 
 async def _async_handle_set_permissions(
-    api: BedrockServerManagerApi, server: str, permissions_dict: Dict[str, str]
+    api: BedrockServerManagerApi, server: str, permissions_list: List[Dict[str, str]]
 ):
-    permissions = [
-        PlayerPermissionItem(xuid=xuid, name=name, permission_level=level)
-        for name, (xuid, level) in permissions_dict.items()
-    ]
+    permissions = [PlayerPermission(**p) for p in permissions_list]
     payload = PermissionsSetPayload(permissions=permissions)
     return await _base_api_call_handler(
         api.async_set_server_permissions(server, payload),
