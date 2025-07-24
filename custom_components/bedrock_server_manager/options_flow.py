@@ -8,8 +8,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries, exceptions
 from homeassistant.const import (
-    CONF_HOST,
-    CONF_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
     # CONF_SCAN_INTERVAL, # This is used as a key, defined below
@@ -25,10 +23,10 @@ from .const import (
     CONF_SERVER_NAMES,
     CONF_MANAGER_SCAN_INTERVAL,
     CONF_SERVER_SCAN_INTERVAL,
-    CONF_USE_SSL,
     CONF_VERIFY_SSL,  # Make sure this is in your const.py
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
+    CONF_BASE_URL,
 )
 
 from bsm_api_client import (
@@ -77,37 +75,6 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 )
 
 
-# Helper to get a clean port string (integer string or empty string)
-# This logic is similar to _clean_port_string_component in config_flow.py
-# Consider moving to a shared utils.py if used in many places.
-def _get_cleaned_port_str(port_input: Any) -> str:
-    """Returns a clean integer string for a port, or an empty string."""
-    if port_input is None:
-        return ""
-    port_str = str(port_input).strip()
-    if not port_str:
-        return ""
-    try:
-        port_float = float(port_str)
-        if port_float == int(port_float):
-            port_int = int(port_float)
-            # No range validation here, as it's for display/ID string representation
-            return str(port_int)
-        _LOGGER.debug(
-            "Port input '%s' is a non-whole float, treating as no port for string representation in options flow.",
-            port_str,
-        )
-        return (
-            ""  # Or return port_str if non-whole floats are acceptable in IDs/display
-        )
-    except ValueError:
-        _LOGGER.debug(
-            "Port input '%s' is not a valid number, treating as no port for string representation in options flow.",
-            port_str,
-        )
-        return ""  # Or return port_str if non-numeric strings are acceptable
-
-
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Bedrock Server Manager options."""
 
@@ -128,55 +95,19 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         current_data = self.config_entry.data
         effective_data = {**current_data, **(data_override or {})}
 
-        host = effective_data[CONF_HOST]  # Assumed to always exist
-
-        # --- Handle optional port ---
-        port_input = effective_data.get(CONF_PORT)  # Get value, could be None
-        api_client_port: Optional[int] = None
-        if port_input is not None:
-            port_input_str = str(port_input).strip()
-            if port_input_str:
-                try:
-                    port_float = float(port_input_str)
-                    if port_float == int(port_float):  # Check if it's a whole number
-                        port_val = int(port_float)
-                        if 1 <= port_val <= 65535:
-                            api_client_port = port_val
-                        else:
-                            _LOGGER.warning(
-                                "Port %s from effective_data is out of valid range (1-65535) in options flow. "
-                                "Treating as if no port specified for API client.",
-                                port_val,
-                            )
-                    else:  # Is a float, but not a whole number (e.g. 123.5)
-                        _LOGGER.warning(
-                            "Non-integer port value '%s' from effective_data in options flow. "
-                            "Treating as if no port specified for API client.",
-                            port_input_str,
-                        )
-                except (ValueError, TypeError):  # float() or int() conversion failed
-                    _LOGGER.warning(
-                        "Invalid port format '%s' from effective_data in options flow. "
-                        "Treating as if no port specified for API client.",
-                        port_input_str,
-                    )
-        # --- End handle optional port ---
-
+        url = effective_data[CONF_BASE_URL]
         username = effective_data[CONF_USERNAME]  # Assumed to always exist
         password = effective_data[CONF_PASSWORD]  # Assumed to always exist
-        use_ssl = effective_data.get(CONF_USE_SSL, False)
         verify_ssl = effective_data.get(CONF_VERIFY_SSL, True)  # Use verify_ssl
 
         # Always create a new session for short-lived validation/option tasks
         session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
 
         api_client = BedrockServerManagerApi(
-            host=host,
-            port=api_client_port,  # Pass the processed integer port or None
+            base_url=url,
             username=username,
             password=password,
             session=session,
-            use_ssl=use_ssl,
             verify_ssl=verify_ssl,  # Pass to API client if it supports/needs it
         )
         if not data_override:  # Store if it's using the main config for multiple steps
@@ -191,17 +122,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     def _get_manager_display_name(self) -> str:
         """Helper to get a display string for the manager (host or host:port)."""
-        host_val = self.config_entry.data.get(CONF_HOST, "Unknown BSM Host")
-        port_input = self.config_entry.data.get(
-            CONF_PORT
-        )  # This is the original value (None, int, float, str)
-        cleaned_port_str = _get_cleaned_port_str(
-            port_input
-        )  # Get a display-friendly string
-
-        if cleaned_port_str:
-            return f"{host_val}:{cleaned_port_str}"
-        return host_val
+        return self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL")
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -216,7 +137,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 "update_server_interval",
                 "update_manager_interval",
             ],
-            description_placeholders={"host": manager_display_name},
+            description_placeholders={"base_url": manager_display_name},
         )
 
     async def async_step_update_credentials(
@@ -230,9 +151,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Create a temporary data dict for validation, including existing host/port/ssl/verify_ssl
             validation_data = {
-                CONF_HOST: self.config_entry.data[CONF_HOST],
-                CONF_PORT: self.config_entry.data.get(CONF_PORT),  # Port might be None
-                CONF_USE_SSL: self.config_entry.data.get(CONF_USE_SSL, False),
+                CONF_BASE_URL: self.config_entry.data[CONF_BASE_URL],
                 CONF_VERIFY_SSL: self.config_entry.data.get(
                     CONF_VERIFY_SSL, True
                 ),  # Add verify_ssl
@@ -308,7 +227,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=schema_with_suggestions,
             errors=errors,
             description_placeholders=description_placeholders
-            or {"host": manager_display_name},
+            or {"base_url": manager_display_name},
         )
 
     async def async_step_select_servers(
@@ -424,21 +343,11 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             servers_to_disassociate = old_selected_servers - newly_selected_servers_set
             if servers_to_disassociate:
                 dev_reg = dr.async_get(self.hass)
-                # --- Construct manager_id_suffix (host or host:port) ---
-                manager_host = self.config_entry.data[CONF_HOST]  # Assumed to exist
-                manager_port_input = self.config_entry.data.get(
-                    CONF_PORT
-                )  # Get optional port
-                cleaned_port_str_for_id = _get_cleaned_port_str(manager_port_input)
-
-                manager_host_port_id = manager_host
-                if cleaned_port_str_for_id:
-                    manager_host_port_id = f"{manager_host}:{cleaned_port_str_for_id}"
-                # --- End suffix construction ---
+                manager_url = self.config_entry.data[CONF_BASE_URL]
 
                 for server_name_to_remove in servers_to_disassociate:
                     server_device_identifier_value = (
-                        f"{server_name_to_remove}_{manager_host_port_id}"
+                        f"{server_name_to_remove}_{manager_url}"
                     )
                     device_id_tuple = (DOMAIN, server_device_identifier_value)
 
@@ -513,7 +422,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                     f"No Minecraft servers were found on this BSM manager ({manager_display_name}). "
                     "Verify configurations on your BSM host or add servers there first."
                 )
-        description_placeholders["host"] = manager_display_name
+        description_placeholders["base_url"] = manager_display_name
 
         return self.async_show_form(
             step_id="select_servers",

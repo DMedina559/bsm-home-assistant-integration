@@ -21,11 +21,9 @@ PLATFORMS = [
 ]  # Add "binary_sensor", "select", etc., if used
 
 # --- Configuration Keys (used in config_flow.py, options_flow.py, and config_entry) ---
-CONF_HOST = "host"
-CONF_PORT = "port"
+CONF_BASE_URL = "base_url"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
-CONF_USE_SSL = "use_ssl"  # For enabling HTTPS connection to BSM API
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_SERVER_NAMES = "servers"  # Key for list of selected server names in
 
@@ -36,7 +34,6 @@ CONF_SERVER_SCAN_INTERVAL = (
 )
 
 # --- Default Values ---
-DEFAULT_PORT = 11325  # Default BSM API port
 DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS = 600  # 10 minutes for manager-level data
 DEFAULT_SCAN_INTERVAL_SECONDS = 30  # For individual server data updates
 
