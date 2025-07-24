@@ -3,19 +3,13 @@
 
 import asyncio
 import logging
-from typing import Optional  # Added for type hinting
+from typing import Optional
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
-)
+from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-    ConfigEntryNotReady,
-)
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from bsm_api_client import (
     BedrockServerManagerApi,
@@ -40,11 +34,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Bedrock Server Manager from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault(entry.entry_id, {})
+    """
+    Set up Bedrock Server Manager from a config entry.
 
-    # Frontend Registration
+    This function initializes the API client, sets up data coordinators for the
+    manager and selected servers, registers devices, and forwards the setup to
+    the relevant platforms (sensor, switch, etc.).
+    """
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {}
+
+    # Register frontend modules
     frontend_registrar = BsmFrontendRegistration(hass)
     try:
         await frontend_registrar.async_register()
@@ -54,36 +54,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error(
             "Failed during frontend module registration: %s", e, exc_info=True
         )
-        # Continue setup even if frontend registration fails
 
     # --- API Client Setup ---
     url = entry.data[CONF_BASE_URL]
-    username = entry.data[CONF_USERNAME]
-    password = entry.data[CONF_PASSWORD]
-    verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
-
     api_client = BedrockServerManagerApi(
         base_url=url,
-        username=username,
-        password=password,
-        verify_ssl=verify_ssl,
+        username=entry.data[CONF_USERNAME],
+        password=entry.data[CONF_PASSWORD],
+        verify_ssl=entry.data.get(CONF_VERIFY_SSL, True),
     )
     hass.data[DOMAIN][entry.entry_id]["api"] = api_client
-    _LOGGER.debug(
-        "BedrockServerManagerApi client initialized for %s (Verify SSL: %s)",
-        url,
-        verify_ssl,
-    )
-    # --- End of API Client Setup Modification ---
+    _LOGGER.debug("BedrockServerManagerApi client initialized for %s", url)
 
-    # Manager Data Coordinator Setup
-    manager_scan_interval = entry.options.get(
-        "manager_scan_interval", 600  # Default to 10 minutes for manager-level data
-    )
+    # --- Manager Data Coordinator Setup ---
+    manager_scan_interval = entry.options.get("manager_scan_interval", 600)
     manager_coordinator = ManagerDataCoordinator(
         hass=hass, api_client=api_client, scan_interval=manager_scan_interval
     )
-
     try:
         await manager_coordinator.async_config_entry_first_refresh()
     except AuthError as err:
@@ -96,144 +83,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(
             f"Failed to initialize manager data coordinator: {err.api_message or err}"
         ) from err
-    except Exception as err:
-        _LOGGER.exception(
-            "Unexpected error during ManagerDataCoordinator initial refresh"
-        )
-        raise ConfigEntryNotReady(
-            f"Unexpected error initializing manager data: {err}"
-        ) from err
 
+    # Extract manager info for device registration
     manager_os_type = "Unknown"
     manager_app_version = "Unknown"
     if manager_coordinator.last_update_success and manager_coordinator.data:
-        manager_info_payload = manager_coordinator.data.get("info")
-        if isinstance(manager_info_payload, dict):
-            manager_os_type = manager_info_payload.get("os_type", "Unknown").lower()
-            manager_app_version = manager_info_payload.get("app_version", "Unknown")
+        info = manager_coordinator.data.get("info", {})
+        manager_os_type = info.get("os_type", "Unknown").lower()
+        manager_app_version = info.get("app_version", "Unknown")
     else:
         _LOGGER.warning(
-            "ManagerDataCoordinator initial update failed or returned no data. "
-            "Manager-level entities and device info might be incomplete."
+            "ManagerDataCoordinator initial update failed; device info may be incomplete."
         )
 
     # --- Manager Device Registration ---
-    manager_identifier_tuple = (DOMAIN, url)
-
+    manager_identifier = (DOMAIN, url)
     device_registry = dr.async_get(hass)
-    configuration_url_for_device = url
-
-    manager_device_entry = device_registry.async_get_or_create(
+    device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={manager_identifier_tuple},  # Uses sanitized ID in tuple
-        name=f"BSM @ {url}",  # Display name can use the sanitized ID
+        identifiers={manager_identifier},
+        name=f"BSM @ {url}",
         manufacturer="DMedina559",
         model=f"{manager_os_type.capitalize() if manager_os_type != 'unknown' else 'Unknown OS'}",
         sw_version=manager_app_version,
-        configuration_url=configuration_url_for_device,  # Use the carefully constructed URL
+        configuration_url=url,
     )
-    _LOGGER.debug(
-        "Ensured manager device exists: ID=%s for identifier %s",
-        manager_device_entry.id,
-        url,  # Log the sanitized version
-    )
-    # --- End of Manager Device Registration Modification ---
 
     hass.data[DOMAIN][entry.entry_id].update(
         {
-            "manager_identifier": manager_identifier_tuple,
+            "manager_identifier": manager_identifier,
             "manager_coordinator": manager_coordinator,
             "manager_os_type": manager_os_type,
-            "manager_app_version": manager_app_version,
             "servers": {},
         }
     )
 
+    # --- Server-Specific Setup ---
     selected_servers = entry.options.get(CONF_SERVER_NAMES, [])
-    server_scan_interval = entry.options.get(
-        "scan_interval", DEFAULT_SCAN_INTERVAL_SECONDS
-    )
+    if selected_servers:
+        await _async_setup_servers(hass, entry, api_client, selected_servers)
 
-    if not selected_servers:
-        _LOGGER.info(
-            "No Minecraft servers selected for manager %s. Only manager-level entities will be created.",
-            url,
-        )
-    else:
-        _LOGGER.info(
-            "Attempting to set up server coordinators for manager %s, selected servers: %s",
-            url,
-            selected_servers,
-        )
-        setup_tasks = [
-            _async_setup_server_coordinator(
-                hass, entry, api_client, server_name, server_scan_interval
-            )
-            for server_name in selected_servers
-        ]
-        results = await asyncio.gather(*setup_tasks, return_exceptions=True)
-        successful_setups = 0
-        for i, result in enumerate(results):
-            server_name = selected_servers[i]
-            if isinstance(result, Exception):
-                if isinstance(result, ConfigEntryAuthFailed):
-                    _LOGGER.error(
-                        "Auth error setting up server '%s': %s",
-                        server_name,
-                        result,
-                        exc_info=result,
-                    )
-                elif isinstance(result, ConfigEntryNotReady):
-                    _LOGGER.error(
-                        "Coordinator for server '%s' not ready: %s",
-                        server_name,
-                        result,
-                        exc_info=result,
-                    )
-                elif isinstance(result, (AuthError, CannotConnectError, APIError)):
-                    _LOGGER.error(
-                        "API/Connection error setting up coordinator for server '%s': %s",
-                        server_name,
-                        result,
-                        exc_info=result,
-                    )
-                else:
-                    _LOGGER.error(
-                        "Unexpected error setting up coordinator for server '%s': %s",
-                        server_name,
-                        result,
-                        exc_info=result,
-                    )
-                if server_name in hass.data[DOMAIN][entry.entry_id].get("servers", {}):
-                    del hass.data[DOMAIN][entry.entry_id]["servers"][server_name]
-            else:
-                successful_setups += 1
-
-        if selected_servers and successful_setups == 0 and len(selected_servers) > 0:
-            _LOGGER.warning(
-                "All %d selected Minecraft server coordinator(s) failed to set up for manager %s. "
-                "Problematic server(s) will not have entities.",
-                len(selected_servers),
-                url,
-            )
-        elif selected_servers and successful_setups < len(selected_servers):
-            failed_count = len(selected_servers) - successful_setups
-            _LOGGER.warning(
-                "%d of %d selected Minecraft server coordinator(s) failed to set up for manager %s. "
-                "Problematic server(s) will not have entities.",
-                failed_count,
-                len(selected_servers),
-                url,
-            )
-        elif selected_servers and successful_setups == len(
-            selected_servers
-        ):  # All selected servers set up successfully
-            _LOGGER.info(
-                "All %d selected server coordinators set up successfully for manager %s.",
-                successful_setups,
-                url,
-            )
-
+    # --- Finalize Setup ---
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(options_update_listener))
 
@@ -243,6 +133,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Integration services registered.")
 
     return True
+
+
+async def _async_setup_servers(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    api_client: BedrockServerManagerApi,
+    server_names: list[str],
+):
+    """Set up coordinators and static data for each selected server."""
+    _LOGGER.info("Setting up coordinators for servers: %s", server_names)
+    scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL_SECONDS)
+
+    setup_tasks = [
+        _async_setup_server_coordinator(hass, entry, api_client, name, scan_interval)
+        for name in server_names
+    ]
+    results = await asyncio.gather(*setup_tasks, return_exceptions=True)
+
+    successful_setups = 0
+    for i, result in enumerate(results):
+        server_name = server_names[i]
+        if isinstance(result, Exception):
+            _LOGGER.error(
+                "Failed to set up coordinator for server '%s': %s",
+                server_name,
+                result,
+                exc_info=result,
+            )
+            # Clean up partially created data if setup fails
+            if server_name in hass.data[DOMAIN][entry.entry_id].get("servers", {}):
+                del hass.data[DOMAIN][entry.entry_id]["servers"][server_name]
+        else:
+            successful_setups += 1
+
+    if successful_setups < len(server_names):
+        failed_count = len(server_names) - successful_setups
+        _LOGGER.warning(
+            "%d of %d server coordinator(s) failed to set up.",
+            failed_count,
+            len(server_names),
+        )
 
 
 async def _async_setup_server_coordinator(
@@ -262,25 +193,39 @@ async def _async_setup_server_coordinator(
     )
     try:
         await coordinator.async_config_entry_first_refresh()
-        hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})
-        hass.data[DOMAIN][entry.entry_id]["servers"][server_name] = {
-            "coordinator": coordinator
+
+        # Fetch static data once and store it
+        version_res = await api_client.async_get_server_version(server_name)
+        properties_res = await api_client.async_get_server_properties(server_name)
+
+        server_data = {
+            "coordinator": coordinator,
+            "installed_version": (
+                version_res.data.get("version")
+                if hasattr(version_res, "data") and version_res.data
+                else None
+            ),
+            "world_name": (
+                properties_res.properties.get("level-name")
+                if hasattr(properties_res, "properties") and properties_res.properties
+                else None
+            ),
         }
-        _LOGGER.info(
-            "Successfully set up and refreshed coordinator for server: %s", server_name
-        )
+
+        hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})
+        hass.data[DOMAIN][entry.entry_id]["servers"][server_name] = server_data
+        _LOGGER.info("Successfully set up coordinator for server: %s", server_name)
     except Exception as err:
-        _LOGGER.debug(
-            "Initial refresh failed for server '%s' coordinator: %s (%s)",
+        _LOGGER.warning(
+            "Initial refresh failed for server '%s' coordinator, it will be ignored: %s",
             server_name,
-            type(err).__name__,
             err,
         )
         raise
 
 
 async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
+    """Handle options update by reloading the integration."""
     _LOGGER.debug(
         "Options updated for entry %s, reloading integration.", entry.entry_id
     )
@@ -288,98 +233,45 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    # Safely construct manager_host_port_id for logging
-    url_for_unload = entry.data.get(CONF_BASE_URL, "UnknownURL")
+    """
+    Unload a config entry.
 
-    _LOGGER.info(
-        "Unloading Bedrock Server Manager entry for manager '%s' (Entry ID: %s)",
-        url_for_unload,
-        entry.entry_id,
-    )
+    This function unloads the integration's platforms, cleans up hass.data,
+    unregisters frontend modules, and removes services if it's the last entry.
+    """
+    url_for_unload = entry.data.get(CONF_BASE_URL, "Unknown")
+    _LOGGER.info("Unloading BSM entry for manager '%s'", url_for_unload)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        domain_data = hass.data.get(DOMAIN)
-        entry_specific_data_popped = None
-        if domain_data:
-            entry_specific_data_popped = domain_data.pop(entry.entry_id, None)
-
-        if entry_specific_data_popped:
-            _LOGGER.debug(
-                "Successfully removed data for entry %s (%s) from hass.data.%s",
-                entry.entry_id,
-                url_for_unload,
-                DOMAIN,
-            )
-            frontend_registrar = entry_specific_data_popped.get("frontend_registrar")
-            if frontend_registrar:
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if entry_data:
+            # Unregister frontend resources
+            if frontend_registrar := entry_data.get("frontend_registrar"):
                 try:
                     await frontend_registrar.async_unregister()
                     _LOGGER.debug(
-                        "BSM Frontend module unregistered for %s.",
-                        url_for_unload,
+                        "BSM Frontend module unregistered for %s.", url_for_unload
                     )
                 except Exception as e:
                     _LOGGER.error(
-                        "Error during frontend unregistration for %s: %s",
-                        url_for_unload,
-                        e,
-                        exc_info=True,
+                        "Error during frontend unregistration: %s", e, exc_info=True
                     )
 
-            # Closing the API client from hass.data is generally not needed if ClientBase
-            # is used correctly with HA's shared session or if it's managed by coordinators.
-            # If ClientBase created its own session (not typical for runtime), it should be closed by its owner.
-            # api_client_instance = entry_specific_data_popped.get("api")
-            # if api_client_instance and hasattr(api_client_instance, "close"):
-            #     await api_client_instance.close() # ClientBase.close() is safe for shared sessions.
-
-        else:
-            _LOGGER.debug(
-                "No specific data found in hass.data.%s for entry %s to pop.",
-                DOMAIN,
-                entry.entry_id,
-            )
-
-        current_domain_data = hass.data.get(DOMAIN)
-        active_bsm_config_entries_count = 0
-        if current_domain_data:
-            active_bsm_config_entries_count = sum(
-                1 for key in current_domain_data if key != "_services_registered"
-            )
-
-        if active_bsm_config_entries_count == 0:
-            _LOGGER.info(
-                "No active BSM config entries remain after unloading %s. Proceeding to remove services and domain data.",
-                entry.entry_id,
-            )
-            if current_domain_data and current_domain_data.get("_services_registered"):
+        # Check if this is the last BSM entry being unloaded
+        active_bsm_entries = [
+            e for e in hass.data.get(DOMAIN, {}) if e != "_services_registered"
+        ]
+        if not active_bsm_entries:
+            _LOGGER.info("No active BSM config entries remain. Removing services.")
+            if hass.data.get(DOMAIN, {}).get("_services_registered"):
                 await services.async_remove_services(hass)
-                current_domain_data.pop("_services_registered", None)
-            if (
-                current_domain_data and not current_domain_data
-            ):  # Checks if dict is empty after pop
-                _LOGGER.debug("Popping empty %s dictionary from hass.data.", DOMAIN)
-                hass.data.pop(DOMAIN, None)
-            elif (
-                not current_domain_data
-            ):  # Domain data was already gone or never created
-                _LOGGER.debug(
-                    "%s dictionary already removed from hass.data or was never created.",
-                    DOMAIN,
-                )
+            hass.data.pop(DOMAIN, None)
         else:
             _LOGGER.debug(
-                "%d BSM config entries still loaded for domain %s. Services will be kept.",
-                active_bsm_config_entries_count,
-                DOMAIN,
+                "%d BSM config entries still loaded. Services will be kept.",
+                len(active_bsm_entries),
             )
-    else:
-        _LOGGER.error(
-            "Failed to unload platforms for BSM entry %s. Data and services will not be fully cleaned up.",
-            entry.entry_id,
-        )
 
     return unload_ok
