@@ -12,7 +12,6 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, UpdateFailed
@@ -21,10 +20,8 @@ from homeassistant.helpers import device_registry as dr
 
 # --- IMPORT FROM LOCAL MODULES ---
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
-from .utils import sanitize_host_port_string
 from .const import (
     DOMAIN,
-    CONF_USE_SSL,
     ATTR_CPU_PERCENT,
     ATTR_MEMORY_MB,
     ATTR_PID,
@@ -55,6 +52,7 @@ from .const import (
     ATTR_MANAGER_OS_TYPE,
     KEY_PLUGIN_STATUSES,
     ATTR_PLUGINS_DATA,
+    CONF_BASE_URL,
 )
 
 from bsm_api_client import BedrockServerManagerApi
@@ -188,23 +186,7 @@ async def async_setup_entry(
         )
         return
 
-    # Sanitize the host-port string part of the manager_identifier
-    original_manager_id_str = original_manager_identifier_tuple[1]
-    sanitized_manager_id_str = sanitize_host_port_string(original_manager_id_str)
-
-    if sanitized_manager_id_str != original_manager_id_str:
-        _LOGGER.info(
-            "Sanitized manager identifier string from '%s' to '%s' for entry %s",
-            original_manager_id_str,
-            sanitized_manager_id_str,
-            entry.entry_id,
-        )
-    # Create a new, sanitized manager_identifier tuple to be used by sensors
-    # The first part of the tuple is typically the DOMAIN.
-    manager_identifier_for_sensors = (
-        original_manager_identifier_tuple[0],
-        sanitized_manager_id_str,
-    )
+    manager_identifier_for_sensors = original_manager_identifier_tuple
 
     entities_to_add: List[SensorEntity] = []
 
@@ -251,28 +233,14 @@ async def async_setup_entry(
         world_name_static = server_entry_data.get(ATTR_WORLD_NAME)
         version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
-        if world_name_static is None or version_static is None:
+        if version_static is None:
             _LOGGER.debug(
-                "Attempting to fetch initial static info (world/version) for server '%s' during sensor setup.",
+                "Attempting to fetch initial static info (version) for server '%s' during sensor setup.",
                 server_name,
             )
             try:
                 async with asyncio.timeout(10):
-                    results = await asyncio.gather(
-                        api_client.async_get_server_world_name(server_name),
-                        api_client.async_get_server_version(server_name),
-                        return_exceptions=True,
-                    )
-                world_name_res, version_res = results
-
-                if isinstance(world_name_res, Exception):
-                    _LOGGER.warning(
-                        "Failed to fetch initial world name for '%s': %s",
-                        server_name,
-                        world_name_res,
-                    )
-                elif isinstance(world_name_res, str):
-                    world_name_static = world_name_res
+                    version_res = await api_client.async_get_server_version(server_name)
 
                 if isinstance(version_res, Exception):
                     _LOGGER.warning(
@@ -283,7 +251,6 @@ async def async_setup_entry(
                 elif isinstance(version_res, str):
                     version_static = version_res
 
-                server_entry_data[ATTR_WORLD_NAME] = world_name_static
                 server_entry_data[ATTR_INSTALLED_VERSION] = version_static
 
             except TimeoutError:
@@ -384,34 +351,7 @@ class MinecraftServerSensor(
         )
 
         config_entry_data = coordinator.config_entry.data
-        bsm_host = config_entry_data[CONF_HOST]
-        bsm_use_ssl = config_entry_data.get(CONF_USE_SSL, False)
-        port_from_config = config_entry_data.get(CONF_PORT)
-        bsm_effective_port: Optional[int] = None
-        display_port_str_for_url = ""
-
-        if port_from_config is not None:
-            port_input_str = str(port_from_config).strip()
-            if port_input_str:
-                try:
-                    port_val_int = int(float(port_input_str))
-                    if 1 <= port_val_int <= 65535:
-                        bsm_effective_port = port_val_int
-                    else:
-                        _LOGGER.warning("Invalid BSM port range '%s'", port_input_str)
-                except ValueError:
-                    _LOGGER.warning(
-                        "BSM port '%s' is not a valid number.", port_input_str
-                    )
-
-        if bsm_effective_port is not None:
-            display_port_str_for_url = f":{bsm_effective_port}"
-        protocol = "https" if bsm_use_ssl else "http"
-        safe_config_url = (
-            f"{protocol}://{bsm_host}{display_port_str_for_url}"
-            if not (":" in bsm_host and bsm_effective_port is None)
-            else f"{protocol}://{bsm_host}"
-        )
+        safe_config_url = config_entry_data.get(CONF_BASE_URL)
 
         dynamic_sw_version = None
         if self.coordinator.data:
@@ -434,7 +374,7 @@ class MinecraftServerSensor(
 
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
-            name=f"{self._server_name} ({bsm_host}{display_port_str_for_url})",
+            name=f"{self._server_name} ({self._manager_host_port_id})",
             manufacturer="Bedrock Server Manager",
             model=model_name_with_os,
             sw_version=dynamic_sw_version
@@ -465,9 +405,9 @@ class MinecraftServerSensor(
             return "Running" if isinstance(process_info, dict) else "Stopped"
         if isinstance(process_info, dict):
             if key == ATTR_CPU_PERCENT:
-                return process_info.get(ATTR_CPU_PERCENT)
-            if key == ATTR_MEMORY_MB:
-                return process_info.get(ATTR_MEMORY_MB)
+                return process_info.get("cpu_percent")
+            elif key == ATTR_MEMORY_MB:
+                return process_info.get("memory_mb")
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
         if key == KEY_WORLD_BACKUPS_COUNT:
@@ -509,7 +449,7 @@ class MinecraftServerSensor(
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
-                    attrs[ATTR_PID] = process_info[ATTR_PID]
+                    attrs[ATTR_PID] = f"\u00a0{process_info[ATTR_PID]}"
                 if process_info.get(ATTR_UPTIME) is not None:
                     attrs[ATTR_UPTIME] = process_info[ATTR_UPTIME]
         elif key == KEY_SERVER_PERMISSIONS_COUNT:

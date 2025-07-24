@@ -21,11 +21,9 @@ PLATFORMS = [
 ]  # Add "binary_sensor", "select", etc., if used
 
 # --- Configuration Keys (used in config_flow.py, options_flow.py, and config_entry) ---
-CONF_HOST = "host"
-CONF_PORT = "port"
+CONF_BASE_URL = "base_url"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
-CONF_USE_SSL = "use_ssl"  # For enabling HTTPS connection to BSM API
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_SERVER_NAMES = "servers"  # Key for list of selected server names in
 
@@ -36,7 +34,6 @@ CONF_SERVER_SCAN_INTERVAL = (
 )
 
 # --- Default Values ---
-DEFAULT_PORT = 11325  # Default BSM API port
 DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS = 600  # 10 minutes for manager-level data
 DEFAULT_SCAN_INTERVAL_SECONDS = 30  # For individual server data updates
 
@@ -97,6 +94,9 @@ SERVICE_ADD_GLOBAL_PLAYERS = "add_global_players"
 SERVICE_SCAN_PLAYERS = "scan_players"
 SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
+SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
+SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
+SERVICE_RESTORE_SELECT_BACKUP_TYPE = "restore_select_backup_type"  # New
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
@@ -126,6 +126,8 @@ FIELD_PLUGIN_NAME = "plugin_name"
 FIELD_PLUGIN_ENABLED = "plugin_enabled"
 FIELD_EVENT_NAME = "event_name"
 FIELD_EVENT_PAYLOAD = "event_payload"
+FIELD_SETTING_KEY = "key"  # New - for set_global_setting
+FIELD_SETTING_VALUE = "value"  # New - for set_global_setting
 
 
 # --- Integration Version Helper ---

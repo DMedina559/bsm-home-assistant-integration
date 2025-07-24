@@ -7,13 +7,10 @@ from typing import Optional  # Added for type hinting
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONF_HOST,
-    CONF_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import device_registry as dr
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
@@ -28,14 +25,13 @@ from bsm_api_client import (
 )
 
 from .frontend import BsmFrontendRegistration
-from .utils import sanitize_host_port_string
 from .const import (
     DOMAIN,
     CONF_SERVER_NAMES,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
-    CONF_USE_SSL,
     CONF_VERIFY_SSL,
+    CONF_BASE_URL,
 )
 from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from . import services
@@ -61,82 +57,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Continue setup even if frontend registration fails
 
     # --- API Client Setup ---
-    host = entry.data[CONF_HOST]
+    url = entry.data[CONF_BASE_URL]
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
-    use_ssl = entry.data.get(CONF_USE_SSL, False)
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
-    verify_ssl_flag = entry.data.get(CONF_VERIFY_SSL, True)
 
-    # Safely get and process the port
-    port_from_config_entry = entry.data.get(CONF_PORT)
-    processed_port: Optional[int] = None
-
-    if port_from_config_entry is not None:
-        port_input_str = str(
-            port_from_config_entry
-        ).strip()  # Ensure it's a string and stripped
-        if port_input_str:  # Check if it's not an empty string
-            try:
-                # Attempt to convert to float first to handle inputs like "123.0"
-                port_float = float(port_input_str)
-                # Check if the float is actually an integer (e.g., 123.0, not 123.5)
-                if port_float == int(
-                    port_float
-                ):  # Note: int(123.5) is 123. 123.5 == 123 is False.
-                    port_val = int(port_float)  # Convert the whole number float to int
-                    if not (1 <= port_val <= 65535):
-                        _LOGGER.error(
-                            "Invalid port value '%s' (resolved to %d) in config entry for %s. Port must be between 1 and 65535. "
-                            "Please reconfigure the integration.",
-                            port_input_str,
-                            port_val,
-                            host,
-                        )
-                        raise ConfigEntryNotReady(
-                            f"Invalid port {port_val} in configuration for {host}."
-                        )
-                    processed_port = port_val
-                else:
-                    # Input was a float but not a whole number, e.g., "123.5"
-                    _LOGGER.error(
-                        "Invalid port value '%s' in config entry for %s. Port must be a whole number. "
-                        "Please reconfigure the integration.",
-                        port_input_str,
-                        host,
-                    )
-                    raise ConfigEntryNotReady(
-                        f"Port value '{port_input_str}' must be a whole number in configuration for {host}."
-                    )
-            except ValueError:
-                # This will catch cases where float() fails (e.g., "abc")
-                # or int(port_float) fails if float was inf/nan
-                _LOGGER.error(
-                    "Invalid port value '%s' in config entry for %s. It's not a valid number. "
-                    "Please reconfigure the integration.",
-                    port_input_str,
-                    host,
-                )
-                raise ConfigEntryNotReady(
-                    f"Invalid port value '{port_input_str}' in configuration for {host}."
-                )
-
-    ha_session = async_get_clientsession(hass, verify_ssl=verify_ssl_flag)
     api_client = BedrockServerManagerApi(
-        host=host,
-        port=processed_port,
+        base_url=url,
         username=username,
         password=password,
-        session=ha_session,
-        use_ssl=use_ssl,
         verify_ssl=verify_ssl,
     )
     hass.data[DOMAIN][entry.entry_id]["api"] = api_client
     _LOGGER.debug(
-        "BedrockServerManagerApi client initialized for %s (Port: %s, SSL: %s, Verify SSL: %s)",
-        host,
-        processed_port if processed_port is not None else "derived/omitted",
-        use_ssl,
+        "BedrockServerManagerApi client initialized for %s (Verify SSL: %s)",
+        url,
         verify_ssl,
     )
     # --- End of API Client Setup Modification ---
@@ -183,56 +118,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     # --- Manager Device Registration ---
-    display_port_str = f":{processed_port}" if processed_port is not None else ""
-
-    # Construct RAW manager_host_port_id for unique identification
-    raw_manager_host_port_id: str
-    if ":" in host and processed_port is None:
-        # If host already contains a port (e.g., "domain.com:1234") and no explicit port was configured,
-        # use the host string as is for the ID.
-        raw_manager_host_port_id = host
-    else:
-        # If host is "domain.com" and processed_port is 8080 => "domain.com:8080"
-        # If host is "domain.com" and processed_port is None => "domain.com"
-        raw_manager_host_port_id = f"{host}{display_port_str}"
-
-    # Sanitize the constructed ID string
-    manager_host_port_id = sanitize_host_port_string(raw_manager_host_port_id)
-
-    if manager_host_port_id != raw_manager_host_port_id:
-        _LOGGER.info(
-            "Sanitized main manager identifier string from '%s' to '%s' for entry %s",
-            raw_manager_host_port_id,
-            manager_host_port_id,  # Log the sanitized version
-            entry.entry_id,
-        )
-
-    # manager_identifier_tuple will now use the sanitized manager_host_port_id
-    manager_identifier_tuple = (DOMAIN, manager_host_port_id)
+    manager_identifier_tuple = (DOMAIN, url)
 
     device_registry = dr.async_get(hass)
-    # Determine configuration URL parts
-    protocol_for_url = "https" if use_ssl else "http"
-    # For the URL, we use the original host and processed_port, not the potentially sanitized ID string parts,
-    # unless the ID string itself is meant to be the direct address.
-    # If host is IPv6 and needs brackets for URL when port is present:
-    url_host_part = host
-    if (
-        ":" in host
-        and not host.startswith("[")
-        and host.count(":") >= 2
-        and processed_port is not None
-    ):
-        url_host_part = f"[{host}]"
-
-    configuration_url_for_device = (
-        f"{protocol_for_url}://{url_host_part}{display_port_str}"
-    )
+    configuration_url_for_device = url
 
     manager_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={manager_identifier_tuple},  # Uses sanitized ID in tuple
-        name=f"BSM @ {manager_host_port_id}",  # Display name can use the sanitized ID
+        name=f"BSM @ {url}",  # Display name can use the sanitized ID
         manufacturer="DMedina559",
         model=f"{manager_os_type.capitalize() if manager_os_type != 'unknown' else 'Unknown OS'}",
         sw_version=manager_app_version,
@@ -241,7 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(
         "Ensured manager device exists: ID=%s for identifier %s",
         manager_device_entry.id,
-        manager_host_port_id,  # Log the sanitized version
+        url,  # Log the sanitized version
     )
     # --- End of Manager Device Registration Modification ---
 
@@ -263,12 +157,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not selected_servers:
         _LOGGER.info(
             "No Minecraft servers selected for manager %s. Only manager-level entities will be created.",
-            manager_host_port_id,
+            url,
         )
     else:
         _LOGGER.info(
             "Attempting to set up server coordinators for manager %s, selected servers: %s",
-            manager_host_port_id,
+            url,
             selected_servers,
         )
         setup_tasks = [
@@ -320,7 +214,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "All %d selected Minecraft server coordinator(s) failed to set up for manager %s. "
                 "Problematic server(s) will not have entities.",
                 len(selected_servers),
-                manager_host_port_id,
+                url,
             )
         elif selected_servers and successful_setups < len(selected_servers):
             failed_count = len(selected_servers) - successful_setups
@@ -329,7 +223,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Problematic server(s) will not have entities.",
                 failed_count,
                 len(selected_servers),
-                manager_host_port_id,
+                url,
             )
         elif selected_servers and successful_setups == len(
             selected_servers
@@ -337,7 +231,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info(
                 "All %d selected server coordinators set up successfully for manager %s.",
                 successful_setups,
-                manager_host_port_id,
+                url,
             )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -396,25 +290,11 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     # Safely construct manager_host_port_id for logging
-    host_for_unload = entry.data.get(CONF_HOST, "UnknownHost")
-    port_for_unload_input = entry.data.get(CONF_PORT)  # Could be None or empty string
-    port_for_unload_str = ""
-    if port_for_unload_input is not None:
-        temp_port_str = str(port_for_unload_input).strip()
-        if temp_port_str:  # Ensure it's not an empty string before assigning
-            port_for_unload_str = temp_port_str
-
-    display_port_unload_str = f":{port_for_unload_str}" if port_for_unload_str else ""
-
-    # Construct unique ID string for logging, similar to async_setup_entry
-    if ":" in host_for_unload and not port_for_unload_str:
-        manager_host_port_id_unload = host_for_unload
-    else:
-        manager_host_port_id_unload = f"{host_for_unload}{display_port_unload_str}"
+    url_for_unload = entry.data.get(CONF_BASE_URL, "UnknownURL")
 
     _LOGGER.info(
         "Unloading Bedrock Server Manager entry for manager '%s' (Entry ID: %s)",
-        manager_host_port_id_unload,
+        url_for_unload,
         entry.entry_id,
     )
 
@@ -430,7 +310,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug(
                 "Successfully removed data for entry %s (%s) from hass.data.%s",
                 entry.entry_id,
-                manager_host_port_id_unload,
+                url_for_unload,
                 DOMAIN,
             )
             frontend_registrar = entry_specific_data_popped.get("frontend_registrar")
@@ -439,12 +319,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await frontend_registrar.async_unregister()
                     _LOGGER.debug(
                         "BSM Frontend module unregistered for %s.",
-                        manager_host_port_id_unload,
+                        url_for_unload,
                     )
                 except Exception as e:
                     _LOGGER.error(
                         "Error during frontend unregistration for %s: %s",
-                        manager_host_port_id_unload,
+                        url_for_unload,
                         e,
                         exc_info=True,
                     )

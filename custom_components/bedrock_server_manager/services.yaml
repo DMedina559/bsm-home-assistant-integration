@@ -9,6 +9,66 @@ send_command:
     device:
       integration: bedrock_server_manager
 
+set_global_setting:
+  name: Set Global Setting
+  description: "Sets a specific global application setting on the BSM manager. Refer to BSM documentation for available setting keys and expected value types."
+  target:
+    entity:
+      domain: sensor # Or any entity associated with the BSM manager
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    key:
+      name: Setting Key
+      description: "The dot-notation key of the setting (e.g., 'web.port', 'logging.level')."
+      required: true
+      example: "logging.level"
+      selector:
+        text: {}
+    value:
+      name: Setting Value
+      description: "The new value for the setting. For complex values (like lists or objects), ensure correct YAML/JSON formatting if inputting as text. Simple values like strings, numbers, booleans can be entered directly."
+      required: true
+      example: "INFO" # Could be a number like 11326, or a boolean like true, or a JSON string like '["item1", "item2"]'
+      selector:
+        text: {} # Using text selector for flexibility with 'Any' type. User must format complex types correctly.
+
+reload_global_settings:
+  name: Reload Global Settings
+  description: Forces a reload of global application settings and logging configuration on the BSM manager.
+  target:
+    entity:
+      domain: sensor # Or any entity associated with the BSM manager
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+
+restore_select_backup_type:
+  name: Select Backup Type for Restore
+  description: "Initiates a backup restore process by selecting the type. The API may return a URL (logged or notified) for further steps if applicable. Targets a server instance."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+    device:
+      integration: bedrock_server_manager
+  fields:
+    restore_type:
+      name: Restore Type
+      description: "Type of content to select for restore (e.g., 'world', 'properties')."
+      required: true
+      example: "world"
+      selector:
+        select:
+          options:
+            - "world"
+            - "allowlist"
+            - "permissions"
+            - "properties"
+            # Add other specific types if the API supports them for this selection step
+          mode: dropdown
+
 set_plugin_enabled:
   name: Set Plugin Enabled Status
   description: Enables or disables a specific plugin on the BSM manager. Targets a BSM manager instance.
@@ -58,14 +118,6 @@ trigger_plugin_event:
       example: '{"key": "value", "count": 10}'
       selector:
         object: {} # Allows dictionary input in UI, will be JSON for API
-  fields:
-    command:
-      name: Command
-      description: The command string to send to the server console (without the leading '/').
-      required: true
-      example: "say Hello World from Home Assistant!"
-      selector:
-        text: {}
 
 prune_download_cache:
   name: Prune Download Cache
@@ -270,10 +322,10 @@ set_permissions:
       integration: bedrock_server_manager
   fields:
     permissions:
-      name: Permissions Dictionary
-      description: "A dictionary mapping Player XUIDs (as strings) to permission level strings (e.g., 'visitor', 'member', 'operator')."
+      name: Permissions List
+      description: "A list of player permission objects, where each object has 'name', 'xuid', and 'permission_level'."
       required: true
-      example: '{"2535416409681153": "operator", "2535457894355891": "member"}'
+      example: '[{"name": "Steve", "xuid": "2535416409681153", "permission_level": "operator"}]'
       selector:
         object: {}
 

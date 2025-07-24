@@ -6,11 +6,9 @@
         "title": "Connect to Bedrock Server Manager",
         "description": "Enter the API connection details for your Bedrock Server Manager instance.",
         "data": {
-          "host": "Host / IP Address",
-          "port": "Port",
+          "base_url": "Base URL",
           "username": "API Username",
           "password": "API Password",
-          "use_ssl": "Use SSL",
           "verify_ssl": "Verify SSL"
         }
       },
@@ -23,7 +21,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the Manager API at the specified host/port. Check address, port, SSL setting, and ensure the Manager is running. Details: {error_details}",
+      "cannot_connect": "Failed to connect to the Manager API at the specified URL. Check URL and ensure the Manager is running. Details: {error_details}",
       "invalid_auth": "Invalid username or password. Please check your credentials. Details: {error_details}",
       "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager and select servers later via integration options.",
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
@@ -37,7 +35,7 @@
       "service_backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'."
     },
     "abort": {
-      "already_configured": "A Manager instance for {host}:{port} is already configured.",
+      "already_configured": "A Manager instance for {base_url} is already configured.",
       "reauth_successful": "Re-authentication was successful."
     }
   },
@@ -45,7 +43,7 @@
     "step": {
       "init": {
         "title": "Bedrock Server Manager Options",
-        "description": "Choose which settings to modify for the Bedrock Server Manager at {host}.",
+        "description": "Choose which settings to modify for the Bedrock Server Manager at {base_url}.",
         "menu_options": {
           "update_credentials": "Update API Credentials",
           "select_servers": "Select Servers to Monitor",
@@ -55,7 +53,7 @@
       },
       "update_credentials": {
         "title": "Update API Credentials",
-        "description": "Enter the new API username and password for the Bedrock Server Manager at {host}.",
+        "description": "Enter the new API username and password for the Bedrock Server Manager at {base_url}.",
         "data": {
           "username": "New API Username",
           "password": "New API Password"
