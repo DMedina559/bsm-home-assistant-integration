@@ -170,6 +170,7 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up sensor platform for BSM entry: %s", entry.entry_id)
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
+        api_client = cast(BedrockServerManagerApi, entry_data["api"])
         original_manager_identifier_tuple = cast(
             Tuple[str, str], entry_data["manager_identifier"]
         )
@@ -229,6 +230,41 @@ async def async_setup_entry(
             )
             continue
 
+        world_name_static = server_entry_data.get(ATTR_WORLD_NAME)
+        version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
+
+        if version_static is None:
+            _LOGGER.debug(
+                "Attempting to fetch initial static info (version) for server '%s' during sensor setup.",
+                server_name,
+            )
+            try:
+                async with asyncio.timeout(10):
+                    version_res = await api_client.async_get_server_version(server_name)
+
+                if isinstance(version_res, Exception):
+                    _LOGGER.warning(
+                        "Failed to fetch initial version for '%s': %s",
+                        server_name,
+                        version_res,
+                    )
+                elif isinstance(version_res, str):
+                    version_static = version_res
+
+                server_entry_data[ATTR_INSTALLED_VERSION] = version_static
+
+            except TimeoutError:
+                _LOGGER.warning(
+                    "Timeout fetching initial static info for server '%s'.", server_name
+                )
+            except Exception as e:
+                _LOGGER.error(
+                    "Error fetching initial static info for server '%s': %s",
+                    server_name,
+                    e,
+                    exc_info=True,
+                )
+
         if server_coordinator.last_update_success and server_coordinator.data:
             for description in SERVER_SENSOR_DESCRIPTIONS:
                 entities_to_add.append(
@@ -237,6 +273,8 @@ async def async_setup_entry(
                         description=description,
                         server_name=server_name,
                         manager_identifier=manager_identifier_for_sensors,
+                        installed_version_static=version_static,
+                        world_name_static=world_name_static,
                         bsm_os_type=bsm_os_type_for_servers,
                     )
                 )
@@ -262,8 +300,6 @@ async def async_setup_entry(
 class MinecraftServerSensor(
     CoordinatorEntity[MinecraftBedrockCoordinator], SensorEntity
 ):
-    """Represents a sensor for a Minecraft server."""
-
     _attr_has_entity_name = True
 
     def __init__(
@@ -272,25 +308,41 @@ class MinecraftServerSensor(
         description: SensorEntityDescription,
         server_name: str,
         manager_identifier: Tuple[str, str],
+        installed_version_static: Optional[str],
+        world_name_static: Optional[str],
         bsm_os_type: Optional[str],
     ) -> None:
-        """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._bsm_os_type = bsm_os_type
-        self._server_entry_data = self.hass.data[DOMAIN][
-            self.coordinator.config_entry.entry_id
-        ]["servers"][self._server_name]
+
+        # Explicitly log what's being set
+        _LOGGER.debug(
+            "MinecraftServerSensor __init__ for %s: Setting _installed_version_static to: %s",
+            server_name,
+            installed_version_static,
+        )
+        self._installed_version_static = installed_version_static
+
+        _LOGGER.debug(
+            "MinecraftServerSensor __init__ for %s: Setting _world_name_static to: %s",
+            server_name,
+            world_name_static,
+        )
+        self._world_name_static = world_name_static
 
         self._attr_unique_id = (
             f"{DOMAIN}_{self._manager_host_port_id}_{self._server_name}_{description.key}".lower()
             .replace(":", "_")
             .replace(".", "_")
         )
-
-        entity_name_for_log = self.name or description.name
+        # Use self.name which falls back to entity_description.name if _attr_name is not set.
+        # This ensures we log the actual name that will be used if has_entity_name is True and name isn't overridden.
+        entity_name_for_log = (
+            self.name or description.name
+        )  # Prefer self.name if available
         _LOGGER.debug(
             "Init ServerSensor '%s' for server '%s', UniqueID: %s",
             entity_name_for_log,
@@ -301,9 +353,14 @@ class MinecraftServerSensor(
         config_entry_data = coordinator.config_entry.data
         safe_config_url = config_entry_data.get(CONF_BASE_URL)
 
+        dynamic_sw_version = None
+        if self.coordinator.data:
+            dynamic_sw_version = self.coordinator.data.get("version")
+
         # Construct the model string
         base_model_name = "Minecraft Bedrock Server"
         model_name_with_os = base_model_name
+        # Define uninformative OS types that shouldn't alter the base model name
         uninformative_os_types = ["Unknown", None, ""]
         if self._bsm_os_type and self._bsm_os_type not in uninformative_os_types:
             model_name_with_os = f"{base_model_name} ({self._bsm_os_type})"
@@ -320,7 +377,9 @@ class MinecraftServerSensor(
             name=f"{self._server_name} ({self._manager_host_port_id})",
             manufacturer="Bedrock Server Manager",
             model=model_name_with_os,
-            sw_version=self.get_dynamic_sw_version() or "Unknown",
+            sw_version=dynamic_sw_version
+            or self._installed_version_static
+            or "Unknown",
             via_device=manager_identifier,
             configuration_url=safe_config_url,
         )
@@ -385,9 +444,8 @@ class MinecraftServerSensor(
         process_info = data.get("process_info")
 
         if key == "status":
-            installed_version = self._server_entry_data.get(ATTR_INSTALLED_VERSION)
-            if installed_version:
-                attrs[ATTR_INSTALLED_VERSION] = installed_version
+            if self._installed_version_static:  # This should now be safe
+                attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
@@ -414,17 +472,19 @@ class MinecraftServerSensor(
             attrs[ATTR_SERVER_PROPERTIES] = data.get("properties", {})
         return attrs if attrs else None
 
-    def get_dynamic_sw_version(self) -> Optional[str]:
-        """Get the software version from coordinator data or static entry data."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("version")
-        return self._server_entry_data.get(ATTR_INSTALLED_VERSION)
-
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.last_update_success and self._attr_device_info:
-            new_sw_version = self.get_dynamic_sw_version() or "Unknown"
+        if (
+            self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._attr_device_info
+        ):
+            dynamic_version_from_coord = self.coordinator.data.get("version")
+            new_sw_version = (
+                dynamic_version_from_coord
+                or self._installed_version_static
+                or "Unknown"
+            )
             current_device_sw_version = self._attr_device_info.get("sw_version")
 
             if (
@@ -445,6 +505,12 @@ class MinecraftServerSensor(
                     device_registry.async_update_device(
                         device_entry.id, sw_version=new_sw_version
                     )
+                    self._attr_device_info["sw_version"] = new_sw_version
+                    if (
+                        dynamic_version_from_coord
+                        and dynamic_version_from_coord != "Unknown"
+                    ):
+                        self._installed_version_static = dynamic_version_from_coord
         super()._handle_coordinator_update()
 
 
