@@ -111,7 +111,7 @@ class BsmPluginsCard extends LitElement {
         }
         this.requestUpdate('config', oldConfig);
     }
-    
+
     // This is called by LitElement when `hass` property is set or changes
     updated(changedProperties) {
         if (changedProperties.has('hass') && this.hass) {
@@ -148,7 +148,7 @@ class BsmPluginsCard extends LitElement {
         // Clear error/feedback if entity is found
         this._error = null;
         this._feedback = null;
-        
+
         // Get manager device ID from the sensor entity
         const entityReg = newHass.entities?.[entityId];
         this._managerDeviceId = entityReg?.device_id || stateObj.attributes?.device_id || null;
@@ -164,7 +164,7 @@ class BsmPluginsCard extends LitElement {
             this._plugins = newPluginsData && typeof newPluginsData === 'object' ? { ...newPluginsData } : {};
             _LOGGER.debug("Plugin data updated from sensor:", entityId, "Found plugins:", Object.keys(this._plugins).length);
         }
-        
+
         if (pluginsChanged || !oldHass || (stateObj !== oldStateObj) ) {
              this.requestUpdate();
         }
@@ -243,7 +243,7 @@ class BsmPluginsCard extends LitElement {
         if (!this.hass) {
              return html`<ha-card header="${this.config.title || "Bedrock Server Plugins"}"><div class="card-content">Waiting for Home Assistant...</div></ha-card>`;
         }
-        
+
         const managerState = this.hass.states[this.config.manager_entity];
         if (!managerState) {
              return html`
@@ -289,7 +289,7 @@ class BsmPluginsCard extends LitElement {
                         })}
                 </div>
                 <div class="card-actions">
-                    <mwc-button 
+                    <mwc-button
                         @click=${this._reloadPlugins}
                         .disabled=${this._isLoading}
                         label="Reload All Plugins"
@@ -378,7 +378,7 @@ class BsmPluginsCardEditor extends LitElement {
         }
         fireEvent(this, "config-changed", { config: newConfig });
     }
-    
+
     _selectorChanged(ev) {
         if (!this._config || !this.hass) return;
         ev.stopPropagation(); // Important for ha-selector inside editor

@@ -715,7 +715,6 @@ async def _async_handle_reset_world(
 
 # --- Target Resolvers and Executors ---
 async def _resolve_server_targets(  # noqa: C901
-
     service: ServiceCall, hass: HomeAssistant
 ) -> Dict[str, str]:
     servers_to_target: Dict[str, str] = {}
@@ -842,7 +841,6 @@ async def _resolve_server_targets(  # noqa: C901
 
 
 async def _resolve_manager_instance_targets(  # noqa: C901
-
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
     config_entry_ids_to_target: Set[str] = set()
@@ -921,7 +919,6 @@ async def _resolve_manager_instance_targets(  # noqa: C901
 
 
 async def _execute_targeted_service(  # noqa: C901
-
     service_call: ServiceCall,
     hass: HomeAssistant,
     handler_coro: Callable[..., Coroutine[Any, Any, Any]],
@@ -998,7 +995,6 @@ async def _execute_targeted_service(  # noqa: C901
 
 
 async def _execute_manager_targeted_service(  # noqa: C901
-
     service_call: ServiceCall,
     hass: HomeAssistant,
     handler_coro: Callable[..., Coroutine[Any, Any, Any]],
@@ -1184,7 +1180,9 @@ async def async_handle_trigger_plugin_event_service(
     )
 
 
-async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):  # noqa: C901
+async def async_handle_delete_server_service(
+    service: ServiceCall, hass: HomeAssistant
+):  # noqa: C901
     _LOGGER.warning(
         "Executing delete_server service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1341,7 +1339,9 @@ async def async_handle_set_permissions_service(
     )
 
 
-async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssistant):  # noqa: C901
+async def async_handle_reset_world_service(
+    service: ServiceCall, hass: HomeAssistant
+):  # noqa: C901
     _LOGGER.warning(
         "Executing reset_world service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1488,7 +1488,6 @@ async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAss
 
 
 async def async_handle_configure_os_service_service(  # noqa: C901
-
     service: ServiceCall, hass: HomeAssistant
 ):
     autoupdate_val = service.data[FIELD_AUTOUPDATE]

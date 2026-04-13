@@ -3,8 +3,8 @@
 
 import asyncio
 import logging
-from typing import Any
 from datetime import timedelta
+from typing import Any
 
 import async_timeout  # For explicit timeout on asyncio.gather
 from bsm_api_client import (
@@ -27,9 +27,9 @@ from bsm_api_client.models import (
     ServerVersionResponse,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import (
+from homeassistant.exceptions import (  # Standard HA exception for auth issues
     ConfigEntryAuthFailed,
-)  # Standard HA exception for auth issues
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
@@ -165,7 +165,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 if (
                     coordinator_data["process_info"] is None
                     and coordinator_data["message"]
-                    and isinstance(coordinator_data["message"], str) and "not running" in coordinator_data["message"].lower()
+                    and isinstance(coordinator_data["message"], str)
+                    and "not running" in coordinator_data["message"].lower()
                 ):
                     _LOGGER.debug(
                         "Server '%s' reported as not running by status_info (API success response).",

@@ -87,7 +87,6 @@ MANAGER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
 
 
 async def async_setup_entry(  # noqa: C901
-
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,

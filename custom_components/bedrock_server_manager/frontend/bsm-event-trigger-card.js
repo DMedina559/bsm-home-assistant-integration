@@ -50,7 +50,7 @@ class BsmEventTriggerCard extends LitElement {
          let defaultTargetDevice = "";
          // Attempt to find a BSM device to pre-fill
          if (hass && hass.devices) {
-            const bsmDeviceIds = Object.keys(hass.devices).filter(deviceId => 
+            const bsmDeviceIds = Object.keys(hass.devices).filter(deviceId =>
                 hass.devices[deviceId].identifiers.some(ident => ident[0] === DOMAIN) &&
                 !hass.devices[deviceId].model?.toLowerCase().includes("server") // Try to get manager, not server
             );
@@ -90,7 +90,7 @@ class BsmEventTriggerCard extends LitElement {
         // but requestUpdate if config changes might affect display (e.g. title)
         this.requestUpdate('config', oldConfig);
     }
-    
+
     // No specific hass property setter needed if not directly observing states for this card
 
     _handleEventNameChange(e) {
@@ -138,7 +138,7 @@ class BsmEventTriggerCard extends LitElement {
         if (payloadObject !== null) {
             serviceDataPayload.event_payload = payloadObject;
         }
-        
+
         const callOptions = {
             // Corrected: The 4th argument to callService is the ServiceTarget object itself
             device_id: this.config.target_device
@@ -148,7 +148,7 @@ class BsmEventTriggerCard extends LitElement {
             .then(() => {
                 this._feedback = `Event '${this._eventName}' triggered successfully on device ${this.config.target_device}.`;
                 // Optionally clear fields:
-                // this._eventName = ""; 
+                // this._eventName = "";
                 // this._eventPayload = "";
             })
             .catch(err => {
@@ -189,7 +189,7 @@ class BsmEventTriggerCard extends LitElement {
                         @input=${this._handleEventNameChange}
                         required
                         auto-validate="true"
-                        pattern=".*\\S.*" 
+                        pattern=".*\\S.*"
                         error-message="Event name is required!"
                         .disabled=${this._isLoading}
                     ></ha-textfield>
@@ -203,9 +203,9 @@ class BsmEventTriggerCard extends LitElement {
                     ></ha-textarea>
                 </div>
                 <div class="card-actions">
-                    <mwc-button 
-                        @click=${this._triggerEvent} 
-                        raised 
+                    <mwc-button
+                        @click=${this._triggerEvent}
+                        raised
                         label="Trigger Event"
                         .disabled=${this._isLoading || !this._eventName || this._eventName.trim() === ""}
                     ></mwc-button>

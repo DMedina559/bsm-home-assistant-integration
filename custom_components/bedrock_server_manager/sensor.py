@@ -160,7 +160,6 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
 
 
 async def async_setup_entry(  # noqa: C901
-
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,

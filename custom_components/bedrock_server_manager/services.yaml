@@ -173,7 +173,7 @@ restore_backup:
           options:
             - "world"
             - "allowlist"
-            - "permissions" 
+            - "permissions"
             - "properties"
           mode: dropdown
     backup_file:

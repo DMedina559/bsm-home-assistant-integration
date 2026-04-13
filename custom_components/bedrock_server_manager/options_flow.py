@@ -227,7 +227,6 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_select_servers(  # noqa: C901
-
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
         """Handle server selection."""
