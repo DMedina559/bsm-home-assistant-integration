@@ -44,31 +44,6 @@ reload_global_settings:
     device:
       integration: bedrock_server_manager
 
-restore_select_backup_type:
-  name: Select Backup Type for Restore
-  description: "Initiates a backup restore process by selecting the type. The API may return a URL (logged or notified) for further steps if applicable. Targets a server instance."
-  target:
-    entity:
-      domain: sensor
-      integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
-  fields:
-    restore_type:
-      name: Restore Type
-      description: "Type of content to select for restore (e.g., 'world', 'properties')."
-      required: true
-      example: "world"
-      selector:
-        select:
-          options:
-            - "world"
-            - "allowlist"
-            - "permissions"
-            - "properties"
-            # Add other specific types if the API supports them for this selection step
-          mode: dropdown
-
 set_plugin_enabled:
   name: Set Plugin Enabled Status
   description: Enables or disables a specific plugin on the BSM manager. Targets a BSM manager instance.

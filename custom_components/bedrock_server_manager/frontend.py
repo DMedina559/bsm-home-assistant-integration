@@ -40,7 +40,8 @@ class BsmFrontendRegistration:
         await self._async_register_static_path()
 
         # Auto-registration only works/makes sense in storage mode
-        if self.lovelace.mode == "storage":
+        mode = getattr(self.lovelace, "mode", "yaml")
+        if mode == "storage":
             await self._async_wait_for_lovelace_resources()
         else:
             _LOGGER.info(

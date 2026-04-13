@@ -403,11 +403,10 @@ class MinecraftServerSensor(
 
         if key == "status":
             return "Running" if isinstance(process_info, dict) else "Stopped"
-        if isinstance(process_info, dict):
-            if key == ATTR_CPU_PERCENT:
-                return process_info.get("cpu_percent")
-            elif key == ATTR_MEMORY_MB:
-                return process_info.get("memory_mb")
+        if key == ATTR_CPU_PERCENT:
+            return process_info.get("cpu_percent") if isinstance(process_info, dict) else None
+        if key == ATTR_MEMORY_MB:
+            return process_info.get("memory_mb") if isinstance(process_info, dict) else None
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
         if key == KEY_WORLD_BACKUPS_COUNT:

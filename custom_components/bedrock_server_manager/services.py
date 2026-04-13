@@ -64,7 +64,6 @@ from .const import (
     FIELD_EVENT_PAYLOAD,
     SERVICE_SET_GLOBAL_SETTING,
     SERVICE_RELOAD_GLOBAL_SETTINGS,
-    SERVICE_RESTORE_SELECT_BACKUP_TYPE,
     FIELD_SETTING_KEY,
     FIELD_SETTING_VALUE,
 )
@@ -85,7 +84,7 @@ from bsm_api_client.models import (
     RestoreActionPayload,
     AllowlistAddPayload,
     AllowlistRemovePayload,
-    PlayerPermission,
+    PlayerPermissionPayload,
     PermissionsSetPayload,
     PropertiesPayload,
     FileNamePayload,
@@ -93,8 +92,7 @@ from bsm_api_client.models import (
     AddPlayersPayload,
     PluginStatusSetPayload,
     TriggerEventPayload,
-    SettingItem,
-    RestoreTypePayload,
+    SettingItemResponse,
     InstallServerPayload,
 )
 
@@ -261,16 +259,6 @@ RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA = vol.Schema(
     }
 )
 
-RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA = vol.Schema(
-    {
-        vol.Required(FIELD_RESTORE_TYPE): vol.In(
-            ["world", "allowlist", "properties", "permissions"]
-        ),
-        **TARGETING_SCHEMA_FIELDS,
-    }
-)
-
-
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(
     api_call_coro: Coroutine[Any, Any, Any],
@@ -412,7 +400,7 @@ async def _async_handle_remove_from_allowlist(
 async def _async_handle_set_permissions(
     api: BedrockServerManagerApi, server: str, permissions_list: List[Dict[str, str]]
 ):
-    permissions = [PlayerPermission(**p) for p in permissions_list]
+    permissions = [PlayerPermissionPayload(**p) for p in permissions_list]
     payload = PermissionsSetPayload(permissions=permissions)
     return await _base_api_call_handler(
         api.async_set_server_permissions(server, payload),
@@ -522,7 +510,7 @@ async def _async_handle_set_global_setting(
                     value,
                 )
 
-    payload = SettingItem(key=key, value=parsed_value)
+    payload = SettingItemResponse(key=key, value=parsed_value)
     return await _base_api_call_handler(
         api.async_set_setting(payload),
         f"Set global setting '{key}'",
@@ -536,41 +524,6 @@ async def _async_handle_reload_global_settings(
     return await _base_api_call_handler(
         api.async_reload_settings(), "Reload global settings", manager_id
     )
-
-
-async def _async_handle_restore_select_backup_type(
-    hass: HomeAssistant,
-    api: BedrockServerManagerApi,
-    server: str,
-    restore_type: str,
-    manager_id: str,
-):
-    payload = RestoreTypePayload(restore_type=restore_type)
-    response = await _base_api_call_handler(
-        api.async_restore_select_backup_type(server, payload),
-        f"Select restore type '{restore_type}' for server '{server}'",
-        manager_id,
-    )
-    if response and response.redirect_url:
-        message = (
-            response.message
-            or f"Selected restore type '{restore_type}' for '{server}'."
-        )
-        message += f" API returned redirect URL for next step: {response.redirect_url}"
-        async_create(
-            hass,
-            message=f"For server '{server}': {message}",
-            title="BSM Restore Step",
-            notification_id=f"bsm_restore_select_{server}_{restore_type}",
-        )
-        _LOGGER.info(
-            "Restore select backup type for server '%s' (manager '%s'): %s. Full response: %s",
-            server,
-            manager_id,
-            message,
-            response,
-        )
-    return response
 
 
 async def _async_handle_install_server(
@@ -1640,17 +1593,6 @@ async def async_handle_reload_global_settings_service(
     )
 
 
-async def async_handle_restore_select_backup_type_service(
-    service: ServiceCall, hass: HomeAssistant
-):
-    await _execute_targeted_service(
-        service,
-        hass,
-        _async_handle_restore_select_backup_type,
-        service.data[FIELD_RESTORE_TYPE],
-    )
-
-
 # --- Service Registration/Removal ---
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register services with Home Assistant."""
@@ -1730,10 +1672,6 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_RELOAD_GLOBAL_SETTINGS: (
             async_handle_reload_global_settings_service,
             RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA,
-        ),
-        SERVICE_RESTORE_SELECT_BACKUP_TYPE: (
-            async_handle_restore_select_backup_type_service,
-            RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA,
         ),
     }
 
@@ -1819,7 +1757,6 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_TRIGGER_PLUGIN_EVENT,
             SERVICE_SET_GLOBAL_SETTING,
             SERVICE_RELOAD_GLOBAL_SETTINGS,
-            SERVICE_RESTORE_SELECT_BACKUP_TYPE,
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):
