@@ -1180,9 +1180,9 @@ async def async_handle_trigger_plugin_event_service(
     )
 
 
-async def async_handle_delete_server_service(
+async def async_handle_delete_server_service(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
-):  # noqa: C901
+):
     _LOGGER.warning(
         "Executing delete_server service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1339,9 +1339,9 @@ async def async_handle_set_permissions_service(
     )
 
 
-async def async_handle_reset_world_service(
+async def async_handle_reset_world_service(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
-):  # noqa: C901
+):
     _LOGGER.warning(
         "Executing reset_world service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],

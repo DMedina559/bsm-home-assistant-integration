@@ -118,7 +118,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     def _get_manager_display_name(self) -> str:
         """Helper to get a display string for the manager (host or host:port)."""
-        return self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL")
+        return str(self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL"))
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None

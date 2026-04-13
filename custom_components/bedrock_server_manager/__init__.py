@@ -31,9 +31,9 @@ from .frontend import BsmFrontendRegistration
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry
-) -> bool:  # noqa: C901
+) -> bool:
     """Set up Bedrock Server Manager from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
@@ -281,9 +281,9 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(
+async def async_unload_entry(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry
-) -> bool:  # noqa: C901
+) -> bool:
     """Unload a config entry."""
     # Safely construct manager_host_port_id for logging
     url_for_unload = entry.data.get(CONF_BASE_URL, "UnknownURL")
@@ -378,4 +378,4 @@ async def async_unload_entry(
             entry.entry_id,
         )
 
-    return unload_ok
+    return bool(unload_ok)
