@@ -21,10 +21,10 @@ from homeassistant.components.persistent_notification import (
     async_create as async_create_notification,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -86,7 +86,8 @@ MANAGER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
 )
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
+
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -302,7 +303,7 @@ class MinecraftServerButton(
             and bool(self.coordinator.data)
         )
 
-    async def async_press(self) -> None:
+    async def async_press(self) -> None:  # noqa: C901
         """Handle the button press."""
         action_key = self.entity_description.key
         api: BedrockServerManagerApi = (
@@ -464,7 +465,7 @@ class MinecraftManagerButton(
             self._attr_unique_id,
         )
 
-    async def async_press(self) -> None:
+    async def async_press(self) -> None:  # noqa: C901
         """Handle the button press for a manager-level action."""
         action_key = self.entity_description.key
         _LOGGER.info(

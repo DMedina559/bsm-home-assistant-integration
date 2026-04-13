@@ -17,7 +17,6 @@ from bsm_api_client.models import (
     ActionResponse,
     AllowlistGetResponse,
     AppInfoResponse,
-    BaseApiResponse,
     ContentListResponse,
     PermissionsGetResponse,
     PlayerListResponse,
@@ -67,7 +66,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
-    async def _async_update_data(self) -> dict:
+    async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
         coordinator_data = {
             "status": "error",
@@ -392,7 +391,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
-    async def _async_update_data(self) -> dict:
+    async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Manager Coordinator: Updating global data.")
         manager_data = {
             "status": "error",

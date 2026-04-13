@@ -4,7 +4,7 @@
 import asyncio
 import json  # Added for parsing setting values
 import logging
-from typing import Any, Coroutine, Dict, List, Optional, Set, cast
+from typing import Any, Coroutine, Dict, List, Optional, Set
 
 import voluptuous as vol
 from bsm_api_client import (
@@ -79,10 +79,8 @@ from .const import (
     SERVICE_PRUNE_DOWNLOADS,
     SERVICE_RELOAD_GLOBAL_SETTINGS,
     SERVICE_REMOVE_FROM_ALLOWLIST,
-    SERVICE_RESET_WORLD,
     SERVICE_RESTORE_BACKUP,
     SERVICE_RESTORE_LATEST_ALL,
-    SERVICE_SCAN_PLAYERS,
     SERVICE_SEND_COMMAND,
     SERVICE_SET_GLOBAL_SETTING,
     SERVICE_SET_PERMISSIONS,
@@ -716,7 +714,8 @@ async def _async_handle_reset_world(
 
 
 # --- Target Resolvers and Executors ---
-async def _resolve_server_targets(
+async def _resolve_server_targets(  # noqa: C901
+
     service: ServiceCall, hass: HomeAssistant
 ) -> Dict[str, str]:
     servers_to_target: Dict[str, str] = {}
@@ -726,7 +725,6 @@ async def _resolve_server_targets(
     def process_device_for_server_target(
         device_entry: dr.DeviceEntry, config_entry_id_context: str
     ):
-        nonlocal servers_to_target
         try:
             manager_data = hass.data[DOMAIN][config_entry_id_context]
             manager_host_port_id = manager_data["manager_identifier"][1]
@@ -843,7 +841,8 @@ async def _resolve_server_targets(
     return servers_to_target
 
 
-async def _resolve_manager_instance_targets(
+async def _resolve_manager_instance_targets(  # noqa: C901
+
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
     config_entry_ids_to_target: Set[str] = set()
@@ -921,7 +920,8 @@ async def _resolve_manager_instance_targets(
     return list(config_entry_ids_to_target)
 
 
-async def _execute_targeted_service(
+async def _execute_targeted_service(  # noqa: C901
+
     service_call: ServiceCall,
     hass: HomeAssistant,
     handler_coro: Coroutine,
@@ -997,7 +997,8 @@ async def _execute_targeted_service(
                 )
 
 
-async def _execute_manager_targeted_service(
+async def _execute_manager_targeted_service(  # noqa: C901
+
     service_call: ServiceCall,
     hass: HomeAssistant,
     handler_coro: Coroutine,
@@ -1183,7 +1184,7 @@ async def async_handle_trigger_plugin_event_service(
     )
 
 
-async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
+async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):  # noqa: C901
     _LOGGER.warning(
         "Executing delete_server service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1340,7 +1341,7 @@ async def async_handle_set_permissions_service(
     )
 
 
-async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssistant):
+async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssistant):  # noqa: C901
     _LOGGER.warning(
         "Executing reset_world service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1486,7 +1487,8 @@ async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAss
     )
 
 
-async def async_handle_configure_os_service_service(
+async def async_handle_configure_os_service_service(  # noqa: C901
+
     service: ServiceCall, hass: HomeAssistant
 ):
     autoupdate_val = service.data[FIELD_AUTOUPDATE]

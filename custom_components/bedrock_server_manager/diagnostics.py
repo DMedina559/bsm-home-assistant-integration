@@ -40,7 +40,8 @@ TO_REDACT_CONFIG = {
 }
 
 
-async def async_get_config_entry_diagnostics(
+async def async_get_config_entry_diagnostics(  # noqa: C901
+
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Dict[str, Any]:
     """Return diagnostics for a config entry."""

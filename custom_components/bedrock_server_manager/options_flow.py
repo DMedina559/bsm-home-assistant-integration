@@ -2,7 +2,7 @@
 """Options flow for Bedrock Server Manager integration."""
 
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 import voluptuous as vol
 from bsm_api_client import (
@@ -11,12 +11,11 @@ from bsm_api_client import (
     BedrockServerManagerApi,
     CannotConnectError,
 )
-from homeassistant import config_entries, exceptions
+from homeassistant import config_entries
 from homeassistant.const import (  # CONF_SCAN_INTERVAL, # This is used as a key, defined below
     CONF_PASSWORD,
     CONF_USERNAME,
 )
-from homeassistant.core import callback  # Required for async_get_options_flow
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -227,7 +226,8 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             or {"base_url": manager_display_name},
         )
 
-    async def async_step_select_servers(
+    async def async_step_select_servers(  # noqa: C901
+
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
         """Handle server selection."""

@@ -16,7 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, UpdateFailed
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTR_ALLOWLIST_BACKUPS_LIST,
@@ -159,7 +159,8 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
 )
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
+
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -392,7 +393,7 @@ class MinecraftServerSensor(
         return is_avail
 
     @property
-    def native_value(self) -> Any:
+    def native_value(self) -> Any:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
@@ -440,7 +441,7 @@ class MinecraftServerSensor(
         return None
 
     @property
-    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
@@ -579,7 +580,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         return None
 
     @property
-    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
