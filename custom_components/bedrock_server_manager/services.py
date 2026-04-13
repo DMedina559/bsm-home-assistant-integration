@@ -4,99 +4,93 @@
 import asyncio
 import json  # Added for parsing setting values
 import logging
-from typing import cast, Dict, Optional, List, Any, Set, Coroutine
+from typing import Any, Coroutine, Dict, List, Optional, Set, cast
 
 import voluptuous as vol
-
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.components.persistent_notification import async_create
-from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import (
-    entity_registry as er,
-    device_registry as dr,
-    config_validation as cv,
+from bsm_api_client import (
+    APIError,
+    AuthError,
+    BedrockServerManagerApi,
+    CannotConnectError,
+    InvalidInputError,
+    ServerNotFoundError,
+    ServerNotRunningError,
 )
+from bsm_api_client.models import (
+    AddPlayersPayload,
+    AllowlistAddPayload,
+    AllowlistRemovePayload,
+    BackupActionPayload,
+    CommandPayload,
+    FileNamePayload,
+    InstallServerPayload,
+    PermissionsSetPayload,
+    PlayerPermissionPayload,
+    PluginStatusSetPayload,
+    PropertiesPayload,
+    PruneDownloadsPayload,
+    RestoreActionPayload,
+    ServiceUpdatePayload,
+    SettingItemResponse,
+    TriggerEventPayload,
+)
+from homeassistant.components.persistent_notification import async_create
+from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     DOMAIN,
-    SERVICE_ADD_GLOBAL_PLAYERS,
-    SERVICE_SCAN_PLAYERS,
-    SERVICE_SET_PLUGIN_ENABLED,
-    SERVICE_TRIGGER_PLUGIN_EVENT,
-    SERVICE_SEND_COMMAND,
-    SERVICE_PRUNE_DOWNLOADS,
-    SERVICE_RESTORE_BACKUP,
-    SERVICE_TRIGGER_BACKUP,
-    SERVICE_RESTORE_LATEST_ALL,
-    SERVICE_INSTALL_SERVER,
-    SERVICE_DELETE_SERVER,
-    SERVICE_ADD_TO_ALLOWLIST,
-    SERVICE_REMOVE_FROM_ALLOWLIST,
-    SERVICE_SET_PERMISSIONS,
-    SERVICE_RESET_WORLD,
-    SERVICE_UPDATE_PROPERTIES,
-    SERVICE_INSTALL_WORLD,
-    SERVICE_INSTALL_ADDON,
-    SERVICE_CONFIGURE_OS_SERVICE,
-    FIELD_BACKUP_TYPE,
-    FIELD_RESTORE_TYPE,
-    FIELD_FILE_TO_BACKUP,
-    FIELD_BACKUP_FILE,
-    FIELD_COMMAND,
-    FIELD_DIRECTORY,
-    FIELD_KEEP,
-    FIELD_OVERWRITE,
-    FIELD_SERVER_NAME,
-    FIELD_SERVER_VERSION,
-    FIELD_CONFIRM_DELETE,
-    FIELD_PLAYERS,
-    FIELD_PLAYER_NAME,
-    FIELD_IGNORE_PLAYER_LIMIT,
-    FIELD_PERMISSIONS,
-    FIELD_PROPERTIES,
-    FIELD_FILENAME,
-    FIELD_AUTOUPDATE,
     FIELD_AUTOSTART,
-    FIELD_PLUGIN_NAME,
-    FIELD_PLUGIN_ENABLED,
+    FIELD_AUTOUPDATE,
+    FIELD_BACKUP_FILE,
+    FIELD_BACKUP_TYPE,
+    FIELD_COMMAND,
+    FIELD_CONFIRM_DELETE,
+    FIELD_DIRECTORY,
     FIELD_EVENT_NAME,
     FIELD_EVENT_PAYLOAD,
-    SERVICE_SET_GLOBAL_SETTING,
-    SERVICE_RELOAD_GLOBAL_SETTINGS,
+    FIELD_FILE_TO_BACKUP,
+    FIELD_FILENAME,
+    FIELD_IGNORE_PLAYER_LIMIT,
+    FIELD_KEEP,
+    FIELD_OVERWRITE,
+    FIELD_PERMISSIONS,
+    FIELD_PLAYER_NAME,
+    FIELD_PLAYERS,
+    FIELD_PLUGIN_ENABLED,
+    FIELD_PLUGIN_NAME,
+    FIELD_PROPERTIES,
+    FIELD_RESTORE_TYPE,
+    FIELD_SERVER_NAME,
+    FIELD_SERVER_VERSION,
     FIELD_SETTING_KEY,
     FIELD_SETTING_VALUE,
+    SERVICE_ADD_GLOBAL_PLAYERS,
+    SERVICE_ADD_TO_ALLOWLIST,
+    SERVICE_CONFIGURE_OS_SERVICE,
+    SERVICE_DELETE_SERVER,
+    SERVICE_INSTALL_ADDON,
+    SERVICE_INSTALL_SERVER,
+    SERVICE_INSTALL_WORLD,
+    SERVICE_PRUNE_DOWNLOADS,
+    SERVICE_RELOAD_GLOBAL_SETTINGS,
+    SERVICE_REMOVE_FROM_ALLOWLIST,
+    SERVICE_RESET_WORLD,
+    SERVICE_RESTORE_BACKUP,
+    SERVICE_RESTORE_LATEST_ALL,
+    SERVICE_SCAN_PLAYERS,
+    SERVICE_SEND_COMMAND,
+    SERVICE_SET_GLOBAL_SETTING,
+    SERVICE_SET_PERMISSIONS,
+    SERVICE_SET_PLUGIN_ENABLED,
+    SERVICE_TRIGGER_BACKUP,
+    SERVICE_TRIGGER_PLUGIN_EVENT,
+    SERVICE_UPDATE_PROPERTIES,
 )
-
-from bsm_api_client import (
-    BedrockServerManagerApi,
-    APIError,
-    AuthError,
-    CannotConnectError,
-    ServerNotRunningError,
-    InvalidInputError,
-    ServerNotFoundError,
-)
-from bsm_api_client.models import (
-    CommandPayload,
-    PruneDownloadsPayload,
-    BackupActionPayload,
-    RestoreActionPayload,
-    AllowlistAddPayload,
-    AllowlistRemovePayload,
-    PlayerPermissionPayload,
-    PermissionsSetPayload,
-    PropertiesPayload,
-    FileNamePayload,
-    ServiceUpdatePayload,
-    AddPlayersPayload,
-    PluginStatusSetPayload,
-    TriggerEventPayload,
-    SettingItemResponse,
-    InstallServerPayload,
-)
-
-
 from .coordinator import ManagerDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -258,6 +252,7 @@ RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA = vol.Schema(
         **TARGETING_SCHEMA_FIELDS,
     }
 )
+
 
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(

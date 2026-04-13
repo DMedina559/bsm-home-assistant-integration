@@ -2,33 +2,26 @@
 """Switch platform for Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional, Dict, Tuple, cast, List
+from typing import Any, Dict, List, Optional, Tuple, cast
 
-from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import (
-    HomeAssistant,
-    callback,
-)
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr
-
-from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
-from .const import (
-    DOMAIN,
-    ATTR_INSTALLED_VERSION,
-    CONF_BASE_URL,
-)
 from bsm_api_client import (
-    BedrockServerManagerApi,
     APIError,
     AuthError,
+    BedrockServerManagerApi,
     CannotConnectError,
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
+from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

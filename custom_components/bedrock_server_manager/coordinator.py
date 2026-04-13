@@ -6,33 +6,31 @@ import logging
 from datetime import timedelta
 
 import async_timeout  # For explicit timeout on asyncio.gather
-
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-)  # Standard HA exception for auth issues
-
 from bsm_api_client import (
-    BedrockServerManagerApi,
     APIError,
     AuthError,
+    BedrockServerManagerApi,
     CannotConnectError,
     ServerNotFoundError,
 )
 from bsm_api_client.models import (
+    ActionResponse,
+    AllowlistGetResponse,
+    AppInfoResponse,
     BaseApiResponse,
     ContentListResponse,
+    PermissionsGetResponse,
+    PlayerListResponse,
+    PluginStatusesResponse,
+    PropertiesGetResponse,
     ServerProcessInfoResponse,
     ServerVersionResponse,
-    AllowlistGetResponse,
-    PropertiesGetResponse,
-    PermissionsGetResponse,
-    ActionResponse,
-    AppInfoResponse,
-    PluginStatusesResponse,
-    PlayerListResponse,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+)  # Standard HA exception for auth issues
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
 
@@ -222,7 +220,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"Permissions: {type(permissions_result).__name__} ({permissions_result})"
                 )
             elif isinstance(permissions_result, PermissionsGetResponse):
-                coordinator_data["server_permissions"] = permissions_result.permissions or []
+                coordinator_data["server_permissions"] = (
+                    permissions_result.permissions or []
+                )
             else:
                 fetch_errors_details.append(
                     f"Permissions: Invalid response ({permissions_result})"
