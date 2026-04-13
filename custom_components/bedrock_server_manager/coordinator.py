@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+from typing import Any
 from datetime import timedelta
 
 import async_timeout  # For explicit timeout on asyncio.gather
@@ -68,7 +69,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
-        coordinator_data = {
+        coordinator_data: dict[str, Any] = {
             "status": "error",
             "message": "Update data collection failed",
             "process_info": None,
@@ -164,7 +165,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 if (
                     coordinator_data["process_info"] is None
                     and coordinator_data["message"]
-                    and "not running" in coordinator_data["message"].lower()
+                    and isinstance(coordinator_data["message"], str) and "not running" in coordinator_data["message"].lower()
                 ):
                     _LOGGER.debug(
                         "Server '%s' reported as not running by status_info (API success response).",
@@ -393,7 +394,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Manager Coordinator: Updating global data.")
-        manager_data = {
+        manager_data: dict[str, Any] = {
             "status": "error",
             "message": "Manager data update failed",
             "info": None,

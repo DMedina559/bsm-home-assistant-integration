@@ -4,7 +4,7 @@
 import asyncio
 import json  # Added for parsing setting values
 import logging
-from typing import Any, Coroutine, Dict, List, Optional, Set
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 
 import voluptuous as vol
 from bsm_api_client import (
@@ -924,7 +924,7 @@ async def _execute_targeted_service(  # noqa: C901
 
     service_call: ServiceCall,
     hass: HomeAssistant,
-    handler_coro: Coroutine,
+    handler_coro: Callable[..., Coroutine[Any, Any, Any]],
     *handler_args: Any,
 ):
     try:
@@ -1001,7 +1001,7 @@ async def _execute_manager_targeted_service(  # noqa: C901
 
     service_call: ServiceCall,
     hass: HomeAssistant,
-    handler_coro: Coroutine,
+    handler_coro: Callable[..., Coroutine[Any, Any, Any]],
     *handler_args: Any,
 ):
     try:

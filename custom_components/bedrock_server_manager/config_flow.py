@@ -142,7 +142,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
 
 
 # --- Config Flow Class ---
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Bedrock Server Manager."""
 
     VERSION = 1
