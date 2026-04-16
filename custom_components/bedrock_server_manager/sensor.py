@@ -3,60 +3,58 @@
 
 import asyncio
 import logging
-from typing import Optional, Dict, Any, List, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
+from bsm_api_client import BedrockServerManagerApi
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
-    SensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, UpdateFailed
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-
-# --- IMPORT FROM LOCAL MODULES ---
-from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from .const import (
-    DOMAIN,
-    ATTR_CPU_PERCENT,
-    ATTR_MEMORY_MB,
-    ATTR_PID,
-    ATTR_UPTIME,
-    ATTR_WORLD_NAME,
-    ATTR_INSTALLED_VERSION,
-    ATTR_ALLOWLISTED_PLAYERS,
-    ATTR_SERVER_PROPERTIES,
     ATTR_ALLOWLIST_BACKUPS_LIST,
-    ATTR_PERMISSIONS_BACKUPS_LIST,
-    ATTR_PROPERTIES_BACKUPS_LIST,
-    ATTR_WORLD_BACKUPS_LIST,
+    ATTR_ALLOWLISTED_PLAYERS,
     ATTR_AVAILABLE_ADDONS_LIST,
     ATTR_AVAILABLE_WORLDS_LIST,
-    KEY_GLOBAL_PLAYERS_COUNT,
-    KEY_LEVEL_NAME,
-    KEY_ALLOWLIST_COUNT,
-    KEY_SERVER_PERMISSIONS_COUNT,
+    ATTR_CPU_PERCENT,
+    ATTR_GLOBAL_PLAYERS_LIST,
+    ATTR_INSTALLED_VERSION,
+    ATTR_MANAGER_OS_TYPE,
+    ATTR_MEMORY_MB,
+    ATTR_PERMISSIONS_BACKUPS_LIST,
+    ATTR_PID,
+    ATTR_PLUGINS_DATA,
+    ATTR_PROPERTIES_BACKUPS_LIST,
+    ATTR_SERVER_PERMISSIONS_LIST,
+    ATTR_SERVER_PROPERTIES,
+    ATTR_UPTIME,
+    ATTR_WORLD_BACKUPS_LIST,
+    ATTR_WORLD_NAME,
+    CONF_BASE_URL,
+    DOMAIN,
     KEY_ALLOWLIST_BACKUPS_COUNT,
-    KEY_PROPERTIES_BACKUPS_COUNT,
-    KEY_PERMISSIONS_BACKUPS_COUNT,
-    KEY_WORLD_BACKUPS_COUNT,
+    KEY_ALLOWLIST_COUNT,
     KEY_AVAILABLE_ADDONS_COUNT,
     KEY_AVAILABLE_WORLDS_COUNT,
-    ATTR_GLOBAL_PLAYERS_LIST,
-    ATTR_SERVER_PERMISSIONS_LIST,
+    KEY_GLOBAL_PLAYERS_COUNT,
+    KEY_LEVEL_NAME,
     KEY_MANAGER_APP_VERSION,
-    ATTR_MANAGER_OS_TYPE,
+    KEY_PERMISSIONS_BACKUPS_COUNT,
     KEY_PLUGIN_STATUSES,
-    ATTR_PLUGINS_DATA,
-    CONF_BASE_URL,
+    KEY_PROPERTIES_BACKUPS_COUNT,
+    KEY_SERVER_PERMISSIONS_COUNT,
+    KEY_WORLD_BACKUPS_COUNT,
 )
 
-from bsm_api_client import BedrockServerManagerApi
-
+# --- IMPORT FROM LOCAL MODULES ---
+from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,7 +159,7 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
 )
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -394,7 +392,7 @@ class MinecraftServerSensor(
         return is_avail
 
     @property
-    def native_value(self) -> Any:
+    def native_value(self) -> Any:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
@@ -403,11 +401,18 @@ class MinecraftServerSensor(
 
         if key == "status":
             return "Running" if isinstance(process_info, dict) else "Stopped"
-        if isinstance(process_info, dict):
-            if key == ATTR_CPU_PERCENT:
-                return process_info.get("cpu_percent")
-            elif key == ATTR_MEMORY_MB:
-                return process_info.get("memory_mb")
+        if key == ATTR_CPU_PERCENT:
+            return (
+                process_info.get("cpu_percent")
+                if isinstance(process_info, dict)
+                else None
+            )
+        if key == ATTR_MEMORY_MB:
+            return (
+                process_info.get("memory_mb")
+                if isinstance(process_info, dict)
+                else None
+            )
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
         if key == KEY_WORLD_BACKUPS_COUNT:
@@ -435,7 +440,7 @@ class MinecraftServerSensor(
         return None
 
     @property
-    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
@@ -574,7 +579,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         return None
 
     @property
-    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data

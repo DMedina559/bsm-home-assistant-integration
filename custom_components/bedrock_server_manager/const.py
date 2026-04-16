@@ -96,7 +96,6 @@ SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
 SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
-SERVICE_RESTORE_SELECT_BACKUP_TYPE = "restore_select_backup_type"  # New
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
@@ -142,7 +141,7 @@ def get_integration_version(integration_domain: str = DOMAIN) -> str:
         manifest_path = Path(__file__).parent / "manifest.json"
         with open(manifest_path, encoding="utf-8") as manifest_file:
             manifest_content = json.load(manifest_file)
-        return manifest_content.get("version", "0.0.0-unknown")
+        return str(manifest_content.get("version", "0.0.0-unknown"))
     except FileNotFoundError:
         _LOGGER.error("Manifest.json not found for %s integration.", integration_domain)
         return "0.0.0-manifest_missing"

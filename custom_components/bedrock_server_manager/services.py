@@ -4,101 +4,91 @@
 import asyncio
 import json  # Added for parsing setting values
 import logging
-from typing import cast, Dict, Optional, List, Any, Set, Coroutine
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 
 import voluptuous as vol
-
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.components.persistent_notification import async_create
-from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import (
-    entity_registry as er,
-    device_registry as dr,
-    config_validation as cv,
+from bsm_api_client import (
+    APIError,
+    AuthError,
+    BedrockServerManagerApi,
+    CannotConnectError,
+    InvalidInputError,
+    ServerNotFoundError,
+    ServerNotRunningError,
 )
+from bsm_api_client.models import (
+    AddPlayersPayload,
+    AllowlistAddPayload,
+    AllowlistRemovePayload,
+    BackupActionPayload,
+    CommandPayload,
+    FileNamePayload,
+    InstallServerPayload,
+    PermissionsSetPayload,
+    PlayerPermissionPayload,
+    PluginStatusSetPayload,
+    PropertiesPayload,
+    PruneDownloadsPayload,
+    RestoreActionPayload,
+    ServiceUpdatePayload,
+    SettingItemResponse,
+    TriggerEventPayload,
+)
+from homeassistant.components.persistent_notification import async_create
+from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     DOMAIN,
-    SERVICE_ADD_GLOBAL_PLAYERS,
-    SERVICE_SCAN_PLAYERS,
-    SERVICE_SET_PLUGIN_ENABLED,
-    SERVICE_TRIGGER_PLUGIN_EVENT,
-    SERVICE_SEND_COMMAND,
-    SERVICE_PRUNE_DOWNLOADS,
-    SERVICE_RESTORE_BACKUP,
-    SERVICE_TRIGGER_BACKUP,
-    SERVICE_RESTORE_LATEST_ALL,
-    SERVICE_INSTALL_SERVER,
-    SERVICE_DELETE_SERVER,
-    SERVICE_ADD_TO_ALLOWLIST,
-    SERVICE_REMOVE_FROM_ALLOWLIST,
-    SERVICE_SET_PERMISSIONS,
-    SERVICE_RESET_WORLD,
-    SERVICE_UPDATE_PROPERTIES,
-    SERVICE_INSTALL_WORLD,
-    SERVICE_INSTALL_ADDON,
-    SERVICE_CONFIGURE_OS_SERVICE,
-    FIELD_BACKUP_TYPE,
-    FIELD_RESTORE_TYPE,
-    FIELD_FILE_TO_BACKUP,
-    FIELD_BACKUP_FILE,
-    FIELD_COMMAND,
-    FIELD_DIRECTORY,
-    FIELD_KEEP,
-    FIELD_OVERWRITE,
-    FIELD_SERVER_NAME,
-    FIELD_SERVER_VERSION,
-    FIELD_CONFIRM_DELETE,
-    FIELD_PLAYERS,
-    FIELD_PLAYER_NAME,
-    FIELD_IGNORE_PLAYER_LIMIT,
-    FIELD_PERMISSIONS,
-    FIELD_PROPERTIES,
-    FIELD_FILENAME,
-    FIELD_AUTOUPDATE,
     FIELD_AUTOSTART,
-    FIELD_PLUGIN_NAME,
-    FIELD_PLUGIN_ENABLED,
+    FIELD_AUTOUPDATE,
+    FIELD_BACKUP_FILE,
+    FIELD_BACKUP_TYPE,
+    FIELD_COMMAND,
+    FIELD_CONFIRM_DELETE,
+    FIELD_DIRECTORY,
     FIELD_EVENT_NAME,
     FIELD_EVENT_PAYLOAD,
-    SERVICE_SET_GLOBAL_SETTING,
-    SERVICE_RELOAD_GLOBAL_SETTINGS,
-    SERVICE_RESTORE_SELECT_BACKUP_TYPE,
+    FIELD_FILE_TO_BACKUP,
+    FIELD_FILENAME,
+    FIELD_IGNORE_PLAYER_LIMIT,
+    FIELD_KEEP,
+    FIELD_OVERWRITE,
+    FIELD_PERMISSIONS,
+    FIELD_PLAYER_NAME,
+    FIELD_PLAYERS,
+    FIELD_PLUGIN_ENABLED,
+    FIELD_PLUGIN_NAME,
+    FIELD_PROPERTIES,
+    FIELD_RESTORE_TYPE,
+    FIELD_SERVER_NAME,
+    FIELD_SERVER_VERSION,
     FIELD_SETTING_KEY,
     FIELD_SETTING_VALUE,
+    SERVICE_ADD_GLOBAL_PLAYERS,
+    SERVICE_ADD_TO_ALLOWLIST,
+    SERVICE_CONFIGURE_OS_SERVICE,
+    SERVICE_DELETE_SERVER,
+    SERVICE_INSTALL_ADDON,
+    SERVICE_INSTALL_SERVER,
+    SERVICE_INSTALL_WORLD,
+    SERVICE_PRUNE_DOWNLOADS,
+    SERVICE_RELOAD_GLOBAL_SETTINGS,
+    SERVICE_REMOVE_FROM_ALLOWLIST,
+    SERVICE_RESTORE_BACKUP,
+    SERVICE_RESTORE_LATEST_ALL,
+    SERVICE_SEND_COMMAND,
+    SERVICE_SET_GLOBAL_SETTING,
+    SERVICE_SET_PERMISSIONS,
+    SERVICE_SET_PLUGIN_ENABLED,
+    SERVICE_TRIGGER_BACKUP,
+    SERVICE_TRIGGER_PLUGIN_EVENT,
+    SERVICE_UPDATE_PROPERTIES,
 )
-
-from bsm_api_client import (
-    BedrockServerManagerApi,
-    APIError,
-    AuthError,
-    CannotConnectError,
-    ServerNotRunningError,
-    InvalidInputError,
-    ServerNotFoundError,
-)
-from bsm_api_client.models import (
-    CommandPayload,
-    PruneDownloadsPayload,
-    BackupActionPayload,
-    RestoreActionPayload,
-    AllowlistAddPayload,
-    AllowlistRemovePayload,
-    PlayerPermission,
-    PermissionsSetPayload,
-    PropertiesPayload,
-    FileNamePayload,
-    ServiceUpdatePayload,
-    AddPlayersPayload,
-    PluginStatusSetPayload,
-    TriggerEventPayload,
-    SettingItem,
-    RestoreTypePayload,
-    InstallServerPayload,
-)
-
-
 from .coordinator import ManagerDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -261,15 +251,6 @@ RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA = vol.Schema(
     }
 )
 
-RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA = vol.Schema(
-    {
-        vol.Required(FIELD_RESTORE_TYPE): vol.In(
-            ["world", "allowlist", "properties", "permissions"]
-        ),
-        **TARGETING_SCHEMA_FIELDS,
-    }
-)
-
 
 # --- Service Handler Helper Functions ---
 async def _base_api_call_handler(
@@ -412,7 +393,7 @@ async def _async_handle_remove_from_allowlist(
 async def _async_handle_set_permissions(
     api: BedrockServerManagerApi, server: str, permissions_list: List[Dict[str, str]]
 ):
-    permissions = [PlayerPermission(**p) for p in permissions_list]
+    permissions = [PlayerPermissionPayload(**p) for p in permissions_list]
     payload = PermissionsSetPayload(permissions=permissions)
     return await _base_api_call_handler(
         api.async_set_server_permissions(server, payload),
@@ -522,7 +503,7 @@ async def _async_handle_set_global_setting(
                     value,
                 )
 
-    payload = SettingItem(key=key, value=parsed_value)
+    payload = SettingItemResponse(key=key, value=parsed_value)
     return await _base_api_call_handler(
         api.async_set_setting(payload),
         f"Set global setting '{key}'",
@@ -536,41 +517,6 @@ async def _async_handle_reload_global_settings(
     return await _base_api_call_handler(
         api.async_reload_settings(), "Reload global settings", manager_id
     )
-
-
-async def _async_handle_restore_select_backup_type(
-    hass: HomeAssistant,
-    api: BedrockServerManagerApi,
-    server: str,
-    restore_type: str,
-    manager_id: str,
-):
-    payload = RestoreTypePayload(restore_type=restore_type)
-    response = await _base_api_call_handler(
-        api.async_restore_select_backup_type(server, payload),
-        f"Select restore type '{restore_type}' for server '{server}'",
-        manager_id,
-    )
-    if response and response.redirect_url:
-        message = (
-            response.message
-            or f"Selected restore type '{restore_type}' for '{server}'."
-        )
-        message += f" API returned redirect URL for next step: {response.redirect_url}"
-        async_create(
-            hass,
-            message=f"For server '{server}': {message}",
-            title="BSM Restore Step",
-            notification_id=f"bsm_restore_select_{server}_{restore_type}",
-        )
-        _LOGGER.info(
-            "Restore select backup type for server '%s' (manager '%s'): %s. Full response: %s",
-            server,
-            manager_id,
-            message,
-            response,
-        )
-    return response
 
 
 async def _async_handle_install_server(
@@ -768,7 +714,7 @@ async def _async_handle_reset_world(
 
 
 # --- Target Resolvers and Executors ---
-async def _resolve_server_targets(
+async def _resolve_server_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> Dict[str, str]:
     servers_to_target: Dict[str, str] = {}
@@ -778,7 +724,6 @@ async def _resolve_server_targets(
     def process_device_for_server_target(
         device_entry: dr.DeviceEntry, config_entry_id_context: str
     ):
-        nonlocal servers_to_target
         try:
             manager_data = hass.data[DOMAIN][config_entry_id_context]
             manager_host_port_id = manager_data["manager_identifier"][1]
@@ -895,7 +840,7 @@ async def _resolve_server_targets(
     return servers_to_target
 
 
-async def _resolve_manager_instance_targets(
+async def _resolve_manager_instance_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
     config_entry_ids_to_target: Set[str] = set()
@@ -973,10 +918,10 @@ async def _resolve_manager_instance_targets(
     return list(config_entry_ids_to_target)
 
 
-async def _execute_targeted_service(
+async def _execute_targeted_service(  # noqa: C901
     service_call: ServiceCall,
     hass: HomeAssistant,
-    handler_coro: Coroutine,
+    handler_coro: Callable[..., Coroutine[Any, Any, Any]],
     *handler_args: Any,
 ):
     try:
@@ -1049,10 +994,10 @@ async def _execute_targeted_service(
                 )
 
 
-async def _execute_manager_targeted_service(
+async def _execute_manager_targeted_service(  # noqa: C901
     service_call: ServiceCall,
     hass: HomeAssistant,
-    handler_coro: Coroutine,
+    handler_coro: Callable[..., Coroutine[Any, Any, Any]],
     *handler_args: Any,
 ):
     try:
@@ -1235,7 +1180,9 @@ async def async_handle_trigger_plugin_event_service(
     )
 
 
-async def async_handle_delete_server_service(service: ServiceCall, hass: HomeAssistant):
+async def async_handle_delete_server_service(  # noqa: C901
+    service: ServiceCall, hass: HomeAssistant
+):
     _LOGGER.warning(
         "Executing delete_server service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1392,7 +1339,9 @@ async def async_handle_set_permissions_service(
     )
 
 
-async def async_handle_reset_world_service(service: ServiceCall, hass: HomeAssistant):
+async def async_handle_reset_world_service(  # noqa: C901
+    service: ServiceCall, hass: HomeAssistant
+):
     _LOGGER.warning(
         "Executing reset_world service call. User confirmation was: %s",
         service.data[FIELD_CONFIRM_DELETE],
@@ -1538,7 +1487,7 @@ async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAss
     )
 
 
-async def async_handle_configure_os_service_service(
+async def async_handle_configure_os_service_service(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ):
     autoupdate_val = service.data[FIELD_AUTOUPDATE]
@@ -1640,17 +1589,6 @@ async def async_handle_reload_global_settings_service(
     )
 
 
-async def async_handle_restore_select_backup_type_service(
-    service: ServiceCall, hass: HomeAssistant
-):
-    await _execute_targeted_service(
-        service,
-        hass,
-        _async_handle_restore_select_backup_type,
-        service.data[FIELD_RESTORE_TYPE],
-    )
-
-
 # --- Service Registration/Removal ---
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register services with Home Assistant."""
@@ -1730,10 +1668,6 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_RELOAD_GLOBAL_SETTINGS: (
             async_handle_reload_global_settings_service,
             RELOAD_GLOBAL_SETTINGS_SERVICE_SCHEMA,
-        ),
-        SERVICE_RESTORE_SELECT_BACKUP_TYPE: (
-            async_handle_restore_select_backup_type_service,
-            RESTORE_SELECT_BACKUP_TYPE_SERVICE_SCHEMA,
         ),
     }
 
@@ -1819,7 +1753,6 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_TRIGGER_PLUGIN_EVENT,
             SERVICE_SET_GLOBAL_SETTING,
             SERVICE_RELOAD_GLOBAL_SETTINGS,
-            SERVICE_RESTORE_SELECT_BACKUP_TYPE,
         ]
         for service_name in services_to_unregister:
             if hass.services.has_service(DOMAIN, service_name):

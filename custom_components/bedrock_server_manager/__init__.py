@@ -3,43 +3,37 @@
 
 import asyncio
 import logging
-from typing import Optional  # Added for type hinting
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
-)
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-    ConfigEntryNotReady,
-)
 
 from bsm_api_client import (
-    BedrockServerManagerApi,
-    AuthError,
-    CannotConnectError,
     APIError,
+    AuthError,
+    BedrockServerManagerApi,
+    CannotConnectError,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
-from .frontend import BsmFrontendRegistration
-from .const import (
-    DOMAIN,
-    CONF_SERVER_NAMES,
-    DEFAULT_SCAN_INTERVAL_SECONDS,
-    PLATFORMS,
-    CONF_VERIFY_SSL,
-    CONF_BASE_URL,
-)
-from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
 from . import services
+from .const import (
+    CONF_BASE_URL,
+    CONF_SERVER_NAMES,
+    CONF_VERIFY_SSL,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
+    DOMAIN,
+    PLATFORMS,
+)
+from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
+from .frontend import BsmFrontendRegistration
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(  # noqa: C901
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
     """Set up Bedrock Server Manager from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
@@ -287,7 +281,9 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(  # noqa: C901
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
     """Unload a config entry."""
     # Safely construct manager_host_port_id for logging
     url_for_unload = entry.data.get(CONF_BASE_URL, "UnknownURL")
@@ -382,4 +378,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
         )
 
-    return unload_ok
+    return bool(unload_ok)

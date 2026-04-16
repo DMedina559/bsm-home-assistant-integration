@@ -2,34 +2,34 @@
 """Button platform for Bedrock Server Manager."""
 
 import logging
-from typing import Any, Optional, Dict, Tuple, List, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
-from homeassistant.components.button import (
-    ButtonEntity,
-    ButtonEntityDescription,
-    ButtonDeviceClass,
-)
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr
-from homeassistant.components.persistent_notification import (
-    async_create as async_create_notification,
-)
-
-from .coordinator import MinecraftBedrockCoordinator, ManagerDataCoordinator
-from .const import DOMAIN, ATTR_INSTALLED_VERSION, CONF_BASE_URL
 from bsm_api_client import (
-    BedrockServerManagerApi,
     APIError,
     AuthError,
+    BedrockServerManagerApi,
     CannotConnectError,
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from homeassistant.components.button import (
+    ButtonDeviceClass,
+    ButtonEntity,
+    ButtonEntityDescription,
+)
+from homeassistant.components.persistent_notification import (
+    async_create as async_create_notification,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
+from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ MANAGER_BUTTON_DESCRIPTIONS: Tuple[ButtonEntityDescription, ...] = (
 )
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -302,7 +302,7 @@ class MinecraftServerButton(
             and bool(self.coordinator.data)
         )
 
-    async def async_press(self) -> None:
+    async def async_press(self) -> None:  # noqa: C901
         """Handle the button press."""
         action_key = self.entity_description.key
         api: BedrockServerManagerApi = (
@@ -464,7 +464,7 @@ class MinecraftManagerButton(
             self._attr_unique_id,
         )
 
-    async def async_press(self) -> None:
+    async def async_press(self) -> None:  # noqa: C901
         """Handle the button press for a manager-level action."""
         action_key = self.entity_description.key
         _LOGGER.info(

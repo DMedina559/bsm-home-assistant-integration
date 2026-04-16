@@ -2,38 +2,34 @@
 """Options flow for Bedrock Server Manager integration."""
 
 import logging
-from typing import Any, Dict, Optional, List, cast
+from typing import Any, Dict, List, Optional
 
 import voluptuous as vol
-
-from homeassistant import config_entries, exceptions
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    # CONF_SCAN_INTERVAL, # This is used as a key, defined below
-)
-from homeassistant.core import callback  # Required for async_get_options_flow
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers import selector
-from homeassistant.helpers import device_registry as dr
-
-# --- IMPORT FROM LOCAL CONSTANTS ---
-from .const import (
-    DOMAIN,
-    CONF_SERVER_NAMES,
-    CONF_MANAGER_SCAN_INTERVAL,
-    CONF_SERVER_SCAN_INTERVAL,
-    CONF_VERIFY_SSL,  # Make sure this is in your const.py
-    DEFAULT_SCAN_INTERVAL_SECONDS,
-    DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
-    CONF_BASE_URL,
-)
-
 from bsm_api_client import (
-    BedrockServerManagerApi,
     APIError,
     AuthError,
+    BedrockServerManagerApi,
     CannotConnectError,
+)
+from homeassistant import config_entries
+from homeassistant.const import (  # CONF_SCAN_INTERVAL, # This is used as a key, defined below
+    CONF_PASSWORD,
+    CONF_USERNAME,
+)
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+# --- IMPORT FROM LOCAL CONSTANTS ---
+from .const import CONF_VERIFY_SSL  # Make sure this is in your const.py
+from .const import (
+    CONF_BASE_URL,
+    CONF_MANAGER_SCAN_INTERVAL,
+    CONF_SERVER_NAMES,
+    CONF_SERVER_SCAN_INTERVAL,
+    DEFAULT_MANAGER_SCAN_INTERVAL_SECONDS,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -122,7 +118,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     def _get_manager_display_name(self) -> str:
         """Helper to get a display string for the manager (host or host:port)."""
-        return self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL")
+        return str(self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL"))
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -230,7 +226,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             or {"base_url": manager_display_name},
         )
 
-    async def async_step_select_servers(
+    async def async_step_select_servers(  # noqa: C901
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.FlowResult:
         """Handle server selection."""

@@ -4,28 +4,33 @@
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Any
 
 import async_timeout  # For explicit timeout on asyncio.gather
-
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-)  # Standard HA exception for auth issues
-
 from bsm_api_client import (
-    BedrockServerManagerApi,
     APIError,
     AuthError,
+    BedrockServerManagerApi,
     CannotConnectError,
     ServerNotFoundError,
 )
 from bsm_api_client.models import (
-    GeneralApiResponse,
-    BackupRestoreResponse,
-    PluginApiResponse,
+    ActionResponse,
+    AllowlistGetResponse,
+    AppInfoResponse,
     ContentListResponse,
+    PermissionsGetResponse,
+    PlayerListResponse,
+    PluginStatusesResponse,
+    PropertiesGetResponse,
+    ServerProcessInfoResponse,
+    ServerVersionResponse,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import (  # Standard HA exception for auth issues
+    ConfigEntryAuthFailed,
+)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
 
@@ -62,9 +67,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
-    async def _async_update_data(self) -> dict:
+    async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
-        coordinator_data = {
+        coordinator_data: dict[str, Any] = {
             "status": "error",
             "message": "Update data collection failed",
             "process_info": None,
@@ -151,11 +156,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     )
                     self._handle_critical_exception("status_info", process_info_result)
 
-            elif isinstance(process_info_result, GeneralApiResponse):
-                if process_info_result.data:
-                    coordinator_data["process_info"] = process_info_result.data.get(
-                        "process_info"
-                    )
+            elif isinstance(process_info_result, ServerProcessInfoResponse):
+                coordinator_data["process_info"] = process_info_result.process_info
                 coordinator_data["status"] = "success"
                 coordinator_data["message"] = (
                     process_info_result.message or "Status fetched successfully"
@@ -163,6 +165,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 if (
                     coordinator_data["process_info"] is None
                     and coordinator_data["message"]
+                    and isinstance(coordinator_data["message"], str)
                     and "not running" in coordinator_data["message"].lower()
                 ):
                     _LOGGER.debug(
@@ -183,9 +186,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"Version: {type(version_result).__name__} ({version_result})"
                 )
-            elif isinstance(version_result, GeneralApiResponse):
-                if version_result.data:
-                    coordinator_data["version"] = version_result.data.get("version")
+            elif isinstance(version_result, ServerVersionResponse):
+                coordinator_data["version"] = version_result.version
             else:
                 fetch_errors_details.append(
                     f"Version: Invalid response ({version_result})"
@@ -196,7 +198,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"Allowlist: {type(allowlist_result).__name__} ({allowlist_result})"
                 )
-            elif isinstance(allowlist_result, GeneralApiResponse):
+            elif isinstance(allowlist_result, AllowlistGetResponse):
                 coordinator_data["allowlist"] = allowlist_result.players or []
             else:
                 fetch_errors_details.append(
@@ -207,7 +209,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"Properties: {type(properties_result).__name__} ({properties_result})"
                 )
-            elif isinstance(properties_result, GeneralApiResponse):
+            elif isinstance(properties_result, PropertiesGetResponse):
                 coordinator_data["properties"] = properties_result.properties or {}
             else:
                 fetch_errors_details.append(
@@ -218,11 +220,10 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"Permissions: {type(permissions_result).__name__} ({permissions_result})"
                 )
-            elif isinstance(permissions_result, GeneralApiResponse):
-                if permissions_result.data:
-                    coordinator_data["server_permissions"] = (
-                        permissions_result.data.get("permissions", [])
-                    )
+            elif isinstance(permissions_result, PermissionsGetResponse):
+                coordinator_data["server_permissions"] = (
+                    permissions_result.permissions or []
+                )
             else:
                 fetch_errors_details.append(
                     f"Permissions: Invalid response ({permissions_result})"
@@ -232,7 +233,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"WorldBackups: {type(world_backups_result).__name__} ({world_backups_result})"
                 )
-            elif isinstance(world_backups_result, BackupRestoreResponse):
+            elif isinstance(world_backups_result, ActionResponse):
                 coordinator_data["world_backups"] = world_backups_result.backups or []
             else:
                 fetch_errors_details.append(
@@ -243,7 +244,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"AllowlistBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
                 )
-            elif isinstance(allowlist_backups_result, BackupRestoreResponse):
+            elif isinstance(allowlist_backups_result, ActionResponse):
                 coordinator_data["allowlist_backups"] = (
                     allowlist_backups_result.backups or []
                 )
@@ -256,7 +257,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"PermissionsBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
                 )
-            elif isinstance(permissions_backups_result, BackupRestoreResponse):
+            elif isinstance(permissions_backups_result, ActionResponse):
                 coordinator_data["permissions_backups"] = (
                     permissions_backups_result.backups or []
                 )
@@ -269,7 +270,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"PropertiesBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
                 )
-            elif isinstance(properties_backups_result, BackupRestoreResponse):
+            elif isinstance(properties_backups_result, ActionResponse):
                 coordinator_data["properties_backups"] = (
                     properties_backups_result.backups or []
                 )
@@ -392,9 +393,9 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
-    async def _async_update_data(self) -> dict:
+    async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Manager Coordinator: Updating global data.")
-        manager_data = {
+        manager_data: dict[str, Any] = {
             "status": "error",
             "message": "Manager data update failed",
             "info": None,
@@ -430,7 +431,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"Info: {type(info_result).__name__} ({info_result})"
                 )
-            elif isinstance(info_result, GeneralApiResponse):
+            elif isinstance(info_result, AppInfoResponse):
                 manager_data["info"] = info_result.info
                 at_least_one_success = True
             else:
@@ -440,8 +441,8 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 self._handle_exception_for_manager_data(
                     "global_players", players_result, fetch_errors_details
                 )
-            elif isinstance(players_result, dict) and "players" in players_result:
-                manager_data["global_players"] = players_result["players"] or []
+            elif isinstance(players_result, PlayerListResponse):
+                manager_data["global_players"] = players_result.players or []
                 at_least_one_success = True
             else:
                 fetch_errors_details.append(
@@ -476,8 +477,8 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 self._handle_exception_for_manager_data(
                     "plugins_status", plugins_status_result, fetch_errors_details
                 )
-            elif isinstance(plugins_status_result, PluginApiResponse):
-                manager_data["plugins_status"] = plugins_status_result.data or {}
+            elif isinstance(plugins_status_result, PluginStatusesResponse):
+                manager_data["plugins_status"] = plugins_status_result.plugins or {}
                 at_least_one_success = True
             else:
                 fetch_errors_details.append(

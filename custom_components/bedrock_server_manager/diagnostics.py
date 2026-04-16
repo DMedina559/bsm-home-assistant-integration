@@ -4,36 +4,29 @@
 from __future__ import annotations  # Ensures all type hints are forward references
 
 import logging
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    cast,
-)  # Added cast for type hinting clarity
+from typing import List  # Added cast for type hinting clarity
+from typing import Any, Dict, Optional, cast
 
+from bsm_api_client import BedrockServerManagerApi  # For type hinting
+from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME  # Standard HA constants
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.device_registry import (
+    DeviceEntry,
+)
 from homeassistant.helpers.device_registry import (
     async_entries_for_config_entry as dr_async_entries_for_config_entry,
 )
+from homeassistant.helpers.device_registry import async_get as dr_async_get
 from homeassistant.helpers.entity_registry import (
     async_entries_for_device as er_async_entries_for_device,
 )
-from homeassistant.helpers.device_registry import async_get as dr_async_get
 from homeassistant.helpers.entity_registry import async_get as er_async_get
-from homeassistant.components.diagnostics.util import async_redact_data
 
 # --- IMPORT FROM LOCAL MODULES ---
 from .const import DOMAIN  # CONF_SERVER_NAMES is not directly used here
-from .coordinator import (
-    MinecraftBedrockCoordinator,
-    ManagerDataCoordinator,
-)
-
-from bsm_api_client import BedrockServerManagerApi  # For type hinting
+from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +37,7 @@ TO_REDACT_CONFIG = {
 }
 
 
-async def async_get_config_entry_diagnostics(
+async def async_get_config_entry_diagnostics(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Dict[str, Any]:
     """Return diagnostics for a config entry."""

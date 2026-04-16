@@ -2,17 +2,14 @@
 """Frontend registration for BSM Manager."""
 
 import logging
-import os
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.lovelace import LovelaceData
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.typing import UNDEFINED
 
-from .const import DOMAIN, FRONTEND_URL_BASE, JS_MODULES
+from .const import FRONTEND_URL_BASE, JS_MODULES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +22,7 @@ class BsmFrontendRegistration:
         self.hass = hass
         # Lovelace storage data might be under a different key or need specific loading
         # Let's use the recommended way to get the Lovelace instance
-        self.lovelace: Optional[Lovelace] = hass.data.get("lovelace")
+        self.lovelace: Any = hass.data.get("lovelace")
         if not self.lovelace:
             _LOGGER.warning(
                 "Lovelace storage backend not found or not loaded yet. Cannot auto-register frontend modules."
@@ -40,7 +37,8 @@ class BsmFrontendRegistration:
         await self._async_register_static_path()
 
         # Auto-registration only works/makes sense in storage mode
-        if self.lovelace.mode == "storage":
+        mode = getattr(self.lovelace, "mode", "yaml")
+        if mode == "storage":
             await self._async_wait_for_lovelace_resources()
         else:
             _LOGGER.info(
@@ -118,7 +116,7 @@ class BsmFrontendRegistration:
         # Start the check
         await _check_lovelace_resources_loaded()
 
-    async def _async_register_modules(self):
+    async def _async_register_modules(self):  # noqa: C901
         """Register modules in Lovelace resources if not already registered."""
         if not self.lovelace or not self.lovelace.resources:
             _LOGGER.error("Cannot register modules: Lovelace resources not available.")
