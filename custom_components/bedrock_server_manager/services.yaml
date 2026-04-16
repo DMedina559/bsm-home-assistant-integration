@@ -6,8 +6,6 @@ send_command:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
 
 set_global_setting:
   name: Set Global Setting
@@ -15,8 +13,6 @@ set_global_setting:
   target:
     entity:
       domain: sensor # Or any entity associated with the BSM manager
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     key:
@@ -41,8 +37,6 @@ reload_global_settings:
     entity:
       domain: sensor # Or any entity associated with the BSM manager
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
 
 set_plugin_enabled:
   name: Set Plugin Enabled Status
@@ -50,8 +44,6 @@ set_plugin_enabled:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     plugin_name:
@@ -76,8 +68,6 @@ trigger_plugin_event:
     entity:
       domain: sensor # Or button, or any entity associated with the manager
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     event_name:
       name: Event Name
@@ -100,8 +90,6 @@ prune_download_cache:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     directory:
@@ -130,8 +118,6 @@ trigger_backup:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     backup_type:
       name: Backup Type
@@ -159,8 +145,6 @@ restore_backup:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     restore_type:
@@ -191,8 +175,6 @@ restore_latest_all:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
 
 install_server:
   name: Install New Minecraft Server
@@ -200,8 +182,6 @@ install_server:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     server_name:
@@ -233,8 +213,6 @@ delete_server:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     confirm_deletion:
       name: Confirm Deletion
@@ -249,8 +227,6 @@ add_to_allowlist:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     players:
@@ -275,8 +251,6 @@ remove_from_allowlist:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     player_name:
       name: Player Name
@@ -292,8 +266,6 @@ set_permissions:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     permissions:
@@ -311,8 +283,6 @@ reset_world:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     confirm_deletion:
       name: Confirm Deletion
@@ -327,8 +297,6 @@ update_properties:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     properties:
@@ -346,8 +314,6 @@ install_world:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     filename:
       name: World Filename
@@ -364,8 +330,6 @@ install_addon:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     filename:
       name: Addon Filename
@@ -381,8 +345,6 @@ configure_os_service:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
   fields:
     autoupdate:
@@ -407,8 +369,6 @@ add_global_players:
     entity:
       domain: sensor
       integration: bedrock_server_manager
-    device:
-      integration: bedrock_server_manager
   fields:
     players:
       name: Players Data
@@ -424,6 +384,4 @@ scan_players:
   target:
     entity:
       domain: sensor
-      integration: bedrock_server_manager
-    device:
       integration: bedrock_server_manager
