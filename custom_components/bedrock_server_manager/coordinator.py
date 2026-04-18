@@ -16,6 +16,7 @@ from bsm_api_client import (
 )
 from bsm_api_client.models import (
     ActionResponse,
+    AddonListResponse,
     AllowlistGetResponse,
     AppInfoResponse,
     ContentListResponse,
@@ -80,6 +81,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "allowlist_backups": [],
             "permissions_backups": [],
             "properties_backups": [],
+            "server_addons": None,
         }
 
         try:
@@ -94,6 +96,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_list_server_backups(self.server_name, "allowlist"),
                     self.api.async_list_server_backups(self.server_name, "permissions"),
                     self.api.async_list_server_backups(self.server_name, "properties"),
+                    self.api.async_get_server_addons(self.server_name),
                     return_exceptions=True,
                 )
 
@@ -107,6 +110,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 allowlist_backups_result,
                 permissions_backups_result,
                 properties_backups_result,
+                server_addons_result,
             ) = results
 
             fetch_errors_details = []
@@ -277,6 +281,17 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             else:
                 fetch_errors_details.append(
                     f"PropertiesBackups: Invalid response ({properties_backups_result})"
+                )
+
+            if isinstance(server_addons_result, Exception):
+                fetch_errors_details.append(
+                    f"ServerAddons: {type(server_addons_result).__name__} ({server_addons_result})"
+                )
+            elif isinstance(server_addons_result, AddonListResponse):
+                coordinator_data["server_addons"] = server_addons_result.addons
+            else:
+                fetch_errors_details.append(
+                    f"ServerAddons: Invalid response ({server_addons_result})"
                 )
 
             if fetch_errors_details:

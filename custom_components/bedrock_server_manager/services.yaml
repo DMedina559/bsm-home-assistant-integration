@@ -6,13 +6,21 @@ send_command:
     entity:
       domain: sensor
       integration: bedrock_server_manager
+  fields:
+    command:
+      name: Command
+      description: "The command to send to the server console (e.g., 'say Hello World')."
+      required: true
+      example: "say Hello World"
+      selector:
+        text: {}
 
 set_global_setting:
   name: Set Global Setting
   description: "Sets a specific global application setting on the BSM manager. Refer to BSM documentation for available setting keys and expected value types."
   target:
     entity:
-      domain: sensor # Or any entity associated with the BSM manager
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     key:
@@ -35,7 +43,7 @@ reload_global_settings:
   description: Forces a reload of global application settings and logging configuration on the BSM manager.
   target:
     entity:
-      domain: sensor # Or any entity associated with the BSM manager
+      domain: sensor
       integration: bedrock_server_manager
 
 set_plugin_enabled:
@@ -66,7 +74,7 @@ trigger_plugin_event:
   description: Triggers a custom plugin event on the BSM manager, optionally with a JSON payload. Targets a BSM manager instance.
   target:
     entity:
-      domain: sensor # Or button, or any entity associated with the manager
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     event_name:
@@ -385,3 +393,141 @@ scan_players:
     entity:
       domain: sensor
       integration: bedrock_server_manager
+
+
+enable_addon:
+  name: Enable Addon
+  description: "Enables an installed addon on the target server."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    pack_uuid:
+      name: Pack UUID
+      description: "The UUID of the addon pack."
+      required: true
+      example: "12345678-1234-1234-1234-123456789012"
+      selector:
+        text: {}
+    pack_type:
+      name: Pack Type
+      description: "The type of the addon pack (behavior or resource)."
+      required: true
+      example: "behavior"
+      selector:
+        select:
+          options:
+            - "behavior"
+            - "resource"
+
+disable_addon:
+  name: Disable Addon
+  description: "Disables an installed addon on the target server."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    pack_uuid:
+      name: Pack UUID
+      description: "The UUID of the addon pack."
+      required: true
+      example: "12345678-1234-1234-1234-123456789012"
+      selector:
+        text: {}
+    pack_type:
+      name: Pack Type
+      description: "The type of the addon pack (behavior or resource)."
+      required: true
+      example: "behavior"
+      selector:
+        select:
+          options:
+            - "behavior"
+            - "resource"
+
+uninstall_addon:
+  name: Uninstall Addon
+  description: "Uninstalls an addon from the target server."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    pack_uuid:
+      name: Pack UUID
+      description: "The UUID of the addon pack."
+      required: true
+      example: "12345678-1234-1234-1234-123456789012"
+      selector:
+        text: {}
+    pack_type:
+      name: Pack Type
+      description: "The type of the addon pack (behavior or resource)."
+      required: true
+      example: "behavior"
+      selector:
+        select:
+          options:
+            - "behavior"
+            - "resource"
+
+reorder_addons:
+  name: Reorder Addons
+  description: "Reorders installed addons on the target server."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    pack_type:
+      name: Pack Type
+      description: "The type of the addon packs to reorder (behavior or resource)."
+      required: true
+      example: "behavior"
+      selector:
+        select:
+          options:
+            - "behavior"
+            - "resource"
+    uuids:
+      name: Pack UUIDs
+      description: "A list of addon UUIDs in the desired order."
+      required: true
+      example: ["uuid1", "uuid2"]
+      selector:
+        object: {}
+
+update_addon_subpack:
+  name: Update Addon Subpack
+  description: "Updates the active subpack for an installed addon on the target server."
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    pack_uuid:
+      name: Pack UUID
+      description: "The UUID of the addon pack."
+      required: true
+      example: "12345678-1234-1234-1234-123456789012"
+      selector:
+        text: {}
+    pack_type:
+      name: Pack Type
+      description: "The type of the addon pack (behavior or resource)."
+      required: true
+      example: "behavior"
+      selector:
+        select:
+          options:
+            - "behavior"
+            - "resource"
+    subpack_name:
+      name: Subpack Name
+      description: "The name of the subpack to activate."
+      required: true
+      example: "subpack_folder_name"
+      selector:
+        text: {}

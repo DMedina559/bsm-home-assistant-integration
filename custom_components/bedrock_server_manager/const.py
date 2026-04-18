@@ -58,9 +58,11 @@ ATTR_AVAILABLE_ADDONS_LIST = "available_addons_list"  # From BSM content dir
 ATTR_PLUGINS_DATA = "plugins_data"  # Full dict of plugins status
 
 ATTR_MANAGER_OS_TYPE = "bsm_host"
+ATTR_SERVER_ADDONS_LIST = "server_addons_list"
 
 # --- State/Key Constants  ---
 KEY_PLUGIN_STATUSES = "plugin_statuses"
+KEY_SERVER_ADDONS_COUNT = "server_addons_count"
 KEY_GLOBAL_PLAYERS_COUNT = "global_players_count"
 KEY_SERVER_PERMISSIONS_COUNT = "server_permissions_count"
 KEY_WORLD_BACKUPS_COUNT = "world_backups_count"
@@ -96,6 +98,11 @@ SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
 SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
+SERVICE_ENABLE_ADDON = "enable_addon"
+SERVICE_DISABLE_ADDON = "disable_addon"
+SERVICE_UNINSTALL_ADDON = "uninstall_addon"
+SERVICE_REORDER_ADDONS = "reorder_addons"
+SERVICE_UPDATE_ADDON_SUBPACK = "update_addon_subpack"
 
 # --- Service Field Names (used in service calls and services.yaml schema) ---
 FIELD_COMMAND = "command"
@@ -127,6 +134,10 @@ FIELD_EVENT_NAME = "event_name"
 FIELD_EVENT_PAYLOAD = "event_payload"
 FIELD_SETTING_KEY = "key"  # New - for set_global_setting
 FIELD_SETTING_VALUE = "value"  # New - for set_global_setting
+FIELD_PACK_UUID = "pack_uuid"
+FIELD_PACK_TYPE = "pack_type"
+FIELD_SUBPACK_NAME = "subpack_name"
+FIELD_UUIDS = "uuids"
 
 
 # --- Integration Version Helper ---
@@ -190,6 +201,11 @@ JS_MODULES = [
         "filename": "bsm-content-card.js",
         "version": INTEGRATION_VERSION,
         "name": "BSM Content Installer Card",
+    },
+    {
+        "filename": "bsm-addon-card.js",
+        "version": INTEGRATION_VERSION,
+        "name": "BSM Installed Addons Card",
     },
     {
         "filename": "bsm-plugins-card.js",
