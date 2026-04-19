@@ -32,6 +32,7 @@ from .const import (
     ATTR_PID,
     ATTR_PLUGINS_DATA,
     ATTR_PROPERTIES_BACKUPS_LIST,
+    ATTR_SERVER_ADDONS_LIST,
     ATTR_SERVER_PERMISSIONS_LIST,
     ATTR_SERVER_PROPERTIES,
     ATTR_UPTIME,
@@ -49,6 +50,7 @@ from .const import (
     KEY_PERMISSIONS_BACKUPS_COUNT,
     KEY_PLUGIN_STATUSES,
     KEY_PROPERTIES_BACKUPS_COUNT,
+    KEY_SERVER_ADDONS_COUNT,
     KEY_SERVER_PERMISSIONS_COUNT,
     KEY_WORLD_BACKUPS_COUNT,
 )
@@ -78,6 +80,12 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.DATA_SIZE,
         suggested_display_precision=1,
         entity_registry_enabled_default=False,
+    ),
+    SensorEntityDescription(
+        key=KEY_SERVER_ADDONS_COUNT,
+        name="Installed Addons",
+        icon="mdi:puzzle",
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key=KEY_SERVER_PERMISSIONS_COUNT,
@@ -415,6 +423,13 @@ class MinecraftServerSensor(
             )
         if key == KEY_SERVER_PERMISSIONS_COUNT:
             return len(data.get("server_permissions", []))
+        if key == KEY_SERVER_ADDONS_COUNT:
+            addons = data.get("server_addons")
+            if addons:
+                return len(getattr(addons, "behavior_packs", [])) + len(
+                    getattr(addons, "resource_packs", [])
+                )
+            return 0
         if key == KEY_WORLD_BACKUPS_COUNT:
             return len(data.get("world_backups", []))
         if key == KEY_ALLOWLIST_BACKUPS_COUNT:
@@ -459,6 +474,14 @@ class MinecraftServerSensor(
                     attrs[ATTR_UPTIME] = process_info[ATTR_UPTIME]
         elif key == KEY_SERVER_PERMISSIONS_COUNT:
             attrs[ATTR_SERVER_PERMISSIONS_LIST] = data.get("server_permissions", [])
+        elif key == KEY_SERVER_ADDONS_COUNT:
+            addons = data.get("server_addons")
+            if addons and hasattr(addons, "model_dump"):
+                attrs[ATTR_SERVER_ADDONS_LIST] = addons.model_dump()
+            elif addons and hasattr(addons, "dict"):
+                attrs[ATTR_SERVER_ADDONS_LIST] = addons.dict()
+            else:
+                attrs[ATTR_SERVER_ADDONS_LIST] = {}
         elif key == KEY_WORLD_BACKUPS_COUNT:
             attrs[ATTR_WORLD_BACKUPS_LIST] = data.get("world_backups", [])
         elif key == KEY_ALLOWLIST_BACKUPS_COUNT:

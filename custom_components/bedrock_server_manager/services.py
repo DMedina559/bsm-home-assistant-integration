@@ -17,6 +17,9 @@ from bsm_api_client import (
     ServerNotRunningError,
 )
 from bsm_api_client.models import (
+    AddonActionPayload,
+    AddonReorderPayload,
+    AddonSubpackPayload,
     AddPlayersPayload,
     AllowlistAddPayload,
     AllowlistRemovePayload,
@@ -58,6 +61,8 @@ from .const import (
     FIELD_IGNORE_PLAYER_LIMIT,
     FIELD_KEEP,
     FIELD_OVERWRITE,
+    FIELD_PACK_TYPE,
+    FIELD_PACK_UUID,
     FIELD_PERMISSIONS,
     FIELD_PLAYER_NAME,
     FIELD_PLAYERS,
@@ -69,16 +74,21 @@ from .const import (
     FIELD_SERVER_VERSION,
     FIELD_SETTING_KEY,
     FIELD_SETTING_VALUE,
+    FIELD_SUBPACK_NAME,
+    FIELD_UUIDS,
     SERVICE_ADD_GLOBAL_PLAYERS,
     SERVICE_ADD_TO_ALLOWLIST,
     SERVICE_CONFIGURE_OS_SERVICE,
     SERVICE_DELETE_SERVER,
+    SERVICE_DISABLE_ADDON,
+    SERVICE_ENABLE_ADDON,
     SERVICE_INSTALL_ADDON,
     SERVICE_INSTALL_SERVER,
     SERVICE_INSTALL_WORLD,
     SERVICE_PRUNE_DOWNLOADS,
     SERVICE_RELOAD_GLOBAL_SETTINGS,
     SERVICE_REMOVE_FROM_ALLOWLIST,
+    SERVICE_REORDER_ADDONS,
     SERVICE_RESTORE_BACKUP,
     SERVICE_RESTORE_LATEST_ALL,
     SERVICE_SEND_COMMAND,
@@ -87,6 +97,8 @@ from .const import (
     SERVICE_SET_PLUGIN_ENABLED,
     SERVICE_TRIGGER_BACKUP,
     SERVICE_TRIGGER_PLUGIN_EVENT,
+    SERVICE_UNINSTALL_ADDON,
+    SERVICE_UPDATE_ADDON_SUBPACK,
     SERVICE_UPDATE_PROPERTIES,
 )
 from .coordinator import ManagerDataCoordinator
@@ -200,6 +212,48 @@ INSTALL_ADDON_SERVICE_SCHEMA = vol.Schema(
         **TARGETING_SCHEMA_FIELDS,
     }
 )
+
+ENABLE_ADDON_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PACK_UUID): cv.string,
+        vol.Required(FIELD_PACK_TYPE): vol.In(["behavior", "resource"]),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+DISABLE_ADDON_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PACK_UUID): cv.string,
+        vol.Required(FIELD_PACK_TYPE): vol.In(["behavior", "resource"]),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+UNINSTALL_ADDON_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PACK_UUID): cv.string,
+        vol.Required(FIELD_PACK_TYPE): vol.In(["behavior", "resource"]),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+REORDER_ADDONS_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PACK_TYPE): vol.In(["behavior", "resource"]),
+        vol.Required(FIELD_UUIDS): vol.All(cv.ensure_list, [cv.string]),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
+UPDATE_ADDON_SUBPACK_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_PACK_UUID): cv.string,
+        vol.Required(FIELD_PACK_TYPE): vol.In(["behavior", "resource"]),
+        vol.Required(FIELD_SUBPACK_NAME): cv.string,
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+
 CONFIGURE_OS_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required(FIELD_AUTOUPDATE): cv.boolean,
@@ -279,12 +333,7 @@ async def _base_api_call_handler(
     except InvalidInputError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input provided. (API: {err.api_message or err})"
         _LOGGER.error(msg)
-        raise ServiceValidationError(
-            description=msg,
-            translation_domain=DOMAIN,
-            translation_key="service_invalid_input_api",
-            translation_placeholders={"details": err.api_message or str(err)},
-        ) from err
+        raise ServiceValidationError(msg) from err
     except AuthError as err:
         msg = f"{error_message_prefix}{context_msg}: Authentication failed. (API: {err.api_message or err})"
         _LOGGER.error(msg)
@@ -300,12 +349,7 @@ async def _base_api_call_handler(
     except ValueError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input value provided. ({err})"
         _LOGGER.error(msg)
-        raise ServiceValidationError(
-            description=msg,
-            translation_domain=DOMAIN,
-            translation_key="service_invalid_value_client",
-            translation_placeholders={"details": str(err)},
-        ) from err
+        raise ServiceValidationError(msg) from err
     except Exception as err:
         _LOGGER.exception("%s%s: Unexpected error.", error_message_prefix, context_msg)
         raise HomeAssistantError(
@@ -537,12 +581,7 @@ async def _async_handle_install_server(
         if response.status == "confirm_needed":
             msg = f"Install server {log_context}: Server already exists and overwrite was false. Set 'overwrite: true' to replace it or use the 'delete_server' service first."
             _LOGGER.warning(msg)
-            raise ServiceValidationError(
-                description=msg,
-                translation_domain=DOMAIN,
-                translation_key="service_install_server_confirm_needed",
-                translation_placeholders={"server_name": server_name_to_install},
-            )
+            raise ServiceValidationError(msg)
         _LOGGER.info(
             "Successfully requested install %s. API Message: %s",
             log_context,
@@ -572,7 +611,7 @@ async def _async_handle_install_server(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Install server %s: Unexpected error.", log_context)
@@ -649,7 +688,7 @@ async def _async_handle_delete_server(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Delete server %s: Unexpected error.", log_context)
@@ -704,7 +743,7 @@ async def _async_handle_reset_world(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("World reset %s: Unexpected error.", log_context)
@@ -824,11 +863,7 @@ async def _resolve_server_targets(  # noqa: C901
             target_area_ids,
         )
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
-            raise ServiceValidationError(
-                description=error_message,
-                translation_domain=DOMAIN,
-                translation_key=key_for_translation,
-            )
+            raise ServiceValidationError(error_message)
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -902,11 +937,7 @@ async def _resolve_manager_instance_targets(  # noqa: C901
             target_area_ids,
         )
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
-            raise ServiceValidationError(
-                description=error_message,
-                translation_domain=DOMAIN,
-                translation_key=key_for_translation,
-            )
+            raise ServiceValidationError(error_message)
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -1107,11 +1138,7 @@ async def async_handle_trigger_backup_service(
     if service.data[FIELD_BACKUP_TYPE] == "config" and not service.data.get(
         FIELD_FILE_TO_BACKUP
     ):
-        raise ServiceValidationError(
-            description=f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.",
-            translation_domain=DOMAIN,
-            translation_key="service_backup_config_file_required",
-        )
+        raise ServiceValidationError(f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.")
     await _execute_targeted_service(
         service,
         hass,
@@ -1481,6 +1508,116 @@ async def async_handle_install_world_service(service: ServiceCall, hass: HomeAss
     )
 
 
+async def _async_handle_enable_addon(
+    api: BedrockServerManagerApi, server: str, pack_uuid: str, pack_type: str
+):
+    payload = AddonActionPayload(pack_uuid=pack_uuid, pack_type=pack_type)
+    return await _base_api_call_handler(
+        api.async_enable_server_addon(server, payload), "Enable addon", server
+    )
+
+
+async def _async_handle_disable_addon(
+    api: BedrockServerManagerApi, server: str, pack_uuid: str, pack_type: str
+):
+    payload = AddonActionPayload(pack_uuid=pack_uuid, pack_type=pack_type)
+    return await _base_api_call_handler(
+        api.async_disable_server_addon(server, payload), "Disable addon", server
+    )
+
+
+async def _async_handle_uninstall_addon(
+    api: BedrockServerManagerApi, server: str, pack_uuid: str, pack_type: str
+):
+    payload = AddonActionPayload(pack_uuid=pack_uuid, pack_type=pack_type)
+    return await _base_api_call_handler(
+        api.async_uninstall_server_addon(server, payload), "Uninstall addon", server
+    )
+
+
+async def _async_handle_reorder_addons(
+    api: BedrockServerManagerApi, server: str, pack_type: str, uuids: list[str]
+):
+    payload = AddonReorderPayload(pack_type=pack_type, uuids=uuids)
+    return await _base_api_call_handler(
+        api.async_reorder_server_addon(server, payload), "Reorder addons", server
+    )
+
+
+async def _async_handle_update_addon_subpack(
+    api: BedrockServerManagerApi,
+    server: str,
+    pack_uuid: str,
+    pack_type: str,
+    subpack_name: str,
+):
+    payload = AddonSubpackPayload(
+        pack_uuid=pack_uuid, pack_type=pack_type, subpack_name=subpack_name
+    )
+    return await _base_api_call_handler(
+        api.async_update_server_addon_subpack(server, payload),
+        "Update addon subpack",
+        server,
+    )
+
+
+async def async_handle_enable_addon_service(service: ServiceCall, hass: HomeAssistant):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_enable_addon,
+        service.data[FIELD_PACK_UUID],
+        service.data[FIELD_PACK_TYPE],
+    )
+
+
+async def async_handle_disable_addon_service(service: ServiceCall, hass: HomeAssistant):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_disable_addon,
+        service.data[FIELD_PACK_UUID],
+        service.data[FIELD_PACK_TYPE],
+    )
+
+
+async def async_handle_uninstall_addon_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_uninstall_addon,
+        service.data[FIELD_PACK_UUID],
+        service.data[FIELD_PACK_TYPE],
+    )
+
+
+async def async_handle_reorder_addons_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_reorder_addons,
+        service.data[FIELD_PACK_TYPE],
+        service.data[FIELD_UUIDS],
+    )
+
+
+async def async_handle_update_addon_subpack_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_update_addon_subpack,
+        service.data[FIELD_PACK_UUID],
+        service.data[FIELD_PACK_TYPE],
+        service.data[FIELD_SUBPACK_NAME],
+    )
+
+
 async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAssistant):
     await _execute_targeted_service(
         service, hass, _async_handle_install_addon, service.data[FIELD_FILENAME]
@@ -1641,6 +1778,26 @@ async def async_register_services(hass: HomeAssistant) -> None:
             async_handle_install_world_service,
             INSTALL_WORLD_SERVICE_SCHEMA,
         ),
+        SERVICE_ENABLE_ADDON: (
+            async_handle_enable_addon_service,
+            ENABLE_ADDON_SERVICE_SCHEMA,
+        ),
+        SERVICE_DISABLE_ADDON: (
+            async_handle_disable_addon_service,
+            DISABLE_ADDON_SERVICE_SCHEMA,
+        ),
+        SERVICE_UNINSTALL_ADDON: (
+            async_handle_uninstall_addon_service,
+            UNINSTALL_ADDON_SERVICE_SCHEMA,
+        ),
+        SERVICE_REORDER_ADDONS: (
+            async_handle_reorder_addons_service,
+            REORDER_ADDONS_SERVICE_SCHEMA,
+        ),
+        SERVICE_UPDATE_ADDON_SUBPACK: (
+            async_handle_update_addon_subpack_service,
+            UPDATE_ADDON_SUBPACK_SERVICE_SCHEMA,
+        ),
         SERVICE_INSTALL_ADDON: (
             async_handle_install_addon_service,
             INSTALL_ADDON_SERVICE_SCHEMA,
@@ -1746,6 +1903,11 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_SET_PERMISSIONS,
             SERVICE_UPDATE_PROPERTIES,
             SERVICE_INSTALL_WORLD,
+            SERVICE_ENABLE_ADDON,
+            SERVICE_DISABLE_ADDON,
+            SERVICE_UNINSTALL_ADDON,
+            SERVICE_REORDER_ADDONS,
+            SERVICE_UPDATE_ADDON_SUBPACK,
             SERVICE_INSTALL_ADDON,
             SERVICE_CONFIGURE_OS_SERVICE,
             SERVICE_ADD_GLOBAL_PLAYERS,
