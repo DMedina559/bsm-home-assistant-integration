@@ -649,7 +649,7 @@ class BsmAllowlistCard extends LitElement {
                       validationMessage="Player name cannot be empty or have leading/trailing/multiple spaces."
                     ></ha-textfield>
                     <ha-button
-                      
+
                       raised
                       @click=${this._addPlayer}
                       .disabled=${isPlayerNameInvalid ||

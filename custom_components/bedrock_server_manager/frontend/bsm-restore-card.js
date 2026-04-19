@@ -627,7 +627,7 @@ class BsmRestoreCard extends LitElement {
                           )}
                         </ha-select>
                         <ha-button
-                          
+
                           @click=${this._restoreSelectedBackup}
                           .disabled=${!canRestoreSelected}
                           title=${!this._targetDeviceId
@@ -678,7 +678,7 @@ class BsmRestoreCard extends LitElement {
                     with the selected sensor.
                   </p>
                   <ha-button
-                    
+
                     @click=${this._restoreLatestAll}
                     .disabled=${!canRestoreLatestAll}
                     title=${!canRestoreLatestAll

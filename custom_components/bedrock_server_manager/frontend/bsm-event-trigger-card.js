@@ -254,7 +254,7 @@ class BsmEventTriggerCard extends LitElement {
           <ha-button
             @click=${this._triggerEvent}
             raised
-            
+
             .disabled=${this._isLoading ||
             !this._eventName ||
             this._eventName.trim() === ""}

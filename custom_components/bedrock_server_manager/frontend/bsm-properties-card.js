@@ -570,7 +570,7 @@ class BsmPropertiesCard extends LitElement {
           ? html`
               <div class="card-actions">
                 <ha-button
-                  
+
                   .disabled=${!hasChanges || this._isLoading}
                   @click=${this._saveProperties}
                   title=${!hasChanges
