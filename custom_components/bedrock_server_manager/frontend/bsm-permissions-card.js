@@ -736,13 +736,13 @@ class BsmPermissionsCard extends LitElement {
                     )}
                   </ha-select>
                   <ha-button
-                    label="Stage This Player"
+                    
                     @click=${this._stageNewPlayerPermission}
                     style="margin-top: 16px;"
                     .disabled=${!canAddPlayer}
                     raised
-                    icon=""
-                  ></ha-button>
+                    
+                  >Stage This Player</ha-button>
                 </div>
               `
             : ""}
@@ -751,15 +751,15 @@ class BsmPermissionsCard extends LitElement {
           ? html`
               <div class="card-actions">
                 <ha-button
-                  label="Save All Staged Changes"
+                  
                   raised
-                  icon=""
+                  
                   .disabled=${!canSave}
                   @click=${this._savePermissions}
                   title=${canSave
                     ? "Saves all highlighted changes"
                     : "No changes staged or currently processing"}
-                ></ha-button>
+                >Save All Staged Changes</ha-button>
               </div>
             `
           : ""}

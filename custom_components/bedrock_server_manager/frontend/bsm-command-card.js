@@ -236,10 +236,10 @@ class BsmCommandCard extends LitElement {
         <div class="card-actions">
           <ha-button
             raised
-            label="Send Command"
+            
             @click=${this._sendCommand}
             .disabled=${isButtonDisabled}
-          ></ha-button>
+          >Send Command</ha-button>
         </div>
       </ha-card>
     `;

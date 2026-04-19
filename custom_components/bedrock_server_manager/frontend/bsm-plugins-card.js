@@ -390,9 +390,9 @@ class BsmPluginsCard extends LitElement {
           <ha-button
             @click=${this._reloadPlugins}
             .disabled=${this._isLoading}
-            label="Reload All Plugins"
+            
             raised
-          ></ha-button>
+          >Reload All Plugins</ha-button>
         </div>
       </ha-card>
     `;

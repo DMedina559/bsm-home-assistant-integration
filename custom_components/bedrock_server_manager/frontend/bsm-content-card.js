@@ -578,14 +578,14 @@ class BsmContentInstallerCard extends LitElement {
         <!-- Actions Area -->
         <div class="card-actions">
           <ha-button
-            label="Install ${installTypeDisplay}"
+            
             raised
             @click=${this._installContent}
             .disabled=${isButtonDisabled}
             title=${isButtonDisabled
               ? "Please complete all selections above"
               : `Install ${this._selectedFileToInstall || "content"}`}
-          ></ha-button>
+          >Install ${installTypeDisplay}</ha-button>
         </div>
       </ha-card>
     `;

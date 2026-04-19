@@ -148,7 +148,7 @@ class BsmAllowlistCard extends LitElement {
         padding: 16px;
         gap: 8px;
       }
-      mwc-icon-button {
+      ha-icon-button {
         color: var(--secondary-text-color);
       }
     `;
@@ -616,7 +616,7 @@ class BsmAllowlistCard extends LitElement {
                       (playerName) => html`
                         <li>
                           <span>${playerName}</span>
-                          <mwc-icon-button
+                          <ha-icon-button
                             title="Remove ${playerName}"
                             @click=${() => this._removePlayer(playerName)}
                             .disabled=${this._isLoading}
@@ -624,7 +624,7 @@ class BsmAllowlistCard extends LitElement {
                             <ha-icon
                               icon="mdi:account-remove-outline"
                             ></ha-icon>
-                          </mwc-icon-button>
+                          </ha-icon-button>
                         </li>
                       `,
                     )}
@@ -649,13 +649,13 @@ class BsmAllowlistCard extends LitElement {
                       validationMessage="Player name cannot be empty or have leading/trailing/multiple spaces."
                     ></ha-textfield>
                     <ha-button
-                      label="Add"
+                      
                       raised
                       @click=${this._addPlayer}
                       .disabled=${isPlayerNameInvalid ||
                       isPlayerAlreadyAdded ||
                       this._isLoading}
-                    ></ha-button>
+                    >Add</ha-button>
                   </div>
                   <div class="add-player-options">
                     <ha-switch

@@ -311,16 +311,14 @@ class BsmAddonCard extends LitElement {
       <div class="addon-item">
         <div class="addon-header">
           <div class="reorder-controls">
-            <mwc-icon-button
-              icon="keyboard_arrow_up"
+            <ha-icon-button
               @click=${() => this.moveItem(index, -1)}
-              ?disabled=${index === 0}
-            ></mwc-icon-button>
-            <mwc-icon-button
-              icon="keyboard_arrow_down"
+              .disabled=${index === 0}
+            ><ha-icon icon="mdi:chevron-up"></ha-icon></ha-icon-button>
+            <ha-icon-button
               @click=${() => this.moveItem(index, 1)}
-              ?disabled=${index === totalItems - 1}
-            ></mwc-icon-button>
+              .disabled=${index === totalItems - 1}
+            ><ha-icon icon="mdi:chevron-down"></ha-icon></ha-icon-button>
           </div>
           <div class="addon-info">
             <h4>${item.name || "Unknown Pack"}</h4>
@@ -362,27 +360,27 @@ class BsmAddonCard extends LitElement {
           ${isActive
             ? html`
                 <ha-button
-                  label="Disable"
+                  
                   @click=${() =>
                     this.handleAddonAction(item, packType, "disable")}
                   ?disabled=${this._isLoading}
-                ></ha-button>
+                >Disable</ha-button>
               `
             : html`
                 <ha-button
-                  label="Enable"
+                  
                   @click=${() =>
                     this.handleAddonAction(item, packType, "enable")}
                   ?disabled=${this._isLoading}
                   class="success-btn"
-                ></ha-button>
+                >Enable</ha-button>
               `}
           <ha-button
-            label="Uninstall"
+            
             @click=${() => this.handleAddonAction(item, packType, "uninstall")}
             ?disabled=${this._isLoading}
             class="danger-btn"
-          ></ha-button>
+          >Uninstall</ha-button>
         </div>
       </div>
     `;
@@ -421,15 +419,15 @@ class BsmAddonCard extends LitElement {
             ? html`
                 <div class="tabs">
                   <ha-button
-                    label="Behavior Packs"
+                    
                     @click=${() => (this._activeTab = "behavior")}
                     ?raised=${this._activeTab === "behavior"}
-                  ></ha-button>
+                  >Behavior Packs</ha-button>
                   <ha-button
-                    label="Resource Packs"
+                    
                     @click=${() => (this._activeTab = "resource")}
                     ?raised=${this._activeTab === "resource"}
-                  ></ha-button>
+                  >Resource Packs</ha-button>
                 </div>
 
                 <div class="addon-list">
@@ -453,11 +451,11 @@ class BsmAddonCard extends LitElement {
 
                 <div class="save-order-container">
                   <ha-button
-                    label="Save Order"
+                    
                     @click=${this.handleSaveAddonOrder}
                     ?disabled=${!this._orderChanged || this._isLoading}
                     raised
-                  ></ha-button>
+                  >Save Order</ha-button>
                 </div>
               `
             : ""}
@@ -526,7 +524,7 @@ class BsmAddonCard extends LitElement {
         display: flex;
         flex-direction: column;
       }
-      .reorder-controls mwc-icon-button {
+      .reorder-controls ha-icon-button {
         --mdc-icon-button-size: 24px;
         --mdc-icon-size: 20px;
       }

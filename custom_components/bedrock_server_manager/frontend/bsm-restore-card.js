@@ -627,10 +627,7 @@ class BsmRestoreCard extends LitElement {
                           )}
                         </ha-select>
                         <ha-button
-                          label="Restore This ${this._backupType === "all"
-                            ? "Specific Backup"
-                            : BACKUP_TYPE_DISPLAY_NAMES[this._backupType] ||
-                              "Backup"}"
+                          
                           @click=${this._restoreSelectedBackup}
                           .disabled=${!canRestoreSelected}
                           title=${!this._targetDeviceId
@@ -640,7 +637,10 @@ class BsmRestoreCard extends LitElement {
                               : !this._selectedBackupFile
                                 ? "Select a backup file"
                                 : `Restore ${this._selectedBackupFile}`}
-                        ></ha-button>
+                        >Restore This ${this._backupType === 'all'
+                            ? "Specific Backup"
+                            : BACKUP_TYPE_DISPLAY_NAMES[this._backupType] ||
+                              "Backup"}</ha-button>
                         ${this._backupType === "unknown"
                           ? html`<p class="warning">
                               Could not determine if this is a world or config
@@ -678,13 +678,13 @@ class BsmRestoreCard extends LitElement {
                     with the selected sensor.
                   </p>
                   <ha-button
-                    label="Restore Latest Full Backup"
+                    
                     @click=${this._restoreLatestAll}
                     .disabled=${!canRestoreLatestAll}
                     title=${!canRestoreLatestAll
                       ? "Cannot restore: Device ID missing or still loading"
                       : "Restore latest world and config backup"}
-                  ></ha-button>
+                  >Restore Latest Full Backup</ha-button>
                   ${!this._targetDeviceId
                     ? html`<p class="warning">
                         Cannot perform 'Restore Latest Full Backup' because the
