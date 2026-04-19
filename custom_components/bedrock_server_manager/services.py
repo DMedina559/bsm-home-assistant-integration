@@ -333,12 +333,7 @@ async def _base_api_call_handler(
     except InvalidInputError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input provided. (API: {err.api_message or err})"
         _LOGGER.error(msg)
-        raise ServiceValidationError(
-            description=msg,
-            translation_domain=DOMAIN,
-            translation_key="service_invalid_input_api",
-            translation_placeholders={"details": err.api_message or str(err)},
-        ) from err
+        raise ServiceValidationError(msg) from err
     except AuthError as err:
         msg = f"{error_message_prefix}{context_msg}: Authentication failed. (API: {err.api_message or err})"
         _LOGGER.error(msg)
@@ -354,12 +349,7 @@ async def _base_api_call_handler(
     except ValueError as err:
         msg = f"{error_message_prefix}{context_msg}: Invalid input value provided. ({err})"
         _LOGGER.error(msg)
-        raise ServiceValidationError(
-            description=msg,
-            translation_domain=DOMAIN,
-            translation_key="service_invalid_value_client",
-            translation_placeholders={"details": str(err)},
-        ) from err
+        raise ServiceValidationError(msg) from err
     except Exception as err:
         _LOGGER.exception("%s%s: Unexpected error.", error_message_prefix, context_msg)
         raise HomeAssistantError(
@@ -591,12 +581,7 @@ async def _async_handle_install_server(
         if response.status == "confirm_needed":
             msg = f"Install server {log_context}: Server already exists and overwrite was false. Set 'overwrite: true' to replace it or use the 'delete_server' service first."
             _LOGGER.warning(msg)
-            raise ServiceValidationError(
-                description=msg,
-                translation_domain=DOMAIN,
-                translation_key="service_install_server_confirm_needed",
-                translation_placeholders={"server_name": server_name_to_install},
-            )
+            raise ServiceValidationError(msg)
         _LOGGER.info(
             "Successfully requested install %s. API Message: %s",
             log_context,
@@ -626,7 +611,7 @@ async def _async_handle_install_server(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Install server %s: Unexpected error.", log_context)
@@ -703,7 +688,7 @@ async def _async_handle_delete_server(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("Delete server %s: Unexpected error.", log_context)
@@ -758,7 +743,7 @@ async def _async_handle_reset_world(
         )
         _LOGGER.error(full_error_msg)
         if isinstance(err, (ValueError, InvalidInputError)):
-            raise ServiceValidationError(description=full_error_msg) from err
+            raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
     except Exception as err:
         _LOGGER.exception("World reset %s: Unexpected error.", log_context)
@@ -878,11 +863,7 @@ async def _resolve_server_targets(  # noqa: C901
             target_area_ids,
         )
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
-            raise ServiceValidationError(
-                description=error_message,
-                translation_domain=DOMAIN,
-                translation_key=key_for_translation,
-            )
+            raise ServiceValidationError(error_message)
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -956,11 +937,7 @@ async def _resolve_manager_instance_targets(  # noqa: C901
             target_area_ids,
         )
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
-            raise ServiceValidationError(
-                description=error_message,
-                translation_domain=DOMAIN,
-                translation_key=key_for_translation,
-            )
+            raise ServiceValidationError(error_message)
         raise HomeAssistantError(error_message)
 
     _LOGGER.debug(
@@ -1161,11 +1138,7 @@ async def async_handle_trigger_backup_service(
     if service.data[FIELD_BACKUP_TYPE] == "config" and not service.data.get(
         FIELD_FILE_TO_BACKUP
     ):
-        raise ServiceValidationError(
-            description=f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.",
-            translation_domain=DOMAIN,
-            translation_key="service_backup_config_file_required",
-        )
+        raise ServiceValidationError(f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.")
     await _execute_targeted_service(
         service,
         hass,
