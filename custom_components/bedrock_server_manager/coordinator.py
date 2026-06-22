@@ -68,6 +68,103 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
+    def update_process_info(self, new_process_info: dict) -> None:
+        """Update process_info directly from a websocket message to save an API call."""
+        if not self.data:
+            self.data = {}
+        
+        # Update metrics directly in memory
+        self.data["process_info"] = new_process_info
+
+        # Force status message to success when we get WS updates
+        if new_process_info and new_process_info.get("pid"):
+            self.data["status"] = "success"
+            self.data["message"] = "Status updated via WebSocket"
+        elif new_process_info is None:
+            self.data["status"] = "success"
+            self.data["message"] = "Server stopped (via WebSocket)"
+
+        _LOGGER.debug(f"Updated process_info for {self.server_name} via websocket")
+        self.async_set_updated_data(self.data)
+
+    def update_from_event(self, topic: str, data: dict) -> None:
+        """Update state based on event payload directly in memory."""
+        if not self.data:
+            self.data = {}
+
+        if topic == "event:after_server_stop":
+            # Server stopped successfully
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                self.data["process_info"] = None
+                self.data["status"] = "success"
+                self.data["message"] = "Server stopped (via WebSocket event)"
+                
+        elif topic == "event:after_server_start":
+            # Server started successfully
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                # We don't have the full process info here yet, but we know it's on
+                # We can mock a process_info so that the switch toggles to "on" immediately
+                # The resource monitor update will soon follow to populate full stats
+                if not self.data.get("process_info"):
+                    self.data["process_info"] = {"pid": "started", "memory_mb": 0.0, "cpu_percent": 0.0, "uptime": "0:00:00"}
+                self.data["status"] = "success"
+                self.data["message"] = "Server started (via WebSocket event)"
+                
+        elif topic == "event:after_properties_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                properties_to_update = data.get("properties_to_update", {})
+                if properties_to_update:
+                    if "properties" not in self.data:
+                        self.data["properties"] = {}
+                    self.data["properties"].update(properties_to_update)
+                    
+        elif topic == "event:after_permission_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                xuid = data.get("xuid")
+                permission = data.get("permission")
+                if xuid and permission and "server_permissions" in self.data:
+                    # Update or add the permission in the list
+                    found = False
+                    for perm_obj in self.data["server_permissions"]:
+                        if perm_obj.get("xuid") == xuid:
+                            perm_obj["permission"] = permission
+                            found = True
+                            break
+                    if not found:
+                        self.data["server_permissions"].append({
+                            "xuid": xuid,
+                            "permission": permission
+                        })
+                        
+        elif topic == "event:after_allowlist_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                if "allowlist" not in self.data:
+                    self.data["allowlist"] = []
+                    
+                # Handle removals
+                if "details" in result and "removed" in result["details"]:
+                    removed_names = result["details"]["removed"]
+                    self.data["allowlist"] = [
+                        p for p in self.data["allowlist"] 
+                        if p.get("name") not in removed_names
+                    ]
+                    
+                # Handle additions
+                if "new_players_data" in data:
+                    new_players = data["new_players_data"]
+                    for new_player in new_players:
+                        # Avoid duplicates
+                        if not any(p.get("name") == new_player.get("name") for p in self.data["allowlist"]):
+                            self.data["allowlist"].append(new_player)
+
+        _LOGGER.debug(f"Updated from event {topic} for {self.server_name} via websocket")
+        self.async_set_updated_data(self.data)
+
     async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
         coordinator_data: dict[str, Any] = {

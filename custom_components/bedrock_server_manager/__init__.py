@@ -27,6 +27,7 @@ from .const import (
 )
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 from .frontend import BsmFrontendRegistration
+from .websocket import BsmWebSocketManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,6 +143,45 @@ async def async_setup_entry(  # noqa: C901
             "servers": {},
         }
     )
+
+    # --- Setup WebSocket Manager ---
+    def _ws_coordinator_refresh_callback(topic, data):
+        """Handle event updates requiring coordinator refresh."""
+        _LOGGER.debug(f"Triggering refresh for {topic}")
+        # Always refresh manager for global events or wildcard task updates
+        hass.async_create_task(manager_coordinator.async_request_refresh())
+        
+        # Determine if we should refresh specific server coordinators based on the topic
+        for server_name, server_data in hass.data[DOMAIN][entry.entry_id].get("servers", {}).items():
+            if "coordinator" in server_data:
+                # If we have a task update or an event, it might affect any server, so trigger a refresh.
+                if topic.startswith("task:") or topic.startswith("event:"):
+                    hass.async_create_task(server_data["coordinator"].async_request_refresh())
+
+    def _ws_update_server_process_info_callback(server_name, process_info):
+        """Handle direct resource monitor updates."""
+        server_data = hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        if server_data and "coordinator" in server_data:
+            server_data["coordinator"].update_process_info(process_info)
+            
+    def _ws_update_server_event_callback(server_name, topic, data):
+        """Handle direct event state updates."""
+        server_data = hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        if server_data and "coordinator" in server_data:
+            server_data["coordinator"].update_from_event(topic, data)
+            
+    ws_manager = BsmWebSocketManager(
+        hass=hass,
+        api_client=api_client,
+        coordinator_refresh_callback=_ws_coordinator_refresh_callback,
+        update_server_process_info_callback=_ws_update_server_process_info_callback,
+        update_server_event_callback=_ws_update_server_event_callback,
+    )
+    hass.data[DOMAIN][entry.entry_id]["ws_manager"] = ws_manager
+
+    # We start it as a background task
+    hass.loop.create_task(ws_manager.async_start())
+    # --- End Setup WebSocket Manager ---
 
     selected_servers = entry.options.get(CONF_SERVER_NAMES, [])
     server_scan_interval = entry.options.get(
@@ -309,6 +349,23 @@ async def async_unload_entry(  # noqa: C901
                 url_for_unload,
                 DOMAIN,
             )
+            
+            ws_manager = entry_specific_data_popped.get("ws_manager")
+            if ws_manager:
+                try:
+                    await ws_manager.async_stop()
+                    _LOGGER.debug(
+                        "BSM WebSocket manager stopped for %s.",
+                        url_for_unload,
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Error stopping WebSocket manager for %s: %s",
+                        url_for_unload,
+                        e,
+                        exc_info=True,
+                    )
+            
             frontend_registrar = entry_specific_data_popped.get("frontend_registrar")
             if frontend_registrar:
                 try:
