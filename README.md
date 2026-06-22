@@ -4,9 +4,20 @@
 
 # Bedrock Server Manager - Home Assistant Integration
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration)](https://github.com/dmedina559/bsm-home-assistant-integration/releases/latest)
-[![License](https://img.shields.io/github/license/dmedina559/bsm-home-assistant-integration)](https://raw.githubusercontent.com/DMedina559/bsm-home-assistant-integration/refs/heads/main/LICENSE)
+<p align="center">
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration">
+    <img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg?logo=HomeAssistantCommunityStore&logoColor=white" alt="HACS Default Store">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/releases">
+    <img alt="Stable" src="https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration?label=Stable&color=blue">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/releases">
+    <img alt="Pre-Release" src="https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration?include_prereleases&label=Pre-Release&color=red">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/actions">
+    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/dmedina559/bsm-home-assistant-integration/hasstest.yaml?label=Tests&event=push">
+  </a>
+</p>
 
 This Home Assistant integration connects to your self-hosted [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) API. It allows you to monitor server status, resource usage, and control a wide range of server actions directly from your Home Assistant dashboards and automations. Manage installations, backups, restores, properties, allowlists, permissions, and send console commands with ease.
 
@@ -24,22 +35,14 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 * Easily add the Bedrock Server Manager integration to HACS using this button:
 
-    [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
+    [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
 
 1.  **Ensure HACS is Installed:** If you don't have HACS, install it first from [hacs.xyz](https://hacs.xyz/).
-2.  **Add Custom Repository:**
-
-    *Manually add the custom repository to HACS if the button above doesn't work:*
-    *   Open HACS in Home Assistant.
-    *   Go to "Integrations".
-    *   Click the three dots menu (⋮) in the top right and select "Custom repositories".
-    *   In the "Repository" field, enter the URL of this GitHub repository: `https://github.com/dmedina559/bsm-home-assistant-integration`.
-    *   Select "Integration" as the category.
-    *   Click "Add".
-3.  **Install Integration:**
-    *   The "Bedrock Server Manager" integration should now appear in your HACS integrations list (you might need to search for it).
+2.  **Install Integration:**
+    *   Navigate to **HACS -> Integrations** in Home Assistant.
+    *   The "Bedrock Server Manager" integration should appear in your HACS integrations list (you might need to search for it).
     *   Click "Install" and follow the HACS prompts.
-4.  **Restart Home Assistant:** After installation via HACS, a restart of Home Assistant is required (Developer Tools -> Server Management -> Restart, or Settings -> System -> Restart).
+3.  **Restart Home Assistant:** After installation via HACS, a restart of Home Assistant is required (Developer Tools -> Server Management -> Restart, or Settings -> System -> Restart).
 
 ### Manual Installation
 
