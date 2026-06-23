@@ -253,8 +253,24 @@ add_to_allowlist:
         boolean: {}
 
 remove_from_allowlist:
-  name: Remove Player from Server Allowlist
-  description: Removes a specific player from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.
+  name: Remove Players from Server Allowlist
+  description: Removes specific players from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    players:
+      name: Players
+      description: A list of player Gamertags to remove from the allowlist.
+      required: true
+      example: ["PlayerToRemove"]
+      selector:
+        object: {}
+
+add_server_ban:
+  name: Add Server Ban
+  description: Adds a ban to the server's ban list.
   target:
     entity:
       domain: sensor
@@ -262,9 +278,39 @@ remove_from_allowlist:
   fields:
     player_name:
       name: Player Name
-      description: The Gamertag of the player to remove from the allowlist.
+      description: The Gamertag of the player to ban.
       required: true
-      example: "PlayerToRemove"
+      example: "BadPlayer"
+      selector:
+        text: {}
+    xuid:
+      name: Player XUID
+      description: The XUID of the player to ban.
+      required: true
+      example: "1234567890"
+      selector:
+        text: {}
+    reason:
+      name: Ban Reason
+      description: The reason for the ban.
+      required: false
+      example: "Griefing"
+      selector:
+        text: {}
+
+remove_server_ban:
+  name: Remove Server Ban
+  description: Removes a ban from the server's ban list based on the XUID.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    xuid:
+      name: Player XUID
+      description: The XUID of the player whose ban to remove.
+      required: true
+      example: "1234567890"
       selector:
         text: {}
 

@@ -24,6 +24,8 @@ from bsm_api_client.models import (
     AllowlistAddPayload,
     AllowlistRemovePayload,
     BackupActionPayload,
+    BanAddRequest,
+    BanRemoveRequest,
     CommandPayload,
     FileNamePayload,
     InstallServerPayload,
@@ -33,7 +35,7 @@ from bsm_api_client.models import (
     PropertiesPayload,
     PruneDownloadsPayload,
     RestoreActionPayload,
-    ServiceUpdatePayload,
+    ServerSettingItemPayload,
     SettingItemResponse,
     TriggerEventPayload,
 )
@@ -66,6 +68,8 @@ from .const import (
     FIELD_PERMISSIONS,
     FIELD_PLAYER_NAME,
     FIELD_PLAYERS,
+    FIELD_XUID,
+    FIELD_REASON,
     FIELD_PLUGIN_ENABLED,
     FIELD_PLUGIN_NAME,
     FIELD_PROPERTIES,
@@ -78,6 +82,8 @@ from .const import (
     FIELD_UUIDS,
     SERVICE_ADD_GLOBAL_PLAYERS,
     SERVICE_ADD_TO_ALLOWLIST,
+    SERVICE_ADD_SERVER_BAN,
+    SERVICE_REMOVE_SERVER_BAN,
     SERVICE_CONFIGURE_OS_SERVICE,
     SERVICE_DELETE_SERVER,
     SERVICE_DISABLE_ADDON,
@@ -169,7 +175,21 @@ ADD_TO_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
 )
 REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA = vol.Schema(
     {
+        vol.Required(FIELD_PLAYERS): vol.All(cv.ensure_list, [cv.string]),
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+ADD_SERVER_BAN_SERVICE_SCHEMA = vol.Schema(
+    {
         vol.Required(FIELD_PLAYER_NAME): cv.string,
+        vol.Required(FIELD_XUID): cv.string,
+        vol.Optional(FIELD_REASON): cv.string,
+        **TARGETING_SCHEMA_FIELDS,
+    }
+)
+REMOVE_SERVER_BAN_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(FIELD_XUID): cv.string,
         **TARGETING_SCHEMA_FIELDS,
     }
 )
@@ -424,12 +444,38 @@ async def _async_handle_add_to_allowlist(
 
 
 async def _async_handle_remove_from_allowlist(
-    api: BedrockServerManagerApi, server: str, player_name: str
+    api: BedrockServerManagerApi, server: str, players: List[str]
 ):
-    payload = AllowlistRemovePayload(players=[player_name])
+    payload = AllowlistRemovePayload(players=players)
     return await _base_api_call_handler(
-        api.async_remove_server_allowlist(server, payload),
+        api.async_remove_server_allowlist_players(server, payload),
         "Remove from allowlist",
+        server,
+    )
+
+
+async def _async_handle_add_server_ban(
+    api: BedrockServerManagerApi,
+    server: str,
+    player_name: str,
+    xuid: str,
+    reason: str | None,
+):
+    payload = BanAddRequest(player_name=player_name, xuid=xuid, reason=reason)
+    return await _base_api_call_handler(
+        api.async_add_server_ban(server, payload),
+        "Add server ban",
+        server,
+    )
+
+
+async def _async_handle_remove_server_ban(
+    api: BedrockServerManagerApi, server: str, xuid: str
+):
+    payload = BanRemoveRequest(xuid=xuid)
+    return await _base_api_call_handler(
+        api.async_remove_server_ban(server, payload),
+        "Remove server ban",
         server,
     )
 
@@ -481,12 +527,25 @@ async def _async_handle_configure_os_service(
     payload_dict: Dict[str, bool],
     manager_id: str,
 ):
-    payload = ServiceUpdatePayload(**payload_dict)
-    return await _base_api_call_handler(
-        api.async_configure_server_os_service(server, payload),
-        "Configure OS service",
-        f"{server} on manager '{manager_id}'",
-    )
+    # Setting OS service via the new `async_set_server_setting` endpoints
+    tasks = []
+    for k, v in payload_dict.items():
+        # Maps e.g. "autoupdate" -> "settings.autoupdate"
+        setting_key = f"settings.{k}"
+        payload = ServerSettingItemPayload(key=setting_key, value=v)
+        tasks.append(
+            _base_api_call_handler(
+                api.async_set_server_setting(server, payload),
+                f"Configure OS service ({k})",
+                f"{server} on manager '{manager_id}'",
+            )
+        )
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Return the last successful result or the first exception
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
+    return results[-1] if results else None
 
 
 async def _async_handle_add_global_players(
@@ -1138,7 +1197,9 @@ async def async_handle_trigger_backup_service(
     if service.data[FIELD_BACKUP_TYPE] == "config" and not service.data.get(
         FIELD_FILE_TO_BACKUP
     ):
-        raise ServiceValidationError(f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'.")
+        raise ServiceValidationError(
+            f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'."
+        )
     await _execute_targeted_service(
         service,
         hass,
@@ -1354,7 +1415,31 @@ async def async_handle_remove_from_allowlist_service(
         service,
         hass,
         _async_handle_remove_from_allowlist,
+        service.data[FIELD_PLAYERS],
+    )
+
+
+async def async_handle_add_server_ban_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_add_server_ban,
         service.data[FIELD_PLAYER_NAME],
+        service.data[FIELD_XUID],
+        service.data.get(FIELD_REASON),
+    )
+
+
+async def async_handle_remove_server_ban_service(
+    service: ServiceCall, hass: HomeAssistant
+):
+    await _execute_targeted_service(
+        service,
+        hass,
+        _async_handle_remove_server_ban,
+        service.data[FIELD_XUID],
     )
 
 
@@ -1766,6 +1851,14 @@ async def async_register_services(hass: HomeAssistant) -> None:
             async_handle_remove_from_allowlist_service,
             REMOVE_FROM_ALLOWLIST_SERVICE_SCHEMA,
         ),
+        SERVICE_ADD_SERVER_BAN: (
+            async_handle_add_server_ban_service,
+            ADD_SERVER_BAN_SERVICE_SCHEMA,
+        ),
+        SERVICE_REMOVE_SERVER_BAN: (
+            async_handle_remove_server_ban_service,
+            REMOVE_SERVER_BAN_SERVICE_SCHEMA,
+        ),
         SERVICE_SET_PERMISSIONS: (
             async_handle_set_permissions_service,
             SET_PERMISSIONS_SERVICE_SCHEMA,
@@ -1900,6 +1993,8 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_DELETE_SERVER,
             SERVICE_ADD_TO_ALLOWLIST,
             SERVICE_REMOVE_FROM_ALLOWLIST,
+            SERVICE_ADD_SERVER_BAN,
+            SERVICE_REMOVE_SERVER_BAN,
             SERVICE_SET_PERMISSIONS,
             SERVICE_UPDATE_PROPERTIES,
             SERVICE_INSTALL_WORLD,
