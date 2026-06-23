@@ -23,7 +23,7 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 ## Prerequisites
 
-*   Home Assistant installation (Version 2024.x or later recommended).
+*   Home Assistant installation (Version 2025.x or later recommended).
 *   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) application.
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.

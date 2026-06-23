@@ -150,26 +150,34 @@ async def async_setup_entry(  # noqa: C901
         _LOGGER.debug(f"Triggering refresh for {topic}")
         # Always refresh manager for global events or wildcard task updates
         hass.async_create_task(manager_coordinator.async_request_refresh())
-        
+
         # Determine if we should refresh specific server coordinators based on the topic
-        for server_name, server_data in hass.data[DOMAIN][entry.entry_id].get("servers", {}).items():
+        for server_name, server_data in (
+            hass.data[DOMAIN][entry.entry_id].get("servers", {}).items()
+        ):
             if "coordinator" in server_data:
                 # If we have a task update or an event, it might affect any server, so trigger a refresh.
                 if topic.startswith("task:") or topic.startswith("event:"):
-                    hass.async_create_task(server_data["coordinator"].async_request_refresh())
+                    hass.async_create_task(
+                        server_data["coordinator"].async_request_refresh()
+                    )
 
     def _ws_update_server_process_info_callback(server_name, process_info):
         """Handle direct resource monitor updates."""
-        server_data = hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        server_data = (
+            hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        )
         if server_data and "coordinator" in server_data:
             server_data["coordinator"].update_process_info(process_info)
-            
+
     def _ws_update_server_event_callback(server_name, topic, data):
         """Handle direct event state updates."""
-        server_data = hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        server_data = (
+            hass.data[DOMAIN][entry.entry_id].get("servers", {}).get(server_name)
+        )
         if server_data and "coordinator" in server_data:
             server_data["coordinator"].update_from_event(topic, data)
-            
+
     ws_manager = BsmWebSocketManager(
         hass=hass,
         api_client=api_client,
@@ -349,7 +357,7 @@ async def async_unload_entry(  # noqa: C901
                 url_for_unload,
                 DOMAIN,
             )
-            
+
             ws_manager = entry_specific_data_popped.get("ws_manager")
             if ws_manager:
                 try:
@@ -365,7 +373,7 @@ async def async_unload_entry(  # noqa: C901
                         e,
                         exc_info=True,
                     )
-            
+
             frontend_registrar = entry_specific_data_popped.get("frontend_registrar")
             if frontend_registrar:
                 try:

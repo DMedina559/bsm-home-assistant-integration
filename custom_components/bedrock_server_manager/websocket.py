@@ -1,17 +1,25 @@
 import asyncio
 import logging
-from typing import Callable, Coroutine, Any, Optional
-import async_timeout
+from typing import Callable, Any, Optional
+
 
 from homeassistant.core import HomeAssistant
 from bsm_api_client import BedrockServerManagerApi, WebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class BsmWebSocketManager:
     """Manages the WebSocket connection for the BSM integration."""
 
-    def __init__(self, hass: HomeAssistant, api_client: BedrockServerManagerApi, coordinator_refresh_callback: Callable, update_server_process_info_callback: Callable, update_server_event_callback: Callable):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_client: BedrockServerManagerApi,
+        coordinator_refresh_callback: Callable,
+        update_server_process_info_callback: Callable,
+        update_server_event_callback: Callable,
+    ):
         """Initialize the WebSocket manager."""
         self.hass = hass
         self.api_client = api_client
@@ -62,7 +70,7 @@ class BsmWebSocketManager:
 
             # Subscribe to the wildcard topic
             await self.ws_client.subscribe("*")
-            
+
             # Start listening
             if self._listen_task:
                 self._listen_task.cancel()
@@ -84,17 +92,17 @@ class BsmWebSocketManager:
             if self._should_reconnect:
                 _LOGGER.error(f"WebSocket connection lost: {e}")
         finally:
-             self._is_connected = False
-             if self._should_reconnect:
-                 self._schedule_reconnect()
+            self._is_connected = False
+            if self._should_reconnect:
+                self._schedule_reconnect()
 
     def _schedule_reconnect(self):
         """Schedule a reconnection attempt with exponential backoff."""
         if self._reconnect_task and not self._reconnect_task.done():
-             return
+            return
 
         self._reconnect_attempts += 1
-        delay = min(2 ** self._reconnect_attempts, 60)
+        delay = min(2**self._reconnect_attempts, 60)
         _LOGGER.info(f"Scheduling WebSocket reconnect in {delay} seconds")
         self._reconnect_task = self.hass.loop.create_task(self._reconnect_delay(delay))
 
@@ -115,15 +123,23 @@ class BsmWebSocketManager:
             if topic.startswith("resource-monitor:") and msg_type == "resource_update":
                 server_name = topic.split(":", 1)[1]
                 if "process_info" in data:
-                    self.update_server_process_info_callback(server_name, data["process_info"])
+                    self.update_server_process_info_callback(
+                        server_name, data["process_info"]
+                    )
 
             elif topic.startswith("event:"):
                 # Handle specific events that change server state directly in memory
-                if msg_type == "event" and topic in ["event:after_server_stop", "event:after_server_start", "event:after_properties_change", "event:after_permission_change", "event:after_allowlist_change"]:
-                     if "server_name" in data:
-                         server_name = data["server_name"]
-                         self.update_server_event_callback(server_name, topic, data)
-                         
+                if msg_type == "event" and topic in [
+                    "event:after_server_stop",
+                    "event:after_server_start",
+                    "event:after_properties_change",
+                    "event:after_permission_change",
+                    "event:after_allowlist_change",
+                ]:
+                    if "server_name" in data:
+                        server_name = data["server_name"]
+                        self.update_server_event_callback(server_name, topic, data)
+
                 # Always trigger a refresh for events as a fallback
                 self.coordinator_refresh_callback(topic, data)
 
