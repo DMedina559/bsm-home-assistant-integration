@@ -307,7 +307,10 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 )
             elif isinstance(settings_result, ServerSettingsResponse):
                 coordinator_data["server_settings"] = settings_result.settings or {}
-                if "installed_version" in coordinator_data["server_settings"]:
+                server_info = coordinator_data["server_settings"].get("server_info", {})
+                if "installed_version" in server_info:
+                    coordinator_data["version"] = server_info["installed_version"]
+                elif "installed_version" in coordinator_data["server_settings"]:
                     coordinator_data["version"] = coordinator_data["server_settings"][
                         "installed_version"
                     ]
@@ -436,19 +439,27 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 fetch_errors_details.append(
                     f"ServerBans: {type(server_bans_result).__name__} ({server_bans_result})"
                 )
-            elif hasattr(server_bans_result, "players"):
-                coordinator_data["server_bans"] = server_bans_result.players or []
-            else:
-                # Based on dev apiclient it might be an un-typed list or model
-                # Check for list or similar representation
-                if isinstance(server_bans_result, list):
-                    coordinator_data["server_bans"] = server_bans_result
-                elif getattr(server_bans_result, "bans", None) is not None:
-                    coordinator_data["server_bans"] = server_bans_result.bans
+            elif isinstance(server_bans_result, dict):
+                if "bans" in server_bans_result:
+                    coordinator_data["server_bans"] = server_bans_result["bans"] or []
+                elif "players" in server_bans_result:
+                    coordinator_data["server_bans"] = (
+                        server_bans_result["players"] or []
+                    )
                 else:
                     fetch_errors_details.append(
-                        f"ServerBans: Invalid response ({server_bans_result})"
+                        f"ServerBans: Invalid response format ({server_bans_result})"
                     )
+            elif hasattr(server_bans_result, "players"):
+                coordinator_data["server_bans"] = server_bans_result.players or []
+            elif getattr(server_bans_result, "bans", None) is not None:
+                coordinator_data["server_bans"] = server_bans_result.bans or []
+            elif isinstance(server_bans_result, list):
+                coordinator_data["server_bans"] = server_bans_result
+            else:
+                fetch_errors_details.append(
+                    f"ServerBans: Invalid response ({server_bans_result})"
+                )
 
             if fetch_errors_details:
                 _LOGGER.warning(

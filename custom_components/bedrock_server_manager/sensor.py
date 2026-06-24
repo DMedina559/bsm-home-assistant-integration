@@ -273,7 +273,10 @@ async def async_setup_entry(  # noqa: C901
                 elif hasattr(settings_res, "settings") and isinstance(
                     settings_res.settings, dict
                 ):
-                    if "installed_version" in settings_res.settings:
+                    server_info = settings_res.settings.get("server_info", {})
+                    if "installed_version" in server_info:
+                        version_static = server_info["installed_version"]
+                    elif "installed_version" in settings_res.settings:
                         version_static = settings_res.settings["installed_version"]
                     elif "version" in settings_res.settings:
                         version_static = settings_res.settings["version"]
@@ -495,8 +498,22 @@ class MinecraftServerSensor(
             # Add all settings from coordinator to the status sensor
             server_settings = data.get("server_settings", {})
             if isinstance(server_settings, dict):
-                for setting_key, setting_val in server_settings.items():
-                    attrs[setting_key] = setting_val
+                server_info = server_settings.get("server_info", {})
+                inner_settings = server_settings.get("settings", {})
+                custom_settings = server_settings.get("custom", {})
+
+                # Flatten the settings cleanly
+                for k, v in server_info.items():
+                    attrs[f"server_info_{k}"] = v
+                for k, v in inner_settings.items():
+                    attrs[f"settings_{k}"] = v
+                for k, v in custom_settings.items():
+                    attrs[f"custom_{k}"] = v
+
+                # Ensure direct keys that aren't nested aren't skipped
+                for k, v in server_settings.items():
+                    if k not in ["server_info", "settings", "custom"]:
+                        attrs[k] = v
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:

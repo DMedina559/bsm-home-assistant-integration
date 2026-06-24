@@ -131,11 +131,11 @@ async def async_setup_entry(
                 MinecraftServerSwitch(
                     coordinator=coordinator,
                     description=SWITCH_DESCRIPTION,
-                    manager_identifier=manager_identifier_for_switches,
                     server_name=server_name,
-                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
-                    bsm_os_type=bsm_os_type_for_servers,
+                    manager_identifier=manager_identifier_for_switches,
                     installed_version_static=installed_version_static,
+                    bsm_os_type=bsm_os_type_for_servers,
+                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
                 )
             )
             switches_to_add.append(
@@ -196,6 +196,7 @@ class MinecraftServerSwitch(
             str
         ],  # Can be None, used as fallback for sw_version
         bsm_os_type: Optional[str],
+        base_url: str = "",
     ) -> None:
         """Initialize the server switch."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
@@ -238,6 +239,12 @@ class MinecraftServerSwitch(
             )
 
         # Define the device for this specific Minecraft server.
+        safe_config_url = base_url
+        if not safe_config_url.startswith("http://") and not safe_config_url.startswith(
+            "https://"
+        ):
+            safe_config_url = f"http://{safe_config_url}"
+
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
             name=f"{self._server_name} ({self._manager_host_port_id})",  # Use the configured server name
