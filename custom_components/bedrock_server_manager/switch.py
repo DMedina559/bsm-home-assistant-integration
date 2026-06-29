@@ -531,6 +531,11 @@ class MinecraftServerSettingSwitch(
         if not server_settings:
             return False
 
+        # Check in the nested 'settings' dict where autostart/autoupdate live
+        inner_settings = server_settings.get("settings", {})
+        if self._setting_key in inner_settings:
+            return bool(inner_settings.get(self._setting_key, False))
+
         return bool(server_settings.get(self._setting_key, False))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
