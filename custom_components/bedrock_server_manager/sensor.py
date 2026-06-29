@@ -432,7 +432,10 @@ class MinecraftServerSensor(
         process_info = data.get("process_info")
 
         if key == "status":
-            return "Running" if isinstance(process_info, dict) else "Stopped"
+            server_status = data.get("server_status", "UNKNOWN")
+            if server_status:
+                return str(server_status).capitalize()
+            return "Unknown"
         if key == ATTR_CPU_PERCENT:
             return (
                 process_info.get("cpu_percent")
@@ -465,6 +468,10 @@ class MinecraftServerSensor(
         if key == KEY_ALLOWLIST_COUNT:
             return len(data.get("allowlist", []))
         if key == KEY_ONLINE_PLAYERS_COUNT:
+            # Prefer player_count from summary if available, fallback to len of online_players
+            player_count = data.get("player_count")
+            if player_count is not None:
+                return player_count
             return len(data.get("online_players", []))
         if key == KEY_SERVER_BANS_COUNT:
             return len(data.get("server_bans", []))

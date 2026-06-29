@@ -912,7 +912,6 @@ async def _resolve_server_targets(  # noqa: C901
 
     if not servers_to_target:
         error_message = f"Service {service.domain}.{service.service} requires targeting specific BSM server devices or their entities."
-        key_for_translation = "service_no_target_provided"
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
             error_message = f"No target (device, entity, or area) was provided for service {service.domain}.{service.service}."
         _LOGGER.error(
@@ -982,7 +981,6 @@ async def _resolve_manager_instance_targets(  # noqa: C901
 
     if not config_entry_ids_to_target:
         error_message = f"Service {service.domain}.{service.service} requires targeting a BSM manager instance."
-        key_for_translation = "service_no_target_provided_manager"
         if not any([target_entity_ids, target_device_ids, target_area_ids]):
             error_message += " No target was provided."
         else:

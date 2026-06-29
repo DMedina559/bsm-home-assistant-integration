@@ -26,7 +26,7 @@ from bsm_api_client.models import (
     PropertiesGetResponse,
     ServerProcessInfoResponse,
     ServerSettingsResponse,
-    ServersListResponse,
+
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import (  # Standard HA exception for auth issues
@@ -193,6 +193,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "server_settings": None,
             "online_players": [],
             "server_bans": [],
+            "server_status": "UNKNOWN",
+            "player_count": 0,
         }
 
         try:
@@ -208,7 +210,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_list_server_backups(self.server_name, "permissions"),
                     self.api.async_list_server_backups(self.server_name, "properties"),
                     self.api.async_get_server_addons(self.server_name),
-                    self.api.async_get_servers(),
+                    self.api.async_get_server_summary(self.server_name),
                     self.api.async_get_server_bans(self.server_name),
                     return_exceptions=True,
                 )
@@ -224,7 +226,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 permissions_backups_result,
                 properties_backups_result,
                 server_addons_result,
-                servers_list_result,
+                server_summary_result,
                 server_bans_result,
             ) = results
 
@@ -420,19 +422,22 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"ServerAddons: Invalid response ({server_addons_result})"
                 )
 
-            if isinstance(servers_list_result, Exception):
+            if isinstance(server_summary_result, Exception):
                 fetch_errors_details.append(
-                    f"ServersList: {type(servers_list_result).__name__} ({servers_list_result})"
+                    f"ServerSummary: {type(server_summary_result).__name__} ({server_summary_result})"
                 )
-            elif isinstance(servers_list_result, ServersListResponse):
-                if servers_list_result.servers:
-                    for srv in servers_list_result.servers:
-                        if srv.name == self.server_name:
-                            coordinator_data["online_players"] = srv.players or []
-                            break
+            elif hasattr(server_summary_result, "status"):   # It's a ServerSchemaResponse
+                coordinator_data["server_status"] = getattr(server_summary_result, "status", "UNKNOWN")
+                coordinator_data["online_players"] = getattr(server_summary_result, "players", []) or []
+                coordinator_data["player_count"] = getattr(server_summary_result, "player_count", 0)
+
+                # Update version dynamically from summary if available
+                summary_version = getattr(server_summary_result, "version", None)
+                if summary_version:
+                    coordinator_data["version"] = summary_version
             else:
                 fetch_errors_details.append(
-                    f"ServersList: Invalid response ({servers_list_result})"
+                    f"ServerSummary: Invalid response ({server_summary_result})"
                 )
 
             if isinstance(server_bans_result, Exception):

@@ -276,10 +276,13 @@ class MinecraftServerSwitch(
             )
             return False  # Or self._attr_is_on to retain last known state if preferred
 
-        # process_info is a dict if server is running, None if stopped/not found by API
-        process_info = self.coordinator.data.get("process_info")
-        # Server is 'on' if process_info is a dictionary (implying process details were found)
-        current_state_is_on = isinstance(process_info, dict)
+        server_status = self.coordinator.data.get("server_status", "UNKNOWN")
+        # Server is 'on' if server_status is RUNNING (fallback to checking process_info if status isn't available)
+        if server_status != "UNKNOWN":
+            current_state_is_on = str(server_status).upper() == "RUNNING"
+        else:
+            process_info = self.coordinator.data.get("process_info")
+            current_state_is_on = isinstance(process_info, dict)
 
         return current_state_is_on
 
