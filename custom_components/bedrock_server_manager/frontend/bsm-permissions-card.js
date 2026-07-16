@@ -390,7 +390,7 @@ class BsmPermissionsCard extends LitElement {
     this.requestUpdate();
   }
   _handleNewPlayerManualXUIDChange(ev) {
-    this._newPlayerManualXUID = ev.target.value.trim();
+    this._newPlayerManualXUID = (ev.detail.value || "").trim();
     if (this._newPlayerManualXUID) {
       this._newPlayerSelectedXUID = "";
     }
@@ -718,7 +718,6 @@ class BsmPermissionsCard extends LitElement {
                       .value=${this._newPlayerManualXUID}
                       @value-changed=${this._handleNewPlayerManualXUIDChange}
                       .disabled=${isLoading || !!this._newPlayerSelectedXUID}
-                      helper="Required if not selecting known player"
                       ?required=${!this._newPlayerSelectedXUID}
                     ></ha-selector>
                   </div>
@@ -912,13 +911,12 @@ class BsmPermissionsCard extends LitElement {
         gap: 16px;
         flex-wrap: wrap;
       }
-      .manual-entry-row .manual-name {
-        flex: 1 1 50%;
-        min-width: 150px;
-      }
+      .manual-entry-row .manual-name,
       .manual-entry-row .manual-xuid {
         flex: 1 1 50%;
         min-width: 150px;
+        width: 100%;
+        display: block;
       }
 
       mwc-button[raised] {

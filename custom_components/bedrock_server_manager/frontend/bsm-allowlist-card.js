@@ -113,6 +113,8 @@ class BsmAllowlistCard extends LitElement {
       }
       .add-player-controls ha-selector {
         flex-grow: 1;
+        width: 100%;
+        display: block;
       }
       .add-player-options {
         display: flex;
@@ -535,7 +537,7 @@ class BsmAllowlistCard extends LitElement {
       "remove_from_allowlist",
       {
         device_id: targetDeviceId,
-        player_name: playerName,
+        players: [playerName],
       },
       `Removing '${playerName}'...`,
     );
@@ -644,11 +646,7 @@ class BsmAllowlistCard extends LitElement {
                       .helper=${isPlayerAlreadyAdded
                         ? "This player is already on the allowlist."
                         : ""}
-                      ?helper-persistent=${isPlayerAlreadyAdded}
                       required
-                      auto-validate
-                      pattern="^[^\\s]+(\\s+[^\\s]+)*$"
-                      validationMessage="Player name cannot be empty or have leading/trailing/multiple spaces."
                     ></ha-selector>
                     <ha-button
 

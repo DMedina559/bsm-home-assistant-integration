@@ -288,6 +288,11 @@ class BsmEventTriggerCard extends LitElement {
         display: flex;
         justify-content: flex-end;
       }
+      ha-selector {
+        display: block;
+        width: 100%;
+        margin-bottom: 16px;
+      }
       ha-textfield,
       ha-textarea,
       ha-selector {

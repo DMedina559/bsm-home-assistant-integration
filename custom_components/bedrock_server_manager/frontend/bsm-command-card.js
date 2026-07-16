@@ -85,6 +85,7 @@ class BsmCommandCard extends LitElement {
       }
       ha-selector {
         display: block;
+        width: 100%;
         margin-bottom: 16px;
       }
       /* Use specific text selector for command input */
