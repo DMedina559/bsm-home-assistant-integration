@@ -397,7 +397,7 @@ class BsmPermissionsCard extends LitElement {
     this.requestUpdate();
   }
   _handleNewPlayerManualNameChange(ev) {
-    this._newPlayerManualName = ev.target.value;
+    this._newPlayerManualName = ev.detail.value;
     if (this._newPlayerManualName && this._newPlayerSelectedXUID) {
       this._newPlayerSelectedXUID = "";
     }
@@ -701,22 +701,26 @@ class BsmPermissionsCard extends LitElement {
                     )}
                   </ha-select>
                   <div class="manual-entry-row">
-                    <ha-textfield
+                    <ha-selector
+                          .hass=${this.hass}
+                          .selector=${{ text: {} }}
                       class="manual-name"
                       label="Player Name (Optional)"
                       .value=${this._newPlayerManualName}
-                      @input=${this._handleNewPlayerManualNameChange}
+                      @value-changed=${this._handleNewPlayerManualNameChange}
                       .disabled=${isLoading || !!this._newPlayerSelectedXUID}
-                    ></ha-textfield>
-                    <ha-textfield
+                    ></ha-selector>
+                    <ha-selector
+                          .hass=${this.hass}
+                          .selector=${{ text: {} }}
                       class="manual-xuid"
                       label="Player XUID (Manual)"
                       .value=${this._newPlayerManualXUID}
-                      @input=${this._handleNewPlayerManualXUIDChange}
+                      @value-changed=${this._handleNewPlayerManualXUIDChange}
                       .disabled=${isLoading || !!this._newPlayerSelectedXUID}
                       helper="Required if not selecting known player"
                       ?required=${!this._newPlayerSelectedXUID}
-                    ></ha-textfield>
+                    ></ha-selector>
                   </div>
                   <ha-select
                     label="Permission Level for New Player"
@@ -793,7 +797,7 @@ class BsmPermissionsCard extends LitElement {
         justify-content: flex-end;
       }
       ha-selector,
-      ha-textfield,
+      ha-selector,
       ha-select {
         display: block;
         margin-bottom: 16px;
