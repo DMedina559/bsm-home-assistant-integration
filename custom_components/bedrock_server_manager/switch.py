@@ -12,6 +12,7 @@ from bsm_api_client import (
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from bsm_api_client.models import ServerSettingItemPayload
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -25,11 +26,24 @@ from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Single description for the server control switch
+
+# Descriptions for the server control switch
 SWITCH_DESCRIPTION = SwitchEntityDescription(
     key="server_control",  # This key is primarily for internal use if you had multiple switch types
     name="Server",  # This will be the entity's friendly name suffix
     icon="mdi:minecraft",
+)
+
+AUTOUPDATE_SWITCH_DESCRIPTION = SwitchEntityDescription(
+    key="autoupdate",
+    name="Autoupdate",
+    icon="mdi:update",
+)
+
+AUTOSTART_SWITCH_DESCRIPTION = SwitchEntityDescription(
+    key="autostart",
+    name="Autostart",
+    icon="mdi:play-circle-outline",
 )
 
 
@@ -110,7 +124,6 @@ async def async_setup_entry(
             ATTR_INSTALLED_VERSION
         )  # From __init__/sensor setup
 
-        # Add switch only if coordinator has data or has successfully run once
         if (
             coordinator.last_update_success and coordinator.data is not None
         ):  # Check data is not None
@@ -122,6 +135,29 @@ async def async_setup_entry(
                     manager_identifier=manager_identifier_for_switches,
                     installed_version_static=installed_version_static,
                     bsm_os_type=bsm_os_type_for_servers,
+                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
+                )
+            )
+            switches_to_add.append(
+                MinecraftServerSettingSwitch(
+                    coordinator=coordinator,
+                    description=AUTOUPDATE_SWITCH_DESCRIPTION,
+                    manager_identifier=manager_identifier_for_switches,
+                    server_name=server_name,
+                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
+                    bsm_os_type=bsm_os_type_for_servers,
+                    setting_key="autoupdate",
+                )
+            )
+            switches_to_add.append(
+                MinecraftServerSettingSwitch(
+                    coordinator=coordinator,
+                    description=AUTOSTART_SWITCH_DESCRIPTION,
+                    manager_identifier=manager_identifier_for_switches,
+                    server_name=server_name,
+                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
+                    bsm_os_type=bsm_os_type_for_servers,
+                    setting_key="autostart",
                 )
             )
         else:
@@ -160,6 +196,7 @@ class MinecraftServerSwitch(
             str
         ],  # Can be None, used as fallback for sw_version
         bsm_os_type: Optional[str],
+        base_url: str = "",
     ) -> None:
         """Initialize the server switch."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
@@ -202,6 +239,12 @@ class MinecraftServerSwitch(
             )
 
         # Define the device for this specific Minecraft server.
+        safe_config_url = base_url
+        if not safe_config_url.startswith("http://") and not safe_config_url.startswith(
+            "https://"
+        ):
+            safe_config_url = f"http://{safe_config_url}"
+
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
             name=f"{self._server_name} ({self._manager_host_port_id})",  # Use the configured server name
@@ -233,10 +276,13 @@ class MinecraftServerSwitch(
             )
             return False  # Or self._attr_is_on to retain last known state if preferred
 
-        # process_info is a dict if server is running, None if stopped/not found by API
-        process_info = self.coordinator.data.get("process_info")
-        # Server is 'on' if process_info is a dictionary (implying process details were found)
-        current_state_is_on = isinstance(process_info, dict)
+        server_status = self.coordinator.data.get("server_status", "UNKNOWN")
+        # Server is 'on' if server_status is RUNNING (fallback to checking process_info if status isn't available)
+        if server_status != "UNKNOWN":
+            current_state_is_on = str(server_status).upper() == "RUNNING"
+        else:
+            process_info = self.coordinator.data.get("process_info")
+            current_state_is_on = isinstance(process_info, dict)
 
         return current_state_is_on
 
@@ -426,3 +472,96 @@ class MinecraftServerSwitch(
                     )
 
         super()._handle_coordinator_update()  # This calls self.async_write_ha_state()
+
+
+class MinecraftServerSettingSwitch(
+    CoordinatorEntity[MinecraftBedrockCoordinator], SwitchEntity
+):
+    """Switch for managing a specific server setting via BSM."""
+
+    def __init__(
+        self,
+        coordinator: MinecraftBedrockCoordinator,
+        description: SwitchEntityDescription,
+        manager_identifier: Tuple[str, str],
+        server_name: str,
+        base_url: str,
+        bsm_os_type: str,
+        setting_key: str,
+    ) -> None:
+        """Initialize the setting switch."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._server_name = server_name
+        self._manager_host_port_id = manager_identifier[1]
+        self._setting_key = setting_key
+
+        self._attr_unique_id = (
+            f"{self._manager_host_port_id}_{server_name}_{setting_key}"
+        )
+        self._attr_has_entity_name = True
+
+        safe_config_url = base_url
+        if not safe_config_url.startswith("http://") and not safe_config_url.startswith(
+            "https://"
+        ):
+            safe_config_url = f"http://{safe_config_url}"
+
+        self._attr_device_info = dr.DeviceInfo(
+            identifiers={(DOMAIN, f"{self._manager_host_port_id}_{self._server_name}")},
+            name=f"{self._server_name} ({self._manager_host_port_id})",
+            manufacturer="Bedrock Server Manager",
+            model=f"Minecraft Server ({bsm_os_type.capitalize()})",
+            via_device=manager_identifier,
+            configuration_url=safe_config_url,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if coordinator is available and has data."""
+        return super().available and self.coordinator.data is not None
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if the setting is true."""
+        if not self.available:
+            return False
+
+        server_settings = self.coordinator.data.get("server_settings", {})
+        if not server_settings:
+            return False
+
+        # Check in the nested 'settings' dict where autostart/autoupdate live
+        inner_settings = server_settings.get("settings", {})
+        if self._setting_key in inner_settings:
+            return bool(inner_settings.get(self._setting_key, False))
+
+        return bool(server_settings.get(self._setting_key, False))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the setting on."""
+        await self._set_setting(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the setting off."""
+        await self._set_setting(False)
+
+    async def _set_setting(self, state: bool) -> None:
+        api: BedrockServerManagerApi = self.coordinator.api
+        try:
+            payload = ServerSettingItemPayload(
+                key=f"settings.{self._setting_key}", value=state
+            )
+            await api.async_set_server_setting(self._server_name, payload)
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to set %s to %s for server '%s': %s",
+                self._setting_key,
+                state,
+                self._server_name,
+                err,
+            )
+            raise HomeAssistantError(
+                f"Failed to set {self._setting_key} to {state}"
+            ) from err

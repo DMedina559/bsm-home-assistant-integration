@@ -4,15 +4,26 @@
 
 # Bedrock Server Manager - Home Assistant Integration
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration)](https://github.com/dmedina559/bsm-home-assistant-integration/releases/latest)
-[![License](https://img.shields.io/github/license/dmedina559/bsm-home-assistant-integration)](https://raw.githubusercontent.com/DMedina559/bsm-home-assistant-integration/refs/heads/main/LICENSE)
+<p align="center">
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration">
+    <img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg?logo=HomeAssistantCommunityStore&logoColor=white" alt="HACS Default Store">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/releases">
+    <img alt="Stable" src="https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration?label=Stable&color=blue">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/releases">
+    <img alt="Pre-Release" src="https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration?include_prereleases&label=Pre-Release&color=red">
+  </a>
+  <a href="https://github.com/dmedina559/bsm-home-assistant-integration/actions">
+    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/dmedina559/bsm-home-assistant-integration/hasstest.yaml?label=Tests&event=push">
+  </a>
+</p>
 
 This Home Assistant integration connects to your self-hosted [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) API. It allows you to monitor server status, resource usage, and control a wide range of server actions directly from your Home Assistant dashboards and automations. Manage installations, backups, restores, properties, allowlists, permissions, and send console commands with ease.
 
 ## Prerequisites
 
-*   Home Assistant installation (Version 2024.x or later recommended).
+*   Home Assistant installation (Version 2025.x or later recommended).
 *   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) application.
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.
@@ -22,24 +33,17 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 ### Recommended: HACS Installation
 
-* Easily add the Bedrock Server Manager integration to HACS using this button:
-
-    [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
+>[!tip]
+> Easily open the Bedrock Server Manager integration in HACS using this button:
+>
+> [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dmedina559&repository=bsm-home-assistant-integration&category=integration)
 
 1.  **Ensure HACS is Installed:** If you don't have HACS, install it first from [hacs.xyz](https://hacs.xyz/).
-2.  **Add Custom Repository:**
-
-    *Manually add the custom repository to HACS if the button above doesn't work:*
-    *   Open HACS in Home Assistant.
-    *   Go to "Integrations".
-    *   Click the three dots menu (⋮) in the top right and select "Custom repositories".
-    *   In the "Repository" field, enter the URL of this GitHub repository: `https://github.com/dmedina559/bsm-home-assistant-integration`.
-    *   Select "Integration" as the category.
-    *   Click "Add".
-3.  **Install Integration:**
-    *   The "Bedrock Server Manager" integration should now appear in your HACS integrations list (you might need to search for it).
+2.  **Install Integration:**
+    *   Navigate to **HACS -> Integrations** in Home Assistant.
+    *   The "Bedrock Server Manager" integration should appear in your HACS integrations list (you might need to search for it).
     *   Click "Install" and follow the HACS prompts.
-4.  **Restart Home Assistant:** After installation via HACS, a restart of Home Assistant is required (Developer Tools -> Server Management -> Restart, or Settings -> System -> Restart).
+3.  **Restart Home Assistant:** After installation via HACS, a restart of Home Assistant is required (Developer Tools -> Server Management -> Restart, or Settings -> System -> Restart).
 
 ### Manual Installation
 
@@ -50,6 +54,11 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 ## Configuration
 
 Once installed and Home Assistant is restarted, configure the integration via the UI:
+
+> [!tip] 
+> Easily add the integration through the Home Assistant UI:
+> 
+> [![Open your Home Assistant instance and show an integration.](https://my.home-assistant.io/badges/integration.svg)](https://my.home-assistant.io/redirect/integration/?domain=bedrock_server_manager)
 
 1.  Go to **Settings -> Devices & Services**.
 2.  Click the **+ Add Integration** button in the bottom right.

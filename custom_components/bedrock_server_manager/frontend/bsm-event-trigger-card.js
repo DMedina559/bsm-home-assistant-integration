@@ -151,14 +151,18 @@ class BsmEventTriggerCard extends LitElement {
     }
 
     let payloadObject = null;
-    if (this._eventPayload && this._eventPayload.trim() !== "") {
-      try {
-        payloadObject = JSON.parse(this._eventPayload);
-      } catch (error) {
-        this._error = "Invalid JSON in payload: " + error.message;
-        this._feedback = null;
-        this.requestUpdate();
-        return;
+    if (this._eventPayload) {
+      if (typeof this._eventPayload === "string" && this._eventPayload.trim() !== "") {
+        try {
+          payloadObject = JSON.parse(this._eventPayload);
+        } catch (error) {
+          this._error = "Invalid JSON in payload: " + error.message;
+          this._feedback = null;
+          this.requestUpdate();
+          return;
+        }
+      } else if (typeof this._eventPayload === "object") {
+        payloadObject = this._eventPayload;
       }
     }
 
@@ -231,24 +235,23 @@ class BsmEventTriggerCard extends LitElement {
             ? html`<p class="feedback">Processing...</p>`
             : ""}
 
-          <ha-textfield
+          <ha-selector
             label="Event Name (e.g., my_plugin:action)"
+            .hass=${this.hass}
+            .selector=${{ text: {} }}
             .value=${this._eventName}
-            @input=${this._handleEventNameChange}
+            @value-changed=${(e) => { this._eventName = e.detail.value; this.requestUpdate(); }}
+            ?disabled=${this._isLoading}
             required
-            auto-validate="true"
-            pattern=".*\\S.*"
-            error-message="Event name is required!"
-            .disabled=${this._isLoading}
-          ></ha-textfield>
-          <ha-textarea
+          ></ha-selector>
+          <ha-selector
             label="Payload (Optional JSON)"
+            .hass=${this.hass}
+            .selector=${{ object: {} }}
             .value=${this._eventPayload}
-            @input=${this._handlePayloadChange}
-            placeholder='{ "key": "value", "count": 10 }'
-            .disabled=${this._isLoading}
-            rows="3"
-          ></ha-textarea>
+            @value-changed=${(e) => { this._eventPayload = e.detail.value; this.requestUpdate(); }}
+            ?disabled=${this._isLoading}
+          ></ha-selector>
         </div>
         <div class="card-actions">
           <ha-button
@@ -266,26 +269,48 @@ class BsmEventTriggerCard extends LitElement {
 
   static get styles() {
     return css`
-      ha-textfield,
-      ha-textarea {
+      :host {
         display: block;
-        margin-bottom: 16px;
-        width: 100%;
+      }
+      ha-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .card-content {
+        flex-grow: 1;
+        padding: 16px;
+        padding-bottom: 8px;
       }
       .card-actions {
+        border-top: 1px solid var(--divider-color, #e0e0e0);
         padding: 8px 16px;
         display: flex;
         justify-content: flex-end;
       }
+      ha-selector {
+        display: block;
+        width: 100%;
+        margin-bottom: 16px;
+      }
+      ha-textfield,
+      ha-textarea,
+      ha-selector {
+        display: block;
+        margin-bottom: 16px;
+        width: 100%;
+      }
       .error {
         color: var(--error-color);
         font-weight: bold;
-        padding: 8px;
+        padding-bottom: 8px;
+        word-wrap: break-word;
       }
       .feedback {
         color: var(--secondary-text-color);
         font-style: italic;
-        padding: 8px;
+        padding-bottom: 8px;
+        word-wrap: break-word;
       }
     `;
   }

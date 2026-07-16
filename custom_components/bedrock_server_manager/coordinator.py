@@ -25,7 +25,8 @@ from bsm_api_client.models import (
     PluginStatusesResponse,
     PropertiesGetResponse,
     ServerProcessInfoResponse,
-    ServerVersionResponse,
+    ServerSettingsResponse,
+
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import (  # Standard HA exception for auth issues
@@ -68,6 +69,113 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             self._api_call_timeout,
         )
 
+    def update_process_info(self, new_process_info: dict) -> None:
+        """Update process_info directly from a websocket message to save an API call."""
+        if not self.data:
+            self.data = {}
+
+        # Update metrics directly in memory
+        self.data["process_info"] = new_process_info
+
+        # Force status message to success when we get WS updates
+        if new_process_info and new_process_info.get("pid"):
+            self.data["status"] = "success"
+            self.data["message"] = "Status updated via WebSocket"
+        elif new_process_info is None:
+            self.data["status"] = "success"
+            self.data["message"] = "Server stopped (via WebSocket)"
+
+        _LOGGER.debug(f"Updated process_info for {self.server_name} via websocket")
+        self.async_set_updated_data(self.data)
+
+    def update_from_event(self, topic: str, data: dict) -> None:
+        """Update state based on event payload directly in memory."""
+        if not self.data:
+            self.data = {}
+
+        if topic == "event:after_server_stop":
+            # Server stopped successfully
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                self.data["process_info"] = None
+                self.data["status"] = "success"
+                self.data["message"] = "Server stopped (via WebSocket event)"
+
+        elif topic == "event:after_server_start":
+            # Server started successfully
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                # We don't have the full process info here yet, but we know it's on
+                # We can mock a process_info so that the switch toggles to "on" immediately
+                # The resource monitor update will soon follow to populate full stats
+                if not self.data.get("process_info"):
+                    self.data["process_info"] = {
+                        "pid": "started",
+                        "memory_mb": 0.0,
+                        "cpu_percent": 0.0,
+                        "uptime": "0:00:00",
+                    }
+                self.data["status"] = "success"
+                self.data["message"] = "Server started (via WebSocket event)"
+
+        elif topic == "event:after_properties_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                properties_to_update = data.get("properties_to_update", {})
+                if properties_to_update:
+                    if "properties" not in self.data:
+                        self.data["properties"] = {}
+                    self.data["properties"].update(properties_to_update)
+
+        elif topic == "event:after_permission_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                xuid = data.get("xuid")
+                permission = data.get("permission")
+                if xuid and permission and "server_permissions" in self.data:
+                    # Update or add the permission in the list
+                    found = False
+                    for perm_obj in self.data["server_permissions"]:
+                        if perm_obj.get("xuid") == xuid:
+                            perm_obj["permission"] = permission
+                            found = True
+                            break
+                    if not found:
+                        self.data["server_permissions"].append(
+                            {"xuid": xuid, "permission": permission}
+                        )
+
+        elif topic == "event:after_allowlist_change":
+            result = data.get("result", {})
+            if result.get("status") == "success":
+                if "allowlist" not in self.data:
+                    self.data["allowlist"] = []
+
+                # Handle removals
+                if "details" in result and "removed" in result["details"]:
+                    removed_names = result["details"]["removed"]
+                    self.data["allowlist"] = [
+                        p
+                        for p in self.data["allowlist"]
+                        if p.get("name") not in removed_names
+                    ]
+
+                # Handle additions
+                if "new_players_data" in data:
+                    new_players = data["new_players_data"]
+                    for new_player in new_players:
+                        # Avoid duplicates
+                        if not any(
+                            p.get("name") == new_player.get("name")
+                            for p in self.data["allowlist"]
+                        ):
+                            self.data["allowlist"].append(new_player)
+
+        _LOGGER.debug(
+            f"Updated from event {topic} for {self.server_name} via websocket"
+        )
+        self.async_set_updated_data(self.data)
+
     async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
         coordinator_data: dict[str, Any] = {
@@ -82,13 +190,18 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             "permissions_backups": [],
             "properties_backups": [],
             "server_addons": None,
+            "server_settings": None,
+            "online_players": [],
+            "server_bans": [],
+            "server_status": "UNKNOWN",
+            "player_count": 0,
         }
 
         try:
             async with async_timeout.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_server_process_info(self.server_name),
-                    self.api.async_get_server_version(self.server_name),
+                    self.api.async_get_server_settings(self.server_name),
                     self.api.async_get_server_allowlist(self.server_name),
                     self.api.async_get_server_properties(self.server_name),
                     self.api.async_get_server_permissions_data(self.server_name),
@@ -97,12 +210,14 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     self.api.async_list_server_backups(self.server_name, "permissions"),
                     self.api.async_list_server_backups(self.server_name, "properties"),
                     self.api.async_get_server_addons(self.server_name),
+                    self.api.async_get_server_summary(self.server_name),
+                    self.api.async_get_server_bans(self.server_name),
                     return_exceptions=True,
                 )
 
             (
                 process_info_result,
-                version_result,
+                settings_result,
                 allowlist_result,
                 properties_result,
                 permissions_result,
@@ -111,6 +226,8 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 permissions_backups_result,
                 properties_backups_result,
                 server_addons_result,
+                server_summary_result,
+                server_bans_result,
             ) = results
 
             fetch_errors_details = []
@@ -186,15 +303,26 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                     f"Invalid response structure for critical status_info for server '{self.server_name}'"
                 )
 
-            if isinstance(version_result, Exception):
+            if isinstance(settings_result, Exception):
                 fetch_errors_details.append(
-                    f"Version: {type(version_result).__name__} ({version_result})"
+                    f"Settings: {type(settings_result).__name__} ({settings_result})"
                 )
-            elif isinstance(version_result, ServerVersionResponse):
-                coordinator_data["version"] = version_result.version
+            elif isinstance(settings_result, ServerSettingsResponse):
+                coordinator_data["server_settings"] = settings_result.settings or {}
+                server_info = coordinator_data["server_settings"].get("server_info", {})
+                if "installed_version" in server_info:
+                    coordinator_data["version"] = server_info["installed_version"]
+                elif "installed_version" in coordinator_data["server_settings"]:
+                    coordinator_data["version"] = coordinator_data["server_settings"][
+                        "installed_version"
+                    ]
+                elif "version" in coordinator_data["server_settings"]:
+                    coordinator_data["version"] = coordinator_data["server_settings"][
+                        "version"
+                    ]
             else:
                 fetch_errors_details.append(
-                    f"Version: Invalid response ({version_result})"
+                    f"Settings: Invalid response ({settings_result})"
                 )
 
             # --- Process Non-Critical Data Points ---
@@ -292,6 +420,50 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             else:
                 fetch_errors_details.append(
                     f"ServerAddons: Invalid response ({server_addons_result})"
+                )
+
+            if isinstance(server_summary_result, Exception):
+                fetch_errors_details.append(
+                    f"ServerSummary: {type(server_summary_result).__name__} ({server_summary_result})"
+                )
+            elif hasattr(server_summary_result, "status"):   # It's a ServerSchemaResponse
+                coordinator_data["server_status"] = getattr(server_summary_result, "status", "UNKNOWN")
+                coordinator_data["online_players"] = getattr(server_summary_result, "players", []) or []
+                coordinator_data["player_count"] = getattr(server_summary_result, "player_count", 0)
+
+                # Update version dynamically from summary if available
+                summary_version = getattr(server_summary_result, "version", None)
+                if summary_version:
+                    coordinator_data["version"] = summary_version
+            else:
+                fetch_errors_details.append(
+                    f"ServerSummary: Invalid response ({server_summary_result})"
+                )
+
+            if isinstance(server_bans_result, Exception):
+                fetch_errors_details.append(
+                    f"ServerBans: {type(server_bans_result).__name__} ({server_bans_result})"
+                )
+            elif isinstance(server_bans_result, dict):
+                if "bans" in server_bans_result:
+                    coordinator_data["server_bans"] = server_bans_result["bans"] or []
+                elif "players" in server_bans_result:
+                    coordinator_data["server_bans"] = (
+                        server_bans_result["players"] or []
+                    )
+                else:
+                    fetch_errors_details.append(
+                        f"ServerBans: Invalid response format ({server_bans_result})"
+                    )
+            elif hasattr(server_bans_result, "players"):
+                coordinator_data["server_bans"] = server_bans_result.players or []
+            elif getattr(server_bans_result, "bans", None) is not None:
+                coordinator_data["server_bans"] = server_bans_result.bans or []
+            elif isinstance(server_bans_result, list):
+                coordinator_data["server_bans"] = server_bans_result
+            else:
+                fetch_errors_details.append(
+                    f"ServerBans: Invalid response ({server_bans_result})"
                 )
 
             if fetch_errors_details:

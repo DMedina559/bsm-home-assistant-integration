@@ -111,8 +111,10 @@ class BsmAllowlistCard extends LitElement {
         gap: 8px;
         margin-bottom: 8px;
       }
-      .add-player-controls ha-textfield {
+      .add-player-controls ha-selector {
         flex-grow: 1;
+        width: 100%;
+        display: block;
       }
       .add-player-options {
         display: flex;
@@ -351,7 +353,7 @@ class BsmAllowlistCard extends LitElement {
   }
 
   _handleAddInput(ev) {
-    this._newPlayerName = ev.target.value;
+    this._newPlayerName = ev.detail.value;
     if (this._error) this._error = "";
     // Request update to potentially re-enable/disable add button
     this.requestUpdate("_newPlayerName");
@@ -511,7 +513,7 @@ class BsmAllowlistCard extends LitElement {
       this._newPlayerName = "";
       // Manually clear the text field visually if needed, although value binding should handle it
       const textField = this.shadowRoot?.querySelector(
-        ".add-player-controls ha-textfield",
+        ".add-player-controls ha-selector",
       );
       if (textField) textField.value = "";
     }
@@ -535,7 +537,7 @@ class BsmAllowlistCard extends LitElement {
       "remove_from_allowlist",
       {
         device_id: targetDeviceId,
-        player_name: playerName,
+        players: [playerName],
       },
       `Removing '${playerName}'...`,
     );
@@ -634,20 +636,18 @@ class BsmAllowlistCard extends LitElement {
                 <div class="add-player-container">
                   <h4>Add Player:</h4>
                   <div class="add-player-controls">
-                    <ha-textfield
+                    <ha-selector
+                      .hass=${this.hass}
+                      .selector=${{ text: {} }}
                       label="Player Name to Add"
                       .value=${this._newPlayerName ?? ""}
-                      @input=${this._handleAddInput}
+                      @value-changed=${this._handleAddInput}
                       ?disabled=${this._isLoading}
                       .helper=${isPlayerAlreadyAdded
                         ? "This player is already on the allowlist."
                         : ""}
-                      ?helper-persistent=${isPlayerAlreadyAdded}
                       required
-                      auto-validate
-                      pattern="^[^\\s]+(\\s+[^\\s]+)*$"
-                      validationMessage="Player name cannot be empty or have leading/trailing/multiple spaces."
-                    ></ha-textfield>
+                    ></ha-selector>
                     <ha-button
 
                       raised

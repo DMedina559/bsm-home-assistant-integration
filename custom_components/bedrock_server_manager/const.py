@@ -71,6 +71,8 @@ KEY_PROPERTIES_BACKUPS_COUNT = "properties_backups_count"
 KEY_PERMISSIONS_BACKUPS_COUNT = "permissions_backups_count"
 KEY_AVAILABLE_WORLDS_COUNT = "available_worlds_count"
 KEY_AVAILABLE_ADDONS_COUNT = "available_addons_count"
+KEY_ONLINE_PLAYERS_COUNT = "online_players_count"
+KEY_SERVER_BANS_COUNT = "server_bans_count"
 KEY_LEVEL_NAME = "level_name"
 KEY_ALLOWLIST_COUNT = "allowlist_count"
 
@@ -98,6 +100,8 @@ SERVICE_SET_PLUGIN_ENABLED = "set_plugin_enabled"
 SERVICE_TRIGGER_PLUGIN_EVENT = "trigger_plugin_event"
 SERVICE_SET_GLOBAL_SETTING = "set_global_setting"  # New
 SERVICE_RELOAD_GLOBAL_SETTINGS = "reload_global_settings"  # New
+SERVICE_ADD_SERVER_BAN = "add_server_ban"
+SERVICE_REMOVE_SERVER_BAN = "remove_server_ban"
 SERVICE_ENABLE_ADDON = "enable_addon"
 SERVICE_DISABLE_ADDON = "disable_addon"
 SERVICE_UNINSTALL_ADDON = "uninstall_addon"
@@ -122,6 +126,8 @@ FIELD_CONFIRM_DELETE = (
 )
 FIELD_PLAYERS = "players"  # List of player names or player data strings
 FIELD_PLAYER_NAME = "player_name"  # Single player name
+FIELD_XUID = "xuid"  # Single player xuid
+FIELD_REASON = "reason"  # Ban reason
 FIELD_IGNORE_PLAYER_LIMIT = "ignores_player_limit"
 FIELD_PERMISSIONS = "permissions"  # Dict of XUID:level
 FIELD_PROPERTIES = "properties"  # Dict of server properties

@@ -46,6 +46,8 @@ from .const import (
     KEY_AVAILABLE_WORLDS_COUNT,
     KEY_GLOBAL_PLAYERS_COUNT,
     KEY_LEVEL_NAME,
+    KEY_ONLINE_PLAYERS_COUNT,
+    KEY_SERVER_BANS_COUNT,
     KEY_MANAGER_APP_VERSION,
     KEY_PERMISSIONS_BACKUPS_COUNT,
     KEY_PLUGIN_STATUSES,
@@ -128,6 +130,18 @@ SERVER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         key=KEY_ALLOWLIST_COUNT,
         name="Allowlist Players",
         icon="mdi:format-list-checks",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_ONLINE_PLAYERS_COUNT,
+        name="Online Players",
+        icon="mdi:account-group",
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key=KEY_SERVER_BANS_COUNT,
+        name="Server Bans",
+        icon="mdi:account-cancel",
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -241,21 +255,31 @@ async def async_setup_entry(  # noqa: C901
 
         if version_static is None:
             _LOGGER.debug(
-                "Attempting to fetch initial static info (version) for server '%s' during sensor setup.",
+                "Attempting to fetch initial static info (settings) for server '%s' during sensor setup.",
                 server_name,
             )
             try:
                 async with asyncio.timeout(10):
-                    version_res = await api_client.async_get_server_version(server_name)
-
-                if isinstance(version_res, Exception):
-                    _LOGGER.warning(
-                        "Failed to fetch initial version for '%s': %s",
-                        server_name,
-                        version_res,
+                    settings_res = await api_client.async_get_server_settings(
+                        server_name
                     )
-                elif isinstance(version_res, str):
-                    version_static = version_res
+
+                if isinstance(settings_res, Exception):
+                    _LOGGER.warning(
+                        "Failed to fetch initial settings for '%s': %s",
+                        server_name,
+                        settings_res,
+                    )
+                elif hasattr(settings_res, "settings") and isinstance(
+                    settings_res.settings, dict
+                ):
+                    server_info = settings_res.settings.get("server_info", {})
+                    if "installed_version" in server_info:
+                        version_static = server_info["installed_version"]
+                    elif "installed_version" in settings_res.settings:
+                        version_static = settings_res.settings["installed_version"]
+                    elif "version" in settings_res.settings:
+                        version_static = settings_res.settings["version"]
 
                 server_entry_data[ATTR_INSTALLED_VERSION] = version_static
 
@@ -408,7 +432,10 @@ class MinecraftServerSensor(
         process_info = data.get("process_info")
 
         if key == "status":
-            return "Running" if isinstance(process_info, dict) else "Stopped"
+            server_status = data.get("server_status", "UNKNOWN")
+            if server_status:
+                return str(server_status).capitalize()
+            return "Unknown"
         if key == ATTR_CPU_PERCENT:
             return (
                 process_info.get("cpu_percent")
@@ -440,6 +467,14 @@ class MinecraftServerSensor(
             return len(data.get("properties_backups", []))
         if key == KEY_ALLOWLIST_COUNT:
             return len(data.get("allowlist", []))
+        if key == KEY_ONLINE_PLAYERS_COUNT:
+            # Prefer player_count from summary if available, fallback to len of online_players
+            player_count = data.get("player_count")
+            if player_count is not None:
+                return player_count
+            return len(data.get("online_players", []))
+        if key == KEY_SERVER_BANS_COUNT:
+            return len(data.get("server_bans", []))
         if key == KEY_LEVEL_NAME:
             props = data.get("properties", {})
             dyn_lvl_name = props.get("level-name")
@@ -466,6 +501,26 @@ class MinecraftServerSensor(
         if key == "status":
             if self._installed_version_static:  # This should now be safe
                 attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
+
+            # Add all settings from coordinator to the status sensor
+            server_settings = data.get("server_settings", {})
+            if isinstance(server_settings, dict):
+                server_info = server_settings.get("server_info", {})
+                inner_settings = server_settings.get("settings", {})
+                custom_settings = server_settings.get("custom", {})
+
+                # Flatten the settings cleanly
+                for k, v in server_info.items():
+                    attrs[f"server_info_{k}"] = v
+                for k, v in inner_settings.items():
+                    attrs[f"settings_{k}"] = v
+                for k, v in custom_settings.items():
+                    attrs[f"custom_{k}"] = v
+
+                # Ensure direct keys that aren't nested aren't skipped
+                for k, v in server_settings.items():
+                    if k not in ["server_info", "settings", "custom"]:
+                        attrs[k] = v
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
@@ -496,6 +551,10 @@ class MinecraftServerSensor(
             attrs[ATTR_ALLOWLISTED_PLAYERS] = [
                 p.get("name") for p in data.get("allowlist", []) if isinstance(p, dict)
             ]
+        elif key == KEY_ONLINE_PLAYERS_COUNT:
+            attrs["online_players"] = data.get("online_players", [])
+        elif key == KEY_SERVER_BANS_COUNT:
+            attrs["server_bans"] = data.get("server_bans", [])
         elif key == KEY_LEVEL_NAME:
             attrs[ATTR_SERVER_PROPERTIES] = data.get("properties", {})
         return attrs if attrs else None
