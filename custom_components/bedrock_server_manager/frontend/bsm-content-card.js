@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 const _LOGGER = {
   debug: (...args) => console.debug("BSM_INSTALL_CARD:", ...args),
@@ -693,7 +693,9 @@ class BsmContentInstallerCard extends LitElement {
   }
 }
 
-customElements.define("bsm-content-installer-card", BsmContentInstallerCard);
+if (!customElements.get("bsm-content-installer-card")) {
+  customElements.define("bsm-content-installer-card", BsmContentInstallerCard);
+}
 
 // --- START: DEFINE THE EDITOR ELEMENT ---
 
@@ -701,6 +703,7 @@ customElements.define("bsm-content-installer-card", BsmContentInstallerCard);
 
 // --- Keep the preview registration ---
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-content-installer-card")) {
 window.customCards.push({
   type: "bsm-content-installer-card",
   name: "Content Installer", // Simplified name slightly
@@ -708,6 +711,7 @@ window.customCards.push({
     "Installs worlds or addons from a selected list sensor to a Bedrock server.",
   preview: true, // Preview should be okay as basic structure is shown
 });
+}
 
 _LOGGER.info(
   `%c BSM-CONTENT-INSTALLER-CARD %c LOADED (incl. editor) %c`,

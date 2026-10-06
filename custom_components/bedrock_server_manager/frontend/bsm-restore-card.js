@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 const _LOGGER = {
   debug: (...args) => console.debug("BSM_RESTORE_CARD:", ...args),
@@ -804,7 +804,9 @@ class BsmRestoreCard extends LitElement {
   }
 }
 
-customElements.define("bsm-restore-card", BsmRestoreCard);
+if (!customElements.get("bsm-restore-card")) {
+  customElements.define("bsm-restore-card", BsmRestoreCard);
+}
 
 // --- START: EDITOR ELEMENT DEFINITION ---
 
@@ -812,6 +814,7 @@ customElements.define("bsm-restore-card", BsmRestoreCard);
 
 // --- WINDOW REGISTRATION ---
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-restore-card")) {
 window.customCards.push({
   type: "bsm-restore-card",
   name: "BSM Restore Backup Card", // Updated name
@@ -819,6 +822,7 @@ window.customCards.push({
     "Restores world, config, or individual file backups for a selected Bedrock server.",
   preview: true,
 });
+}
 
 _LOGGER.info(
   `%c BSM-RESTORE-CARD %c LOADED (incl. editor) %c`,

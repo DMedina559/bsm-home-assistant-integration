@@ -32,6 +32,7 @@ class BsmWebSocketManager:
         self.update_server_process_info_callback = update_server_process_info_callback
         self.update_server_event_callback = update_server_event_callback
         self._reconnect_attempts = 0
+        self._connect_lock = asyncio.Lock()
 
     async def async_start(self):
         """Start the WebSocket connection and listen for messages."""
@@ -42,12 +43,17 @@ class BsmWebSocketManager:
     async def async_stop(self):
         """Stop the WebSocket connection and cleanup."""
         self._should_reconnect = False
-        if self._listen_task:
-            self._listen_task.cancel()
-            self._listen_task = None
-        if self._reconnect_task:
-            self._reconnect_task.cancel()
-            self._reconnect_task = None
+        tasks = [task for task in (self._listen_task, self._reconnect_task) if task]
+        self._listen_task = self._reconnect_task = None
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        async with self._connect_lock:
+            await self._disconnect()
+        self._is_connected = False
+
+    async def _disconnect(self):
         if self.ws_client:
             try:
                 await self.ws_client.disconnect()
@@ -57,24 +63,41 @@ class BsmWebSocketManager:
         self._is_connected = False
 
     async def _connect(self):
+        """Serialize connection attempts with shutdown."""
+        async with self._connect_lock:
+            await self._connect_once()
+
+    async def _connect_once(self):
         """Establish the WebSocket connection."""
         if not self._should_reconnect:
             return
 
         try:
+            if self.ws_client:
+                await self.ws_client.disconnect()
+                self.ws_client = None
             self.ws_client = await self.api_client.websocket_connect()
             await self.ws_client.connect()
+            if not self._should_reconnect:
+                await self._disconnect()
+                return
+            await self.ws_client.subscribe("*")
+            if not self._should_reconnect:
+                await self._disconnect()
+                return
             self._is_connected = True
             self._reconnect_attempts = 0
             _LOGGER.info("Connected to BSM WebSocket")
 
-            # Subscribe to the wildcard topic
-            await self.ws_client.subscribe("*")
-
             # Start listening
             if self._listen_task:
-                self._listen_task.cancel()
-            self._listen_task = self.hass.loop.create_task(self._listen())
+                old_task = self._listen_task
+                self._listen_task = None
+                old_task.cancel()
+                await asyncio.gather(old_task, return_exceptions=True)
+            self._listen_task = self.hass.async_create_background_task(
+                self._listen(), "BSM WebSocket listener"
+            )
 
         except Exception as e:
             _LOGGER.error(f"Failed to connect to BSM WebSocket: {e}")
@@ -93,30 +116,40 @@ class BsmWebSocketManager:
                 _LOGGER.error(f"WebSocket connection lost: {e}")
         finally:
             self._is_connected = False
-            if self._should_reconnect:
+            if self._should_reconnect and self._listen_task is asyncio.current_task():
                 self._schedule_reconnect()
 
     def _schedule_reconnect(self):
         """Schedule a reconnection attempt with exponential backoff."""
-        if self._reconnect_task and not self._reconnect_task.done():
+        if not self._should_reconnect:
+            return
+        if (self._reconnect_task and not self._reconnect_task.done()
+                and self._reconnect_task is not asyncio.current_task()):
             return
 
         self._reconnect_attempts += 1
-        delay = min(2**self._reconnect_attempts, 60)
+        delay = min(2 ** min(self._reconnect_attempts, 6), 60)
         _LOGGER.info(f"Scheduling WebSocket reconnect in {delay} seconds")
-        self._reconnect_task = self.hass.loop.create_task(self._reconnect_delay(delay))
+        self._reconnect_task = self.hass.async_create_background_task(
+            self._reconnect_delay(delay), "BSM WebSocket reconnect"
+        )
 
     async def _reconnect_delay(self, delay: int):
         await asyncio.sleep(delay)
+        # The current retry may schedule its successor if this attempt fails.
         if self._should_reconnect:
             await self._connect()
 
     async def _handle_message(self, msg: dict[str, Any]):
         """Handle incoming WebSocket messages."""
         try:
+            if not isinstance(msg, dict):
+                return
             topic = msg.get("topic", "")
             msg_type = msg.get("type", "")
             data = msg.get("data", {})
+            if not isinstance(topic, str) or not isinstance(data, dict):
+                return
 
             _LOGGER.debug(f"Received WS msg. Topic: {topic}, Type: {msg_type}")
 

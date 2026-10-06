@@ -6,7 +6,6 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-import async_timeout  # For explicit timeout on asyncio.gather
 from bsm_api_client import (
     APIError,
     AuthError,
@@ -38,8 +37,8 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define a minimum sensible timeout for API calls if scan_interval is very short
-MIN_API_TIMEOUT = 180  # seconds
+# Bound the entire refresh independently of the configured polling interval.
+API_TIMEOUT_SECONDS = 180
 
 
 class MinecraftBedrockCoordinator(DataUpdateCoordinator):
@@ -54,7 +53,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
     ) -> None:
         self.api = api_client
         self.server_name = server_name
-        self._api_call_timeout = MIN_API_TIMEOUT
+        self._api_call_timeout = API_TIMEOUT_SECONDS
 
         super().__init__(
             hass,
@@ -86,7 +85,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             self.data["message"] = "Server stopped (via WebSocket)"
 
         _LOGGER.debug(f"Updated process_info for {self.server_name} via websocket")
-        self.async_set_updated_data(self.data)
+        self.async_update_listeners()
 
     def update_from_event(self, topic: str, data: dict) -> None:
         """Update state based on event payload directly in memory."""
@@ -98,6 +97,9 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             result = data.get("result", {})
             if result.get("status") == "success":
                 self.data["process_info"] = None
+                self.data["server_status"] = "STOPPED"
+                self.data["online_players"] = []
+                self.data["player_count"] = 0
                 self.data["status"] = "success"
                 self.data["message"] = "Server stopped (via WebSocket event)"
 
@@ -105,16 +107,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
             # Server started successfully
             result = data.get("result", {})
             if result.get("status") == "success":
-                # We don't have the full process info here yet, but we know it's on
-                # We can mock a process_info so that the switch toggles to "on" immediately
-                # The resource monitor update will soon follow to populate full stats
-                if not self.data.get("process_info"):
-                    self.data["process_info"] = {
-                        "pid": "started",
-                        "memory_mb": 0.0,
-                        "cpu_percent": 0.0,
-                        "uptime": "0:00:00",
-                    }
+                self.data["server_status"] = "RUNNING"
                 self.data["status"] = "success"
                 self.data["message"] = "Server started (via WebSocket event)"
 
@@ -174,7 +167,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             f"Updated from event {topic} for {self.server_name} via websocket"
         )
-        self.async_set_updated_data(self.data)
+        self.async_update_listeners()
 
     async def _async_update_data(self) -> dict:  # noqa: C901
         _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
@@ -198,7 +191,7 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
         }
 
         try:
-            async with async_timeout.timeout(self._api_call_timeout):
+            async with asyncio.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_server_process_info(self.server_name),
                     self.api.async_get_server_settings(self.server_name),
@@ -229,6 +222,10 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
                 server_summary_result,
                 server_bans_result,
             ) = results
+
+            for result in results:
+                if isinstance(result, AuthError):
+                    self._handle_critical_exception("authentication", result)
 
             fetch_errors_details = []
 
@@ -566,7 +563,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
         scan_interval: int,
     ):
         self.api = api_client
-        self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 3)
+        self._api_call_timeout = API_TIMEOUT_SECONDS
 
         super().__init__(
             hass,
@@ -595,7 +592,7 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
         fetch_errors_details = []
 
         try:
-            async with async_timeout.timeout(self._api_call_timeout):
+            async with asyncio.timeout(self._api_call_timeout):
                 results = await asyncio.gather(
                     self.api.async_get_info(),
                     self.api.async_get_players(),
@@ -612,6 +609,11 @@ class ManagerDataCoordinator(DataUpdateCoordinator):
                 addons_result,
                 plugins_status_result,
             ) = results
+            for result in results:
+                if isinstance(result, AuthError):
+                    self._handle_exception_for_manager_data(
+                        "authentication", result, fetch_errors_details
+                    )
             at_least_one_success = False
 
             if isinstance(info_result, Exception):

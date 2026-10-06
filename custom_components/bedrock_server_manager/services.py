@@ -48,6 +48,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_SERVER_NAMES,
     DOMAIN,
     FIELD_AUTOSTART,
     FIELD_AUTOUPDATE,
@@ -86,6 +87,8 @@ from .const import (
     SERVICE_REMOVE_SERVER_BAN,
     SERVICE_CONFIGURE_OS_SERVICE,
     SERVICE_DELETE_SERVER,
+    SERVICE_RESET_WORLD,
+    SERVICE_SCAN_PLAYERS,
     SERVICE_DISABLE_ADDON,
     SERVICE_ENABLE_ADDON,
     SERVICE_INSTALL_ADDON,
@@ -108,6 +111,8 @@ from .const import (
     SERVICE_UPDATE_PROPERTIES,
 )
 from .coordinator import ManagerDataCoordinator
+
+from .utils import device_config_entry_ids, registry_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -335,6 +340,9 @@ async def _base_api_call_handler(
     context_msg = f" for '{log_context_identifier}'" if log_context_identifier else ""
     try:
         response = await api_call_coro
+        status = response.get("status") if isinstance(response, dict) else getattr(response, "status", None)
+        if status in ("error", "failed", "failure"):
+            raise HomeAssistantError(f"{error_message_prefix}{context_msg}: API reported {status}")
         _LOGGER.debug(
             "API call %s successful%s. Response: %s",
             error_message_prefix,
@@ -342,6 +350,8 @@ async def _base_api_call_handler(
             response,
         )
         return response
+    except HomeAssistantError:
+        raise
     except ServerNotRunningError as err:
         msg = f"{error_message_prefix}{context_msg}: Server is not running. (API: {err.api_message or err})"
         _LOGGER.error(msg)
@@ -814,8 +824,8 @@ async def _async_handle_reset_world(
 # --- Target Resolvers and Executors ---
 async def _resolve_server_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
-) -> Dict[str, str]:
-    servers_to_target: Dict[str, str] = {}
+) -> list[tuple[str, str]]:
+    servers_to_target: set[tuple[str, str]] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
 
@@ -844,22 +854,7 @@ async def _resolve_server_targets(  # noqa: C901
                         break
 
         if parsed_server_name:
-            if config_entry_id_context not in servers_to_target:
-                servers_to_target[config_entry_id_context] = parsed_server_name
-                _LOGGER.debug(
-                    "Targeted server '%s' via device %s for config entry %s",
-                    parsed_server_name,
-                    device_entry.id,
-                    config_entry_id_context,
-                )
-            elif servers_to_target[config_entry_id_context] != parsed_server_name:
-                _LOGGER.warning(
-                    "Config entry %s targeted via multiple entities/devices resolving to different servers ('%s' vs '%s'). Using first resolved: '%s'.",
-                    config_entry_id_context,
-                    servers_to_target[config_entry_id_context],
-                    parsed_server_name,
-                    servers_to_target[config_entry_id_context],
-                )
+            servers_to_target.add((config_entry_id_context, parsed_server_name))
         elif _LOGGER.isEnabledFor(logging.DEBUG):
             is_manager_device = any(
                 val == manager_host_port_id
@@ -896,16 +891,16 @@ async def _resolve_server_targets(  # noqa: C901
     for device_id in target_device_ids:
         device_entry = dev_reg.async_get(device_id)
         if device_entry:
-            for ce_id in device_entry.config_entries:
+            for ce_id in device_config_entry_ids(device_entry):
                 if ce_id in hass.data.get(DOMAIN, {}):
                     process_device_for_server_target(device_entry, ce_id)
                     break
 
     if target_area_ids:
-        all_devices = list(dev_reg.devices.values())
+        all_devices = list(registry_devices(dev_reg))
         for device_entry in all_devices:
             if device_entry.area_id in target_area_ids:
-                for ce_id in device_entry.config_entries:
+                for ce_id in device_config_entry_ids(device_entry):
                     if ce_id in hass.data.get(DOMAIN, {}):
                         process_device_for_server_target(device_entry, ce_id)
                         break
@@ -930,7 +925,7 @@ async def _resolve_server_targets(  # noqa: C901
         service.service,
         servers_to_target,
     )
-    return servers_to_target
+    return sorted(servers_to_target)
 
 
 async def _resolve_manager_instance_targets(  # noqa: C901
@@ -948,7 +943,7 @@ async def _resolve_manager_instance_targets(  # noqa: C901
         entity_entry = entity_reg.async_get(entity_id)
         if (
             entity_entry
-            and entity_entry.domain == DOMAIN
+            and entity_entry.platform == DOMAIN
             and entity_entry.config_entry_id
         ):
             if entity_entry.config_entry_id in hass.data.get(DOMAIN, {}):
@@ -957,7 +952,7 @@ async def _resolve_manager_instance_targets(  # noqa: C901
     for device_id in target_device_ids:
         device_entry = dev_reg.async_get(device_id)
         if device_entry:
-            for ce_id in device_entry.config_entries:
+            for ce_id in device_config_entry_ids(device_entry):
                 config_entry = hass.config_entries.async_get_entry(ce_id)
                 if (
                     config_entry
@@ -967,10 +962,10 @@ async def _resolve_manager_instance_targets(  # noqa: C901
                     config_entry_ids_to_target.add(ce_id)
 
     if target_area_ids:
-        all_devices = list(dev_reg.devices.values())
+        all_devices = list(registry_devices(dev_reg))
         for device_entry in all_devices:
             if device_entry.area_id in target_area_ids:
-                for ce_id in device_entry.config_entries:
+                for ce_id in device_config_entry_ids(device_entry):
                     config_entry = hass.config_entries.async_get_entry(ce_id)
                     if (
                         config_entry
@@ -1024,9 +1019,10 @@ async def _execute_targeted_service(  # noqa: C901
         raise
 
     tasks = []
+    queue_errors = []
     processed_targets_info = []
 
-    for config_entry_id, target_server_name in resolved_targets.items():
+    for config_entry_id, target_server_name in resolved_targets:
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
@@ -1056,13 +1052,15 @@ async def _execute_targeted_service(  # noqa: C901
                     "manager_id": manager_host_port_id,
                 }
             )
-        except KeyError:
+        except KeyError as err:
+            queue_errors.append(err)
             _LOGGER.error(
                 "Data missing for config entry %s (server %s). Skipping service.",
                 config_entry_id,
                 target_server_name,
             )
-        except Exception:
+        except Exception as err:
+            queue_errors.append(err)
             _LOGGER.exception(
                 "Error queueing service for server %s (entry %s)",
                 target_server_name,
@@ -1080,6 +1078,10 @@ async def _execute_targeted_service(  # noqa: C901
                     target_info["manager_id"],
                     type(result_or_exc).__name__,
                 )
+
+        _raise_service_failures([*queue_errors, *results])
+    else:
+        _raise_service_failures(queue_errors)
 
 
 async def _execute_manager_targeted_service(  # noqa: C901
@@ -1102,6 +1104,7 @@ async def _execute_manager_targeted_service(  # noqa: C901
         raise
 
     tasks = []
+    queue_errors = []
     coordinators_to_refresh: List[ManagerDataCoordinator] = []
     processed_targets_info = []
 
@@ -1120,6 +1123,8 @@ async def _execute_manager_targeted_service(  # noqa: C901
                 "_async_handle_scan_players",
                 "_async_handle_set_plugin_enabled",
                 "_async_handle_trigger_plugin_event",
+                "_async_handle_set_global_setting",
+                "_async_handle_reload_global_settings",
             ]:
                 current_handler_args.append(manager_host_port_id)
 
@@ -1139,12 +1144,14 @@ async def _execute_manager_targeted_service(  # noqa: C901
                 )
                 if coordinator and coordinator not in coordinators_to_refresh:
                     coordinators_to_refresh.append(coordinator)
-        except KeyError:
+        except KeyError as err:
+            queue_errors.append(err)
             _LOGGER.error(
                 "Data missing for config entry %s. Skipping manager service.",
                 config_entry_id,
             )
-        except Exception:
+        except Exception as err:
+            queue_errors.append(err)
             _LOGGER.exception(
                 "Error queueing manager service for entry %s", config_entry_id
             )
@@ -1168,6 +1175,19 @@ async def _execute_manager_targeted_service(  # noqa: C901
                 coordinator.name,
             )
             await coordinator.async_request_refresh()
+
+        _raise_service_failures([*queue_errors, *results])
+    else:
+        _raise_service_failures(queue_errors)
+
+
+def _raise_service_failures(results: list) -> None:
+    """Report failed targets without cancelling operations on other targets."""
+    failures = [result for result in results if isinstance(result, Exception)]
+    if failures:
+        raise HomeAssistantError(
+            f"{len(failures)} targeted operation(s) failed; check logs for details"
+        ) from failures[0]
 
 
 # --- Main Service Handlers ---
@@ -1266,6 +1286,27 @@ async def async_handle_trigger_plugin_event_service(
     )
 
 
+async def _async_forget_deleted_server(
+    hass: HomeAssistant, config_entry_id: str, server_name: str
+) -> None:
+    """Stop monitoring a confirmed deletion and persist its deselection."""
+    runtime = hass.data.get(DOMAIN, {}).get(config_entry_id, {})
+    server_data = runtime.get("servers", {}).pop(server_name, None)
+    if server_data and (coordinator := server_data.get("coordinator")):
+        await coordinator.async_shutdown()
+    entry = hass.config_entries.async_get_entry(config_entry_id)
+    if entry and server_name in entry.options.get(CONF_SERVER_NAMES, []):
+        hass.config_entries.async_update_entry(
+            entry,
+            options={
+                **entry.options,
+                CONF_SERVER_NAMES: [
+                    name for name in entry.options[CONF_SERVER_NAMES] if name != server_name
+                ],
+            },
+        )
+
+
 async def async_handle_delete_server_service(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ):
@@ -1283,7 +1324,7 @@ async def async_handle_delete_server_service(  # noqa: C901
     tasks = []
     processed_targets_for_notification: List[Dict[str, Any]] = []
 
-    for config_entry_id, server_name_to_delete in resolved_targets.items():
+    for config_entry_id, server_name_to_delete in resolved_targets:
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
@@ -1335,7 +1376,7 @@ async def async_handle_delete_server_service(  # noqa: C901
             "Minecraft Server Deletion Problem",
             f"bsm_delete_{service.context.id}_queue_fail",
         )
-        return
+        raise HomeAssistantError("Could not queue any targeted operations")
     if not tasks:
         return
 
@@ -1344,8 +1385,8 @@ async def async_handle_delete_server_service(  # noqa: C901
     success_messages: List[str] = []
     failure_messages: List[str] = []
 
-    for i, result_or_exc in enumerate(results):
-        target_info = processed_targets_for_notification[i]
+    result_iter = iter(results)
+    for target_info in processed_targets_for_notification:
         sname = target_info["server_name"]
 
         if target_info.get("error_queuing"):
@@ -1354,6 +1395,7 @@ async def async_handle_delete_server_service(  # noqa: C901
             )
             continue
 
+        result_or_exc = next(result_iter)
         if isinstance(result_or_exc, Exception):
             err_msg = (
                 result_or_exc.args[0] if result_or_exc.args else str(result_or_exc)
@@ -1364,6 +1406,7 @@ async def async_handle_delete_server_service(  # noqa: C901
         elif (
             isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
         ):
+            await _async_forget_deleted_server(hass, target_info["config_entry_id"], sname)
             msg = f"'{sname}': API deletion successful."
             if result_or_exc.get("ha_device_removed"):
                 msg += " HA device removed."
@@ -1392,6 +1435,8 @@ async def async_handle_delete_server_service(  # noqa: C901
         title="Minecraft Server Deletion Results",
         notification_id=f"bsm_delete_results_{service.context.id}",
     )
+    if failure_messages:
+        raise HomeAssistantError("; ".join(failure_messages))
 
 
 async def async_handle_add_to_allowlist_service(
@@ -1466,7 +1511,7 @@ async def async_handle_reset_world_service(  # noqa: C901
     tasks = []
     processed_targets_for_notification: List[Dict[str, Any]] = []
 
-    for config_entry_id, server_name_to_delete in resolved_targets.items():
+    for config_entry_id, server_name_to_delete in resolved_targets:
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
@@ -1516,9 +1561,9 @@ async def async_handle_reset_world_service(  # noqa: C901
             hass,
             "Could not queue reset for any targeted servers due to setup issues. Check logs.",
             "Minecraft Server Reset Problem",
-            f"bsm_delete_{service.context.id}_queue_fail",
+            f"bsm_reset_{service.context.id}_queue_fail",
         )
-        return
+        raise HomeAssistantError("Could not queue any targeted operations")
     if not tasks:
         return
 
@@ -1527,16 +1572,17 @@ async def async_handle_reset_world_service(  # noqa: C901
     success_messages: List[str] = []
     failure_messages: List[str] = []
 
-    for i, result_or_exc in enumerate(results):
-        target_info = processed_targets_for_notification[i]
+    result_iter = iter(results)
+    for target_info in processed_targets_for_notification:
         sname = target_info["server_name"]
 
         if target_info.get("error_queuing"):
             failure_messages.append(
-                f"'{sname}': Failed to queue for deletion ({target_info['error_queuing']})."
+                f"'{sname}': Failed to queue for reset ({target_info['error_queuing']})."
             )
             continue
 
+        result_or_exc = next(result_iter)
         if isinstance(result_or_exc, Exception):
             err_msg = (
                 result_or_exc.args[0] if result_or_exc.args else str(result_or_exc)
@@ -1548,14 +1594,10 @@ async def async_handle_reset_world_service(  # noqa: C901
             isinstance(result_or_exc, dict) and result_or_exc.get("status") == "success"
         ):
             msg = f"'{sname}': API reset successful."
-            if result_or_exc.get("ha_device_removed"):
-                msg += " HA device removed."
-            else:
-                msg += " HA device not found or not removed from HA."
             success_messages.append(msg)
         else:
             failure_messages.append(
-                f"'{sname}': API deletion status unclear or failed (Result: {result_or_exc})."
+                f"'{sname}': API reset status unclear or failed (Result: {result_or_exc})."
             )
 
     final_notification_parts = []
@@ -1573,8 +1615,10 @@ async def async_handle_reset_world_service(  # noqa: C901
         hass=hass,
         message=" ".join(final_notification_parts),
         title="Minecraft Server Reset Results",
-        notification_id=f"bsm_delete_results_{service.context.id}",
+        notification_id=f"bsm_reset_results_{service.context.id}",
     )
+    if failure_messages:
+        raise HomeAssistantError("; ".join(failure_messages))
 
 
 async def async_handle_update_properties_service(
@@ -1720,8 +1764,9 @@ async def async_handle_configure_os_service_service(  # noqa: C901
         raise
 
     tasks = []
+    queue_errors = []
     processed_targets_info = []
-    for config_entry_id, server_name in resolved_targets.items():
+    for config_entry_id, server_name in resolved_targets:
         try:
             entry_data = hass.data[DOMAIN][config_entry_id]
             api_client: BedrockServerManagerApi = entry_data["api"]
@@ -1753,13 +1798,15 @@ async def async_handle_configure_os_service_service(  # noqa: C901
                     "manager_id": manager_host_port_id,
                 }
             )
-        except KeyError:
+        except KeyError as err:
+            queue_errors.append(err)
             _LOGGER.error(
                 "Data missing for config entry %s (server %s) for OS service config. Skipping.",
                 config_entry_id,
                 server_name,
             )
-        except Exception:
+        except Exception as err:
+            queue_errors.append(err)
             _LOGGER.exception(
                 "Error queueing configure_os_service for server %s (entry %s)",
                 server_name,
@@ -1777,6 +1824,10 @@ async def async_handle_configure_os_service_service(  # noqa: C901
                     target_info["manager_id"],
                     type(result).__name__,
                 )
+
+        _raise_service_failures([*queue_errors, *results])
+    else:
+        _raise_service_failures(queue_errors)
 
 
 async def async_handle_add_global_players_service(
@@ -1837,6 +1888,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
             async_handle_install_server_service,
             INSTALL_SERVER_SERVICE_SCHEMA,
         ),
+        SERVICE_RESET_WORLD: (async_handle_reset_world_service, DELETE_SERVER_SERVICE_SCHEMA),
+        SERVICE_SCAN_PLAYERS: (async_handle_scan_players_service, SCAN_PLAYERS_SERVICE_SCHEMA),
         SERVICE_DELETE_SERVER: (
             async_handle_delete_server_service,
             DELETE_SERVER_SERVICE_SCHEMA,
@@ -1989,7 +2042,8 @@ async def async_remove_services(hass: HomeAssistant) -> None:
             SERVICE_RESTORE_LATEST_ALL,
             SERVICE_INSTALL_SERVER,
             SERVICE_DELETE_SERVER,
-            SERVICE_ADD_TO_ALLOWLIST,
+            SERVICE_RESET_WORLD,
+            SERVICE_SCAN_PLAYERS,            SERVICE_ADD_TO_ALLOWLIST,
             SERVICE_REMOVE_FROM_ALLOWLIST,
             SERVICE_ADD_SERVER_BAN,
             SERVICE_REMOVE_SERVER_BAN,

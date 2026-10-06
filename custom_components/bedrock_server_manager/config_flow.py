@@ -12,7 +12,7 @@ from bsm_api_client import (
     CannotConnectError,
 )
 from homeassistant import config_entries, exceptions
-from homeassistant.components.diagnostics.util import async_redact_data
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
@@ -22,7 +22,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import CONF_BASE_URL, CONF_SERVER_NAMES, CONF_VERIFY_SSL, DOMAIN
 
 # Import the Options Flow Handler
-from .options_flow import BSMOptionsFlowHandler
+from .options_flow import BSMOptionsFlowHandler, STEP_CREDENTIALS_SCHEMA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,14 +65,15 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
     user_requests_verify_ssl = data.get(CONF_VERIFY_SSL, True)
 
     # Use HA's shared session, respecting user's verify_ssl choice for this validation session
-    async_get_clientsession(hass, verify_ssl=user_requests_verify_ssl)
+    session = async_get_clientsession(hass, verify_ssl=user_requests_verify_ssl)
     api_client = None
     try:
         api_client = BedrockServerManagerApi(
             base_url=data[CONF_BASE_URL],
             username=data[CONF_USERNAME],
             password=data[CONF_PASSWORD],
-            verify_ssl=user_requests_verify_ssl,  # Let API client know user's preference
+            session=session,
+            verify_ssl=user_requests_verify_ssl,
         )
         _LOGGER.debug(
             "Validating input: Attempting authentication to BSM at %s (Verify SSL: %s)",
@@ -158,7 +159,42 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
         config_entry: config_entries.ConfigEntry,
     ) -> BSMOptionsFlowHandler:
         """Get the options flow for this handler."""
-        return BSMOptionsFlowHandler(config_entry)
+        return BSMOptionsFlowHandler()
+
+    async def async_step_reauth(self, entry_data: dict) -> config_entries.FlowResult:
+        """Recover expired credentials for the existing manager entry."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.FlowResult:
+        """Validate replacement credentials before updating and reloading."""
+        entry = self._get_reauth_entry()
+        errors = {}
+        placeholders = {"error_details": ""}
+        if user_input is not None:
+            credentials = {
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            try:
+                await validate_input(self.hass, {**entry.data, **credentials})
+            except (CannotConnect, InvalidAuth) as err:
+                errors["base"] = err.error_key
+                placeholders["error_details"] = err.error_details or ""
+            except exceptions.HomeAssistantError:
+                errors["base"] = "unknown_error"
+            else:
+                return self.async_update_reload_and_abort(entry, data_updates=credentials)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_CREDENTIALS_SCHEMA,
+                {CONF_USERNAME: entry.data.get(CONF_USERNAME, "")},
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -175,7 +211,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
             )
 
             await self.async_set_unique_id(unique_manager_id)
-            self._abort_if_unique_id_configured(updates=user_input)
+            self._abort_if_unique_id_configured()
 
             try:
                 # validate_input ensures port_to_api is an int or None for the API call.
@@ -252,7 +288,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
                 title,
                 self._connection_data[CONF_BASE_URL],
                 selected_servers,
-                async_redact_data(self._connection_data, [CONF_PASSWORD]),
+                async_redact_data(self._connection_data, [CONF_PASSWORD, CONF_USERNAME]),
             )
 
             # self._connection_data contains the original user input (host, port as float/int/None, user, pass, ssl flags)

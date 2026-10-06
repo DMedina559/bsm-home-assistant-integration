@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 const DOMAIN = "bedrock_server_manager"; // Your integration domain
 const VALID_PERMISSIONS = ["visitor", "member", "operator"];
@@ -948,7 +948,9 @@ class BsmPermissionsCard extends LitElement {
     return Math.max(4, Math.ceil(size));
   }
 }
-customElements.define("bsm-permissions-card", BsmPermissionsCard);
+if (!customElements.get("bsm-permissions-card")) {
+  customElements.define("bsm-permissions-card", BsmPermissionsCard);
+}
 
 // --- START: EDITOR ELEMENT DEFINITION ---
 
@@ -956,6 +958,7 @@ customElements.define("bsm-permissions-card", BsmPermissionsCard);
 
 // --- START: WINDOW REGISTRATION ---
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-permissions-card")) {
 window.customCards.push({
   type: "bsm-permissions-card",
   name: "Server Permissions Card",
@@ -963,6 +966,7 @@ window.customCards.push({
     "View and manage player permissions for a selected Bedrock server.",
   preview: true,
 });
+}
 _LOGGER.info(
   `%c BSM-PERMISSIONS-CARD %c LOADED (incl. editor) %c`,
   "color: purple; font-weight: bold; background: black",

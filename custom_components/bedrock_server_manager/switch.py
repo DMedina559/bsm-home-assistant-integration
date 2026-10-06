@@ -125,7 +125,7 @@ async def async_setup_entry(
         )  # From __init__/sensor setup
 
         if (
-            coordinator.last_update_success and coordinator.data is not None
+            coordinator is not None
         ):  # Check data is not None
             switches_to_add.append(
                 MinecraftServerSwitch(

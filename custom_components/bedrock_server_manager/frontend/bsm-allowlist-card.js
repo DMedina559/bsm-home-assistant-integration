@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 // Define _LOGGER or use console
 const _LOGGER = {
@@ -709,15 +709,19 @@ class BsmAllowlistCard extends LitElement {
   }
 }
 
-customElements.define("bsm-allowlist-card", BsmAllowlistCard);
+if (!customElements.get("bsm-allowlist-card")) {
+  customElements.define("bsm-allowlist-card", BsmAllowlistCard);
+}
 
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-allowlist-card")) {
 window.customCards.push({
   type: "bsm-allowlist-card",
   name: "Server Allowlist Card",
   description: "View and manage the allowlist for a selected Bedrock server.",
   preview: true, // Optional: Set to false if preview doesn't work well without hass
 });
+}
 
 // --- Use the logger for the final confirmation ---
 _LOGGER.info(

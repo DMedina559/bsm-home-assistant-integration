@@ -324,7 +324,9 @@ class BsmEventTriggerCard extends LitElement {
 
 // --- END EDITOR ELEMENT ---
 
-customElements.define("bsm-event-trigger-card", BsmEventTriggerCard);
+if (!customElements.get("bsm-event-trigger-card")) {
+  customElements.define("bsm-event-trigger-card", BsmEventTriggerCard);
+}
 _LOGGER.info(
   `%cBSM-EVENT-TRIGGER-CARD ${CARD_VERSION} IS INSTALLED%c (incl. editor)`,
   "color: blue; font-weight: bold;",
@@ -336,13 +338,15 @@ const existingCardIndex = window.customCards.findIndex(
   (card) => card.type === "bsm-event-trigger-card",
 );
 if (existingCardIndex === -1) {
-  window.customCards.push({
+  if (!window.customCards.some((card) => card.type === "bsm-event-trigger-card")) {
+window.customCards.push({
     type: "bsm-event-trigger-card",
     name: "BSM Event Trigger Card",
     preview: true,
     description:
       "A card to trigger custom Bedrock Server Manager plugin events.",
   });
+}
 } else {
   window.customCards[existingCardIndex] = {
     type: "bsm-event-trigger-card",

@@ -18,6 +18,14 @@
         "data": {
           "servers": "Servers to Monitor"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to Bedrock Server Manager",
+        "description": "Enter updated credentials for this manager. Your monitored servers and options will be preserved.",
+        "data": {
+          "username": "API Username",
+          "password": "API Password"
+        }
       }
     },
     "error": {
@@ -36,7 +44,7 @@
     },
     "abort": {
       "already_configured": "A Manager instance for {base_url} is already configured.",
-      "reauth_successful": "Re-authentication was successful."
+      "reauth_successful": "Reauthentication was successful."
     }
   },
   "options": {
@@ -96,28 +104,64 @@
   },
   "entity": {
     "button": {
-      "restart_server": { "name": "Restart Server" },
-      "update_server": { "name": "Check for Server Update" },
-      "trigger_server_backup_all": { "name": "Trigger Full Backup" },
-      "export_server_world": { "name": "Export World to Content" },
-      "prune_server_backups": { "name": "Prune Server Backups" },
-      "scan_players": { "name": "Scan All Player Logs" }
+      "restart_server": {
+        "name": "Restart Server"
+      },
+      "update_server": {
+        "name": "Check for Server Update"
+      },
+      "trigger_server_backup_all": {
+        "name": "Trigger Full Backup"
+      },
+      "export_server_world": {
+        "name": "Export World to Content"
+      },
+      "prune_server_backups": {
+        "name": "Prune Server Backups"
+      },
+      "scan_players": {
+        "name": "Scan All Player Logs"
+      }
     },
     "switch": {
-      "server_control": { "name": "Server Power" }
+      "server_control": {
+        "name": "Server Power"
+      }
     },
     "sensor": {
-      "status": { "name": "Status" },
-      "cpu_percent": { "name": "CPU Usage" },
-      "memory_mb": { "name": "Memory Usage" },
-      "server_permissions_count": { "name": "Permissioned Players Count" },
-      "world_backups_count": { "name": "World Backups Count" },
-      "config_backups_count": { "name": "Config Backups Count" },
-      "level_name": { "name": "Level Name" },
-      "allowlist_count": { "name": "Allowlist Players Count" },
-      "global_players_count": { "name": "Global Known Players Count" },
-      "available_worlds_count": { "name": "Available Worlds Count" },
-      "available_addons_count": { "name": "Available Addons Count" }
+      "status": {
+        "name": "Status"
+      },
+      "cpu_percent": {
+        "name": "CPU Usage"
+      },
+      "memory_mb": {
+        "name": "Memory Usage"
+      },
+      "server_permissions_count": {
+        "name": "Permissioned Players Count"
+      },
+      "world_backups_count": {
+        "name": "World Backups Count"
+      },
+      "config_backups_count": {
+        "name": "Config Backups Count"
+      },
+      "level_name": {
+        "name": "Level Name"
+      },
+      "allowlist_count": {
+        "name": "Allowlist Players Count"
+      },
+      "global_players_count": {
+        "name": "Global Known Players Count"
+      },
+      "available_worlds_count": {
+        "name": "Available Worlds Count"
+      },
+      "available_addons_count": {
+        "name": "Available Addons Count"
+      }
     }
   },
   "services": {

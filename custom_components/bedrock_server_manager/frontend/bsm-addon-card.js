@@ -2,7 +2,7 @@ import {
     LitElement,
     html,
     css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 const DOMAIN = "bedrock_server_manager";
 
@@ -209,12 +209,14 @@ class BsmAddonCard extends LitElement {
             await this.hass.callService(DOMAIN, serviceName, serviceData);
             this._feedback = successMsg;
             // Changes should reflect in the sensor automatically.
+            return true;
         } catch (err) {
             let message = "Unknown error";
             if (err instanceof Error) message = err.message;
             else if (err && err.message) message = err.message;
             this._error = `Error: ${message}`;
             this._feedback = "";
+            return false;
         } finally {
             this._isLoading = false;
             this.requestUpdate();
@@ -255,7 +257,7 @@ class BsmAddonCard extends LitElement {
             .map((p) => p.uuid);
 
         if (activeUuids.length > 0) {
-            await this._performAction(
+            const saved = await this._performAction(
                 "reorder_addons",
                 {
                     pack_type: this._activeTab,
@@ -263,7 +265,7 @@ class BsmAddonCard extends LitElement {
                 },
                 "Addon order saved.",
             );
-            this._orderChanged = false;
+            if (saved) this._orderChanged = false;
         }
     }
 
@@ -618,9 +620,12 @@ class BsmAddonCard extends LitElement {
     }
 }
 
-customElements.define("bsm-addon-card", BsmAddonCard);
+if (!customElements.get("bsm-addon-card")) {
+  customElements.define("bsm-addon-card", BsmAddonCard);
+}
 
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-addon-card")) {
 window.customCards.push({
     type: "bsm-addon-card",
     name: "Installed Addons",
@@ -628,3 +633,4 @@ window.customCards.push({
         "Manage installed behavior and resource packs on a Bedrock server.",
     preview: true,
 });
+}
