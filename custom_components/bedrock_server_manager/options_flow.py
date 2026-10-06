@@ -32,6 +32,8 @@ from .const import (
     DOMAIN,
 )
 
+from .utils import device_config_entry_ids
+
 _LOGGER = logging.getLogger(__name__)
 
 # --- Schemas ---
@@ -74,9 +76,8 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Bedrock Server Manager options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize BSM options flow."""
-        self.config_entry = config_entry
         self._discovered_servers: Optional[List[str]] = None
         self._api_client_instance: Optional[BedrockServerManagerApi] = None
 
@@ -85,8 +86,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> BedrockServerManagerApi:
         """Get an API client instance, potentially with overridden data for validation."""
         if self._api_client_instance and not data_override:
-            # Consider if re-using is safe or always create new with overrides
-            pass
+            return self._api_client_instance
 
         current_data = self.config_entry.data
         effective_data = {**current_data, **(data_override or {})}
@@ -307,7 +307,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 self._discovered_servers = []
             finally:
                 if api_client_for_list:  # Close client if created just for this step
-                    await api_client_for_list.close()
+                    await self._close_api_client_if_created()
 
         if (
             user_input is not None and not errors
@@ -343,7 +343,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
                 for server_name_to_remove in servers_to_disassociate:
                     server_device_identifier_value = (
-                        f"{server_name_to_remove}_{manager_url}"
+                        f"{manager_url}_{server_name_to_remove}"
                     )
                     device_id_tuple = (DOMAIN, server_device_identifier_value)
 
@@ -352,7 +352,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                     if (
                         device_entry
-                        and self.config_entry.entry_id in device_entry.config_entries
+                        and self.config_entry.entry_id in device_config_entry_ids(device_entry)
                     ):
                         _LOGGER.info(
                             "Disassociating device for deselected server '%s' (Device HA ID: %s) from config entry %s",
@@ -360,10 +360,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                             device_entry.id,
                             self.config_entry.entry_id,
                         )
-                        dev_reg.async_update_device(
-                            device_entry.id,
-                            remove_config_entry_id=self.config_entry.entry_id,
-                        )
+                        dev_reg.async_remove_device(device_entry.id)
                     elif device_entry:
                         _LOGGER.debug(
                             "Device for server '%s' found but not linked to this config entry.",
@@ -379,7 +376,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             # Create new options entry
             new_options = {
                 **current_options,
-                CONF_SERVER_NAMES: list(newly_selected_servers_set),
+                CONF_SERVER_NAMES: sorted(newly_selected_servers_set),
             }  # Store as list
             return self.async_create_entry(
                 title="", data=new_options
@@ -420,6 +417,9 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 )
         description_placeholders["base_url"] = manager_display_name
 
+        if errors:
+            self._discovered_servers = None  # Retry discovery before accepting a later submission.
+
         return self.async_show_form(
             step_id="select_servers",
             data_schema=select_schema,
@@ -443,7 +443,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                         errors[CONF_SERVER_SCAN_INTERVAL] = (
                             "invalid_server_scan_interval_range"
                         )
-                except ValueError:
+                except (ValueError, TypeError, OverflowError):
                     errors[CONF_SERVER_SCAN_INTERVAL] = (
                         "invalid_server_scan_interval_type"
                     )
@@ -491,7 +491,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                         errors[CONF_MANAGER_SCAN_INTERVAL] = (
                             "invalid_manager_scan_interval_range"
                         )
-                except ValueError:
+                except (ValueError, TypeError, OverflowError):
                     errors[CONF_MANAGER_SCAN_INTERVAL] = (
                         "invalid_manager_scan_interval_type"
                     )

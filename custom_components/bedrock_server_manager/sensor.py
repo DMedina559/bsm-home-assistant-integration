@@ -1,11 +1,9 @@
 # custom_components/bedrock_server_manager/sensor.py
 """Sensor platform for Bedrock Server Manager."""
 
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from bsm_api_client import BedrockServerManagerApi
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -190,7 +188,6 @@ async def async_setup_entry(  # noqa: C901
     _LOGGER.debug("Setting up sensor platform for BSM entry: %s", entry.entry_id)
     try:
         entry_data = hass.data[DOMAIN][entry.entry_id]
-        api_client = cast(BedrockServerManagerApi, entry_data["api"])
         original_manager_identifier_tuple = cast(
             Tuple[str, str], entry_data["manager_identifier"]
         )
@@ -253,49 +250,19 @@ async def async_setup_entry(  # noqa: C901
         world_name_static = server_entry_data.get(ATTR_WORLD_NAME)
         version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
+        # The coordinator already fetched settings; entity setup must not repeat
+        # network requests or delay setup for an unavailable server.
         if version_static is None:
-            _LOGGER.debug(
-                "Attempting to fetch initial static info (settings) for server '%s' during sensor setup.",
-                server_name,
-            )
-            try:
-                async with asyncio.timeout(10):
-                    settings_res = await api_client.async_get_server_settings(
-                        server_name
-                    )
+            data = server_coordinator.data or {}
+            settings = data.get("server_settings") or {}
+            if isinstance(settings, dict):
+                info = settings.get("server_info") or {}
+                if isinstance(info, dict):
+                    version_static = info.get("installed_version")
+                version_static = version_static or settings.get("installed_version") or settings.get("version")
+            server_entry_data[ATTR_INSTALLED_VERSION] = version_static
 
-                if isinstance(settings_res, Exception):
-                    _LOGGER.warning(
-                        "Failed to fetch initial settings for '%s': %s",
-                        server_name,
-                        settings_res,
-                    )
-                elif hasattr(settings_res, "settings") and isinstance(
-                    settings_res.settings, dict
-                ):
-                    server_info = settings_res.settings.get("server_info", {})
-                    if "installed_version" in server_info:
-                        version_static = server_info["installed_version"]
-                    elif "installed_version" in settings_res.settings:
-                        version_static = settings_res.settings["installed_version"]
-                    elif "version" in settings_res.settings:
-                        version_static = settings_res.settings["version"]
-
-                server_entry_data[ATTR_INSTALLED_VERSION] = version_static
-
-            except TimeoutError:
-                _LOGGER.warning(
-                    "Timeout fetching initial static info for server '%s'.", server_name
-                )
-            except Exception as e:
-                _LOGGER.error(
-                    "Error fetching initial static info for server '%s': %s",
-                    server_name,
-                    e,
-                    exc_info=True,
-                )
-
-        if server_coordinator.last_update_success and server_coordinator.data:
+        if server_coordinator is not None:
             for description in SERVER_SENSOR_DESCRIPTIONS:
                 entities_to_add.append(
                     MinecraftServerSensor(
@@ -545,8 +512,6 @@ class MinecraftServerSensor(
             attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
         elif key == KEY_PERMISSIONS_BACKUPS_COUNT:
             attrs[ATTR_PERMISSIONS_BACKUPS_LIST] = data.get("permissions_backups", [])
-        elif key == KEY_PROPERTIES_BACKUPS_COUNT:
-            attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
         elif key == KEY_ALLOWLIST_COUNT:
             attrs[ATTR_ALLOWLISTED_PLAYERS] = [
                 p.get("name") for p in data.get("allowlist", []) if isinstance(p, dict)

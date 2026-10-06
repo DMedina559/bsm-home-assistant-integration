@@ -8,7 +8,7 @@ from typing import List  # Added cast for type hinting clarity
 from typing import Any, Dict, Optional, cast
 
 from bsm_api_client import BedrockServerManagerApi  # For type hinting
-from homeassistant.components.diagnostics.util import async_redact_data
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME  # Standard HA constants
 from homeassistant.core import HomeAssistant
@@ -28,13 +28,41 @@ from homeassistant.helpers.entity_registry import async_get as er_async_get
 from .const import DOMAIN  # CONF_SERVER_NAMES is not directly used here
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 
+from .utils import device_config_entry_ids
+
 _LOGGER = logging.getLogger(__name__)
 
 # Keys to redact from the config entry's 'data' field in diagnostics
 TO_REDACT_CONFIG = {
     CONF_PASSWORD,
     CONF_USERNAME,
+    "base_url", "api_base_url", "configuration_url", "identifier_tuple", "identifiers",
+    "password", "token", "access_token", "refresh_token", "jwt_token", "_jwt_token",
+    "api_key", "secret", "authorization", "xuid", "uuid", "ip", "ip_address",
+    "global_players", "global_players_list", "online_players", "allowlist",
+    "allowlisted_players", "allowed_players", "server_permissions", "server_permissions_list", "server_bans",
 }
+
+
+def _redact_diagnostics(data: Any, entry: ConfigEntry) -> Any:
+    """Redact nested keys and connection URLs embedded in registry strings."""
+    redacted = async_redact_data(data, TO_REDACT_CONFIG)
+    url = entry.data.get("base_url")
+    credentials = {str(entry.data.get(key)) for key in (CONF_USERNAME, CONF_PASSWORD) if entry.data.get(key)}
+
+    def scrub(value):
+        if isinstance(value, dict):
+            return {scrub(key): scrub(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [scrub(item) for item in value]
+        if isinstance(value, str):
+            if value in credentials:
+                return "**REDACTED**"
+            if url:
+                return value.replace(url, "**REDACTED**")
+        return value
+
+    return scrub(redacted)
 
 
 async def async_get_config_entry_diagnostics(  # noqa: C901
@@ -47,7 +75,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             "title": entry.title,
             "entry_id": entry.entry_id,
             "data": async_redact_data(entry.data, TO_REDACT_CONFIG),
-            "options": dict(entry.options),  # Include current options
+            "options": async_redact_data(dict(entry.options), TO_REDACT_CONFIG),  # Include current options
             "source": entry.source,
             "version": entry.version,
             "disabled_by": entry.disabled_by,
@@ -91,7 +119,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             f"Integration data partially missing in hass.data for entry {entry.entry_id}: {err}"
         )
         # Still return what we have, like entry_details
-        return diagnostics_data
+        return _redact_diagnostics(diagnostics_data, entry)
     except Exception as e:  # Catch any other unexpected error during data retrieval
         _LOGGER.error(
             "Unexpected error accessing integration data for diagnostics of entry %s: %s",
@@ -102,7 +130,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
         diagnostics_data["error"] = (
             f"Unexpected error accessing integration data: {type(e).__name__} - {e}"
         )
-        return diagnostics_data
+        return _redact_diagnostics(diagnostics_data, entry)
 
     # Add API client and manager information
     diagnostics_data["bsm_manager_connection"] = {
@@ -182,7 +210,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             state_dict_redacted = None
             if state:
                 state_dict_redacted = async_redact_data(
-                    state.as_dict(), {}
+                    state.as_dict(), TO_REDACT_CONFIG
                 )  # No redaction by default here
                 state_dict_redacted.pop("context", None)
                 state_dict_redacted.pop("last_changed", None)
@@ -214,14 +242,14 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
                 "identifiers": list(
                     device_entry.identifiers
                 ),  # Convert set to list for JSON
-                "config_entries": list(device_entry.config_entries),
+                "config_entries": list(device_config_entry_ids(device_entry)),
                 "via_device_id": device_entry.via_device_id,
                 "linked_entities": entities_payload,
             }
         )
     diagnostics_data["home_assistant_devices_and_entities"] = devices_payload
     _LOGGER.debug("Finished gathering config entry diagnostics for: %s", entry.entry_id)
-    return diagnostics_data
+    return _redact_diagnostics(diagnostics_data, entry)
 
 
 async def async_get_device_diagnostics(
@@ -245,7 +273,7 @@ async def async_get_device_diagnostics(
             "manufacturer": device.manufacturer,
             "identifiers": list(device.identifiers),
             "via_device_id": device.via_device_id,
-            "config_entries_linked": list(device.config_entries),
+            "config_entries_linked": list(device_config_entry_ids(device)),
             "disabled_by": str(device.disabled_by) if device.disabled_by else None,
         },
         "related_config_entry_title": entry.title,
@@ -262,36 +290,16 @@ async def async_get_device_diagnostics(
             break
 
     if device_primary_id_value:
-        # Check if it's one of the monitored server devices
-        server_coordinator_diag = config_entry_diagnostics.get(
-            "monitored_server_coordinators", {}
-        ).get(device_primary_id_value)
-        if server_coordinator_diag:
-            device_specific_diagnostics["associated_server_coordinator_data"] = (
-                server_coordinator_diag
-            )
-        else:
-            # Check if it's the manager device
-            manager_info_diag = config_entry_diagnostics.get(
-                "bsm_manager_connection", {}
-            )
-            if (
-                manager_info_diag.get("identifier_tuple", (None, None))[1]
-                == device_primary_id_value
-            ):
-                device_specific_diagnostics["associated_manager_info"] = (
-                    manager_info_diag
-                )
-                if "manager_data_coordinator" in config_entry_diagnostics:
-                    device_specific_diagnostics[
-                        "associated_manager_coordinator_data"
-                    ] = config_entry_diagnostics["manager_data_coordinator"]
-            else:
-                _LOGGER.debug(
-                    "Device %s (ID: %s) could not be matched to manager or server coordinator data.",
-                    device_primary_id_value,
-                    device.id,
-                )
+        manager_url = entry.data.get("base_url", "")
+        server_prefix = f"{manager_url}_"
+        if device_primary_id_value.startswith(server_prefix):
+            server_name = device_primary_id_value[len(server_prefix):]
+            server_diag = config_entry_diagnostics.get("monitored_server_coordinators", {}).get(server_name)
+            if server_diag:
+                device_specific_diagnostics["associated_server_coordinator_data"] = server_diag
+        elif device_primary_id_value == manager_url:
+            device_specific_diagnostics["associated_manager_info"] = config_entry_diagnostics.get("bsm_manager_connection", {})
+            device_specific_diagnostics["associated_manager_coordinator_data"] = config_entry_diagnostics.get("manager_data_coordinator", {})
     else:
         _LOGGER.warning(
             "Device %s (ID: %s) has no primary %s domain identifier.",
@@ -311,7 +319,7 @@ async def async_get_device_diagnostics(
         state_dict_redacted = None
         if state:
             state_dict_redacted = async_redact_data(
-                state.as_dict(), {}
+                state.as_dict(), TO_REDACT_CONFIG
             )  # No redaction by default here
             state_dict_redacted.pop("context", None)
             state_dict_redacted.pop("last_changed", None)
@@ -332,4 +340,4 @@ async def async_get_device_diagnostics(
     device_specific_diagnostics["linked_entities_states"] = entities_payload_for_device
 
     _LOGGER.debug("Finished gathering device diagnostics for: %s", device.id)
-    return device_specific_diagnostics
+    return _redact_diagnostics(device_specific_diagnostics, entry)

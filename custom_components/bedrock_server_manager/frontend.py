@@ -1,5 +1,6 @@
 """Frontend Javascript module registration for Bedrock Server Manager."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -20,9 +21,21 @@ class BsmFrontendRegistration:
         """Initialise."""
         self.hass = hass
         self.lovelace: Any = self.hass.data.get("lovelace")
+        self._retry_unsub = None
+        self._register_lock = asyncio.Lock()
+        self._registered = False
+        self._path_registered = False
 
     async def async_register(self) -> None:
+        """Register shared resources once, including concurrent entry setups."""
+        async with self._register_lock:
+            if not self._registered:
+                await self._async_register()
+                self._registered = bool(self.lovelace)
+
+    async def _async_register(self) -> None:
         """Register frontend static path and Lovelace resources."""
+        self.lovelace = self.hass.data.get("lovelace")
         if not self.lovelace:
             _LOGGER.debug("Lovelace not loaded. Cannot register BSM frontend modules.")
             return
@@ -43,6 +56,8 @@ class BsmFrontendRegistration:
 
     async def _async_register_path(self) -> None:
         """Register static resource path if not already registered."""
+        if self._path_registered:
+            return
         frontend_dir = Path(__file__).parent / "frontend"
         try:
             await self.hass.http.async_register_static_paths(
@@ -52,15 +67,18 @@ class BsmFrontendRegistration:
                     )
                 ]
             )
+            self._path_registered = True
             _LOGGER.debug("Registered BSM frontend static path: %s", frontend_dir)
         except RuntimeError:
             # Runtime error means this path is already registered.
+            self._path_registered = True
             _LOGGER.debug("BSM frontend static path already registered")
 
     async def _async_wait_for_lovelace_resources(self) -> None:
         """Wait for lovelace resources to finish loading before registering."""
 
         async def _check_lovelace_resources_loaded(_now: Any) -> None:
+            self._retry_unsub = None
             if (
                 self.lovelace
                 and hasattr(self.lovelace, "resources")
@@ -71,7 +89,7 @@ class BsmFrontendRegistration:
                 _LOGGER.debug(
                     "Lovelace resources not yet loaded. Trying again in 5 seconds."
                 )
-                async_call_later(self.hass, 5, _check_lovelace_resources_loaded)
+                self._retry_unsub = async_call_later(self.hass, 5, _check_lovelace_resources_loaded)
 
         await _check_lovelace_resources_loaded(0)
 
@@ -140,22 +158,8 @@ class BsmFrontendRegistration:
         return "0"
 
     async def async_unregister(self) -> None:
-        """Unload lovelace module resources when integration is removed."""
-        if not self.lovelace:
-            return
-
-        lovelace_mode = getattr(
-            self.lovelace, "mode", getattr(self.lovelace, "resource_mode", "yaml")
-        )
-
-        if lovelace_mode == "storage":
-            for module in JS_MODULES:
-                url = f"{FRONTEND_URL_BASE}/{module.get('filename')}"
-                integration_resources = [
-                    resource
-                    for resource in self.lovelace.resources.async_items()
-                    if str(resource["url"]).startswith(url)
-                ]
-                for resource in integration_resources:
-                    _LOGGER.info("Unregistering Lovelace resource: %s", resource["url"])
-                    await self.lovelace.resources.async_delete_item(resource.get("id"))
+        """Cancel pending work; dashboard resources survive unload and reload."""
+        if self._retry_unsub:
+            self._retry_unsub()
+            self._retry_unsub = None
+        self._registered = False

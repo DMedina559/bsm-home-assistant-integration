@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 // Define domain
 const DOMAIN = "bedrock_server_manager";
@@ -357,16 +357,20 @@ class BsmCommandCard extends LitElement {
   }
 }
 
-customElements.define("bsm-command-card", BsmCommandCard);
+if (!customElements.get("bsm-command-card")) {
+  customElements.define("bsm-command-card", BsmCommandCard);
+}
 
 // --- Keep the preview registration ---
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-command-card")) {
 window.customCards.push({
   type: "bsm-command-card",
   name: "Send Command Card",
   description: "Send a command to a Bedrock Server Manager managed server.",
   preview: true,
 });
+}
 
 // --- Use the logger for the final confirmation ---
 _LOGGER.info(

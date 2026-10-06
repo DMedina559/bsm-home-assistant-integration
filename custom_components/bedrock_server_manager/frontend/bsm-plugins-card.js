@@ -454,7 +454,9 @@ class BsmPluginsCard extends LitElement {
 
 // --- END EDITOR ELEMENT ---
 
-customElements.define("bsm-plugins-card", BsmPluginsCard);
+if (!customElements.get("bsm-plugins-card")) {
+  customElements.define("bsm-plugins-card", BsmPluginsCard);
+}
 _LOGGER.info(
   `%cBSM-PLUGINS-CARD ${CARD_VERSION} IS INSTALLED%c (incl. editor)`,
   "color: green; font-weight: bold;",

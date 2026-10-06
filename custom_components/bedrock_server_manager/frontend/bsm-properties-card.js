@@ -3,7 +3,7 @@ import {
   LitElement,
   html,
   css,
-} from "https://unpkg.com/lit-element@^2.0.0/lit-element.js?module";
+} from "https://unpkg.com/lit-element@2.0.1/lit-element.js?module";
 
 // Define _LOGGER or use console
 const _LOGGER = {
@@ -715,7 +715,9 @@ class BsmPropertiesCard extends LitElement {
   }
 }
 
-customElements.define("bsm-properties-card", BsmPropertiesCard);
+if (!customElements.get("bsm-properties-card")) {
+  customElements.define("bsm-properties-card", BsmPropertiesCard);
+}
 
 // --- EDITOR ELEMENT DEFINITION ---
 
@@ -723,12 +725,14 @@ customElements.define("bsm-properties-card", BsmPropertiesCard);
 
 // --- WINDOW REGISTRATION ---
 window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "bsm-properties-card")) {
 window.customCards.push({
   type: "bsm-properties-card",
   name: "Server Properties Card",
   description: "View and edit server.properties for a selected Bedrock server.",
   preview: true,
 });
+}
 _LOGGER.info(
   `%c BSM-PROPERTIES-CARD %c LOADED (incl. editor) %c`,
   "color: blue; font-weight: bold; background: white",

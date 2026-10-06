@@ -182,7 +182,7 @@ async def async_setup_entry(  # noqa: C901
         # Get static version for initial DeviceInfo
         installed_version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
-        if coordinator.last_update_success and coordinator.data is not None:
+        if coordinator is not None:
             for description in SERVER_BUTTON_DESCRIPTIONS:
                 entities_to_add.append(
                     MinecraftServerButton(
