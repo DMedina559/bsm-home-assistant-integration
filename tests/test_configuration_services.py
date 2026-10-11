@@ -125,3 +125,17 @@ def test_used_operations_exist_in_released_sdk_contract():
         "get_task_status",
         "export_world",
     } <= operations.keys()
+
+
+def test_all_bundled_cards_are_registered_for_ha_dashboards():
+    from pathlib import Path
+
+    from custom_components.bedrock_server_manager.const import JS_MODULES
+
+    bundles = {
+        path.name
+        for path in Path("custom_components/bedrock_server_manager/frontend").glob(
+            "bsm-*-card.js"
+        )
+    }
+    assert bundles == {module["filename"] for module in JS_MODULES}
