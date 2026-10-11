@@ -7,6 +7,20 @@ class OverviewCard extends BsmCard {
     operations: { state: true },
     cardFeedback: { state: true },
   };
+  ports(id) {
+    const state = this.hass?.states?.[related(this.hass, id, "level_name")];
+    if (unavailable(state)) return "Unavailable";
+    const properties = state.attributes.server_properties || {};
+    return (
+      [
+        ["IPv4", properties["server-port"]],
+        ["IPv6", properties["server-portv6"]],
+      ]
+        .filter(([, port]) => port != null && String(port).trim() !== "")
+        .map(([family, port]) => `${family} ${port}`)
+        .join(" · ") || "Unavailable"
+    );
+  }
   constructor() {
     super();
     this.layout = "cards";
@@ -275,6 +289,7 @@ class OverviewCard extends BsmCard {
                     <tr>
                       <th>Server</th>
                       <th>Status</th>
+                      <th>Ports</th>
                       <th>Players</th>
                       <th>CPU</th>
                       <th>RAM</th>
@@ -291,6 +306,7 @@ class OverviewCard extends BsmCard {
                             </button>
                           </td>
                           <td>${s.state}</td>
+                          <td>${this.ports(id)}</td>
                           <td>${this.value(id, "online_players_count")}</td>
                           <td>${this.value(id, "cpu_percent")}</td>
                           <td>${this.value(id, "memory_mb")}</td>
@@ -314,6 +330,7 @@ class OverviewCard extends BsmCard {
                       <small
                         >${s.attributes.installed_version || "Version unknown"}</small
                       >
+                      <small>Ports: ${this.ports(id)}</small>
                       <div class="grid">
                         <span
                           >Players

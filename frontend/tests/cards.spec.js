@@ -834,3 +834,75 @@ test("content sources cannot cross manager boundaries", async ({ page }) => {
     0,
   );
 });
+
+for (const layout of ["cards", "table"]) {
+  test(`overview ${layout} shows live configured ports`, async ({ page }) => {
+    await mount(page, "bsm-overview-card", { layout });
+    await page.evaluate(() =>
+      window.push("sensor.props", {
+        server_properties: { "server-port": "19140", "server-portv6": "19141" },
+      }),
+    );
+    await expect(
+      page.getByText(/IPv4 19140 · IPv6 19141/).first(),
+    ).toBeVisible();
+    await page.evaluate(() =>
+      window.push("sensor.props", {
+        server_properties: { "server-port": "19150", "server-portv6": "19151" },
+      }),
+    );
+    await expect(
+      page.getByText(/IPv4 19150 · IPv6 19151/).first(),
+    ).toBeVisible();
+  });
+}
+
+test("addon metadata remains live during an unsaved order edit", async ({
+  page,
+}) => {
+  await mount(page, "bsm-addon-card", { entity: "sensor.addons" });
+  await page.getByRole("button", { name: "Move Second up" }).click();
+  await page.evaluate(() =>
+    window.push("sensor.addons", {
+      server_addons_list: {
+        behavior_packs: [
+          { uuid: "one", name: "First", status: "ACTIVE" },
+          {
+            uuid: "two",
+            name: "Second",
+            status: "INACTIVE",
+            subpacks: [{ folder_name: "high", name: "High" }],
+            active_subpack: "high",
+          },
+        ],
+        resource_packs: [],
+      },
+    }),
+  );
+  await expect(page.getByText("INACTIVE", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Subpack for Second")).toHaveValue("high");
+  await expect(
+    page.getByRole("button", { name: "Save addon order" }),
+  ).toBeEnabled();
+  await expect(page.getByText(/Changed elsewhere/)).toHaveCount(0);
+  await expect(page.locator("section.tile strong").first()).toHaveText(
+    "Second",
+  );
+  await page.evaluate(() =>
+    window.push("sensor.addons", {
+      server_addons_list: {
+        behavior_packs: [
+          { uuid: "two", name: "Second", status: "ACTIVE" },
+          { uuid: "one", name: "First", status: "ACTIVE" },
+          { uuid: "three", name: "New pack", status: "ACTIVE" },
+        ],
+        resource_packs: [],
+      },
+    }),
+  );
+  await expect(page.getByText("New pack", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save addon order" }),
+  ).toBeDisabled();
+});

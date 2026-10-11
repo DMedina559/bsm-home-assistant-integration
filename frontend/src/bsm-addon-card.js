@@ -9,7 +9,15 @@ class AddonCard extends BsmCard {
   }
   syncState() {
     if (this.available) {
-      this.draft.update(this.state.attributes.server_addons_list || {});
+      const packs = this.state.attributes.server_addons_list || {};
+      this.draft.update(
+        Object.fromEntries(
+          Object.entries(packs).map(([key, items]) => [
+            key,
+            items.map((pack) => pack.uuid),
+          ]),
+        ),
+      );
       this.requestUpdate();
     }
   }
@@ -17,7 +25,14 @@ class AddonCard extends BsmCard {
     this.syncState();
   }
   get packs() {
-    return this.draft.value[`${this.type}_packs`] || [];
+    const key = `${this.type}_packs`;
+    const items = this.state?.attributes.server_addons_list?.[key] || [];
+    const order = this.draft.value[key] || [];
+    const position = (pack) => {
+      const index = order.indexOf(pack.uuid);
+      return index < 0 ? order.length : index;
+    };
+    return [...items].sort((a, b) => position(a) - position(b));
   }
   move(index, direction) {
     const key = `${this.type}_packs`,
@@ -26,7 +41,10 @@ class AddonCard extends BsmCard {
       items[index + direction],
       items[index],
     ];
-    this.draft.set(key, items);
+    this.draft.set(
+      key,
+      items.map((pack) => pack.uuid),
+    );
     this.requestUpdate();
   }
   async save() {
@@ -41,7 +59,14 @@ class AddonCard extends BsmCard {
       },
       "Addon order saved.",
     );
-    if (saved) this.draft.reset(this.draft.live);
+    if (saved) {
+      const key = `${this.type}_packs`;
+      const submitted = this.draft.value[key];
+      delete this.draft.changes[key];
+      this.draft.base[key] = structuredClone(submitted);
+      this.draft.live[key] = structuredClone(submitted);
+      this.requestUpdate();
+    }
   }
   render() {
     return this.frame(
