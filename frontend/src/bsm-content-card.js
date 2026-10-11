@@ -63,3 +63,11 @@ register(
   "BSM Content",
   "Install available worlds or addons and follow task outcomes.",
 );
+
+// Preserve dashboards using the original content installer card tag.
+if (!customElements.get("bsm-content-installer-card")) {
+  customElements.define(
+    "bsm-content-installer-card",
+    class extends ContentCard {},
+  );
+}

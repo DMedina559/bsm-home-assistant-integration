@@ -260,3 +260,37 @@ test("configured selections display their labels on the first render", async ({
     "sensor.manager",
   );
 });
+
+test("legacy content installer tag remains available", async ({ page }) => {
+  await mount(page, "bsm-content-installer-card", {
+    entity: "sensor.server",
+    content_source_sensor_entity: "sensor.worlds",
+  });
+  await expect(page.getByLabel("File", { exact: true })).toBeVisible();
+  await page.getByLabel("File", { exact: true }).selectOption("new.mcworld");
+  await expect(
+    page.getByRole("button", { name: "Install world" }),
+  ).toBeEnabled();
+});
+test("metrics fit narrow sections with long manager names", async ({
+  page,
+}) => {
+  await mount(page, "bsm-health-card", { entity: "sensor.version" });
+  await page.evaluate(() => {
+    window.card.style.width = "300px";
+    for (const [id, state] of Object.entries(window.hass.states)) {
+      window.push(id, {
+        friendly_name:
+          "BSM @ https://bsm.home-server.internal Manager Application " + id,
+      });
+    }
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const body = window.card.shadowRoot.querySelector(".body");
+        return body.scrollWidth <= body.clientWidth;
+      }),
+    )
+    .toBe(true);
+});

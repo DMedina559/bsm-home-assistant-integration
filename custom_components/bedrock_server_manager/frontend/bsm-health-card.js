@@ -1,4 +1,4 @@
-import{a as s,h as a,i}from"./shared-KN4AH6WE.js";var e=class extends i{static title="Application health and metrics";static role="manager";static key="bsm_version";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"history_hours",selector:{number:{min:1,max:168,mode:"box"}}}),t}render(){return this.frame(s`<h3>Connection and health</h3>
+import{a as s,h as a,i}from"./shared-26346ZH3.js";var e=class extends i{static title="Application health and metrics";static role="manager";static key="bsm_version";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"history_hours",selector:{number:{min:1,max:168,mode:"box"}}}),t}render(){return this.frame(s`<h3>Connection and health</h3>
         <div class="grid">
           ${["connection","websocket","health","lifecycle","database","state","metrics","application_lifecycle","health_checked_at"].map(t=>this.metric(this.stateFor(t)))}
         </div>

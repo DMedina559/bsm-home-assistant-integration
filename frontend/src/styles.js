@@ -2,11 +2,11 @@ import { css } from "lit";
 export const styles = css`
   :host {
     display: block;
-    height: 100%;
+    min-width: 0;
     color: var(--primary-text-color);
   }
   ha-card {
-    height: 100%;
+    min-width: 0;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -14,6 +14,8 @@ export const styles = css`
     padding: 16px;
     display: grid;
     gap: 12px;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
   }
   h2 {
     font-size: 1.1rem;
@@ -37,7 +39,7 @@ export const styles = css`
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
     gap: 12px;
   }
   .tile {
@@ -45,6 +47,7 @@ export const styles = css`
     border-radius: var(--ha-card-border-radius, 12px);
     padding: 12px;
     min-width: 0;
+    overflow-wrap: anywhere;
   }
   .muted,
   small {
@@ -79,6 +82,8 @@ export const styles = css`
   textarea,
   select {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     background: var(--card-background-color);
     border: 1px solid var(--divider-color);
     border-radius: 6px;
