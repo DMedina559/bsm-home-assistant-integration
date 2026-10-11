@@ -83,6 +83,12 @@ class BsmCoordinator(DataUpdateCoordinator):
                 ) | resources
         return accepted
 
+    def _publish_push(self, data: dict[str, Any]) -> None:
+        """Publish live data without postponing HTTP polls or cancelling retries."""
+        self.data = data
+        self.last_update_success = True
+        self.async_update_listeners()
+
     def supports(self, operation_id: str) -> bool:
         """Use discovered capabilities when available, otherwise shipped support."""
         if getattr(self.api, "schema", None) is None:
@@ -269,7 +275,7 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
             data["server_status"] = "RUNNING"
         elif data["server_status"] == "RUNNING":
             data["server_status"] = "STOPPED"
-        self.async_set_updated_data(data)
+        self._publish_push(data)
 
     async def _async_update_data(self) -> dict:
         servers, content, name = self.api.servers, self.api.content, self.server_name
@@ -421,7 +427,7 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
         self._push_generation["metrics"] = self._push_generation.get("metrics", 0) + 1
         self.unavailable_resources.discard("metrics")
         self.resource_updated_at["metrics"] = time()
-        self.async_set_updated_data(
+        self._publish_push(
             {
                 **self.defaults,
                 **(self.data or {}),

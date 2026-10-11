@@ -238,3 +238,55 @@ async def test_resource_freshness_distinguishes_current_stale_and_unsupported(
         coordinator.resource_metadata("server_bans")["bsm_resource_state"]
         == "unsupported"
     )
+
+
+@pytest.mark.asyncio
+async def test_live_metrics_do_not_postpone_http_recovery_after_an_outage(hass, api):
+    from custom_components.bedrock_server_manager.coordinator import (
+        ApplicationMonitorCoordinator,
+    )
+
+    api.application.async_get_application_metrics = AsyncMock(
+        side_effect=[CannotConnectError("router restarting"), {"latest": {"cpu": 1}}]
+    )
+    api.application.async_get_application_health = AsyncMock(
+        side_effect=[CannotConnectError("router restarting"), {"health": "healthy"}]
+    )
+    coordinator = ApplicationMonitorCoordinator(hass, api, scan_interval=1)
+    remove = coordinator.async_add_listener(lambda: None)
+    try:
+        await coordinator.async_refresh()
+        assert not coordinator.http_connected
+        deadline = coordinator._unsub_refresh.__self__.when()
+        for revision in range(1, 21):
+            coordinator.update_metrics({"epoch": "a", "revision": revision, "cpu": 1})
+            assert coordinator._unsub_refresh.__self__.when() == deadline
+            assert not coordinator.http_connected
+        # The real HA scheduler must still perform the recovery read despite pushes.
+        await asyncio.sleep(max(0, deadline - hass.loop.time()) + 0.05)
+        await hass.async_block_till_done()
+        assert coordinator.http_connected
+        assert "health" not in coordinator.unavailable_resources
+        assert coordinator.data["health"]["health"] == "healthy"
+    finally:
+        remove()
+        await coordinator.async_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_live_process_updates_preserve_the_server_http_poll_deadline(hass, api):
+    server_api(api)
+    coordinator = MinecraftBedrockCoordinator(hass, api, "test", 30)
+    remove = coordinator.async_add_listener(lambda: None)
+    try:
+        await coordinator.async_refresh()
+        deadline = coordinator._unsub_refresh.__self__.when()
+        for revision in range(2, 12):
+            coordinator.update_process_info(
+                {"epoch": "one", "revision": revision, "process_info": {"pid": 123}}
+            )
+            assert coordinator._unsub_refresh.__self__.when() == deadline
+        assert coordinator.data["server_status"] == "RUNNING"
+    finally:
+        remove()
+        await coordinator.async_shutdown()
