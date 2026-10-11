@@ -65,8 +65,7 @@ Once installed and Home Assistant is restarted, configure the integration via th
 2.  Click the **+ Add Integration** button in the bottom right.
 3.  Search for "Bedrock Server Manager" and select it.
 4.  **Step 1: Connect to Manager**
-    *   **Host / IP Address:** The address of your BSM instance.
-    *   **Port:** The port BSM API is listening on (defaults to 11325).
+    *   **Base URL:** The full BSM address, including scheme, port and any proxy path, for example `http://192.168.1.10:11325`.
     *   **API Username & Password:** Credentials for the BSM API.
     *   Click **Submit**.
 5.  **Step 2: Select Initial Servers**
@@ -167,14 +166,14 @@ All services use the domain `bedrock_server_manager`.
     *   Target: Server device(s)/entity(s).
     *   Data: `command` (string, required).
 *   **`prune_download_cache`**: Prunes global download cache.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `directory` (string, required), `keep` (integer, optional).
 *   **`trigger_backup`**: Triggers a specific backup type.
     *   Target: Server device(s)/entity(s).
     *   Data: `backup_type` (string, required: `all`, `world`, `config`), `file_to_backup` (string, optional, required for `config` type).
 *   **`restore_backup`**: Restores a specific backup. **CAUTION: Overwrites data.**
     *   Target: Server device(s)/entity(s).
-    *   Data: `restore_type` (string, required: `world`, `config`), `backup_file` (string, required: filename relative to server's backup folder).
+    *   Data: `restore_type` (string, required: `world`, `properties`, `allowlist`, `permissions`), `backup_file` (string, required: filename relative to server's backup folder).
 *   **`restore_latest_all`**: Restores latest full backup. **CAUTION: Overwrites data.**
     *   Target: Server device(s)/entity(s).
     *   Data: None.
@@ -183,22 +182,22 @@ All services use the domain `bedrock_server_manager`.
     *   Data: `players` (list of strings, required), `ignores_player_limit` (boolean, optional).
 *   **`remove_from_allowlist`**: Removes a player from a server's allowlist.
     *   Target: Server device(s)/entity(s).
-    *   Data: `player_name` (string, required).
+    *   Data: `players` (list of player names, required).
 *   **`set_permissions`**: Sets server-specific player permissions via XUID.
     *   Target: Server device(s)/entity(s).
-    *   Data: `permissions` (dictionary, required: `{"XUID": "level", ...}`).
+    *   Data: `permissions` (list, required: `[{"name": "Alex", "xuid": "123", "permission_level": "member"}]`).
 *   **`update_properties`**: Updates allowed `server.properties` values.
     *   Target: Server device(s)/entity(s).
     *   Data: `properties` (dictionary, required: `{"key": "value", ...}`).
 *   **`install_server`**: Installs a new server instance via the manager.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `server_name` (string, required), `server_version` (string, required), `overwrite` (boolean, optional).
 *   **`delete_server`**: Permanently deletes ALL data for a server. **IRREVERSIBLE.**
     *   Target: Server device(s)/entity(s).
     *   Data: `confirm_deletion` (boolean, required: must be `true`).
-*   **`configure_os_service`**: Configures OS service settings for a server.
+*   **`configure_os_service`**: Updates server autostart and autoupdate settings; the action name is retained for existing automations.
     *   Target: Server device(s)/entity(s).
-    *   Data: `autoupdate` (boolean, required), `autostart` (boolean, optional, Linux only).
+    *   Data: `autoupdate` (boolean, required), `autostart` (boolean, optional).
 *   **`install_world`**: Installs a `.mcworld` file to a server. **CAUTION: Overwrites current world.**
     *   Target: Server device(s)/entity(s).
     *   Data: `filename` (string, required: relative to manager's `content/worlds`).
@@ -206,7 +205,7 @@ All services use the domain `bedrock_server_manager`.
     *   Target: Server device(s)/entity(s).
     *   Data: `filename` (string, required: relative to manager's `content/addons`).
 *   **`add_global_players`**: Adds/updates players in the manager's global `players.json`.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `players` (list of strings, required: `"PlayerName:PlayerXUID"` format).
 
 ## Options / Reconfiguration
@@ -346,7 +345,29 @@ device to use them in native dashboards and automations. Writes are confirmed th
 coordinator refreshes rather than optimistic state.
 
 Resource metadata preserves manager/server identity during outages and distinguishes
-`current`, `stale`, `unsupported`, `unavailable` and `unknown` data. `bsm_updated_at` is
+`current`, `stale`, `forbidden`, `unsupported`, `unavailable` and `unknown` data. `bsm_updated_at` is
 the last locally received successful resource update; it is not a backend task timestamp.
 Cards label retained stale data and unsupported resources. Service translations cover
 the declared actions and current payload fields.
+
+## Permissions and runtime recovery
+
+Server actions enforce the calling Home Assistant user's read/control permissions on
+the selected server entities, including device and area targets. Manager-wide actions
+(including dynamic API calls, settings and task queries) require a Home Assistant admin
+because they use the integration's shared BSM credentials. Automations without a user
+context remain supported. BSM HTTP 403 responses mark individual resources as forbidden;
+expired credentials still trigger reauthentication.
+
+Actions acknowledge API acceptance before refreshing entity data in the background.
+Multi-target actions retain successful task IDs alongside failed-target outcomes.
+Task results remain visible after completion, with a maximum of 500 cached task records
+per connection and bounded backend revision history. Unloading an entry cancels its
+pending requests and refreshes before closing the transport.
+
+After a connection changes during a request, cards release pending controls and explain
+that the outcome needs checking before retrying. Accepted tasks resume tracking rather
+than being submitted again. If Home Assistant denies live event subscriptions, cards
+show a notice and retain task polling and entity updates. Manager selectors work even
+when the application version sensor was previously disabled. Content sources are limited
+to the selected server's manager. Diagnostics redact nested and flattened JWT secrets.

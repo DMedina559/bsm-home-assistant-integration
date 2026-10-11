@@ -3,16 +3,6 @@ class PluginsCard extends BsmCard {
   static title = "Plugins";
   static role = "manager";
   static key = "plugin_statuses";
-  static getConfigForm() {
-    const form = super.getConfigForm();
-    form.schema.push({
-      name: "reload_button_entity",
-      selector: {
-        entity: { domain: "button", integration: "bedrock_server_manager" },
-      },
-    });
-    return form;
-  }
   render() {
     const plugins = this.state?.attributes.plugins_data || {};
     return this.frame(

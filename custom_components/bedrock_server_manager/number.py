@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import ManagerDataCoordinator
+from .reconcile import refresh_after_action
 
 SETTINGS = {
     "monitoring.app_metrics_interval_sec": ("Application metrics interval", 1, 3600),
@@ -95,5 +96,4 @@ class SettingNumber(CoordinatorEntity[ManagerDataCoordinator], NumberEntity):
             )
         except (APIError, ValueError) as error:
             raise HomeAssistantError(str(error)) from error
-        self.coordinator.invalidate({})
-        await self.coordinator.async_request_refresh()
+        refresh_after_action(self.coordinator, None)

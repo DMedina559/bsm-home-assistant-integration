@@ -3,9 +3,14 @@
 import logging
 from typing import List, Set
 
+from homeassistant.auth.permissions.const import POLICY_CONTROL, POLICY_READ
 from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    HomeAssistantError,
+    ServiceValidationError,
+    Unauthorized,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -16,9 +21,27 @@ from .utils import device_config_entry_ids, registry_devices
 _LOGGER = logging.getLogger(__name__)
 
 
+async def _caller(service: ServiceCall, hass: HomeAssistant, admin: bool = False):
+    """Automations run without a user; interactive callers retain HA permissions."""
+    if not service.context.user_id:
+        return None
+    user = await hass.auth.async_get_user(service.context.user_id)
+    if user is None or (admin and not user.is_admin):
+        raise Unauthorized(context=service.context)
+    return None if user.is_admin else user
+
+
+def _own(hass: HomeAssistant, entry_id: str) -> None:
+    """Attach action lifetime to the entry before performing transport I/O."""
+    if runtime := hass.data[DOMAIN][entry_id].get("runtime"):
+        runtime.own_task()
+
+
 async def resolve_server_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> list[tuple[str, str]]:
+    user = await _caller(service, hass)
+    policy = POLICY_READ if service.service == "get_server_settings" else POLICY_CONTROL
     servers_to_target: set[tuple[str, str]] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -49,6 +72,21 @@ async def resolve_server_targets(  # noqa: C901
 
         if parsed_server_name:
             if parsed_server_name in manager_data.get("servers", {}):
+                if user is not None:
+                    candidates = er.async_entries_for_device(
+                        entity_reg, device_entry.id
+                    )
+                    anchors = [
+                        entity
+                        for entity in candidates
+                        if entity.platform == DOMAIN
+                        and entity.unique_id.endswith("_status")
+                    ]
+                    if not anchors or not all(
+                        user.permissions.check_entity(entity.entity_id, policy)
+                        for entity in anchors
+                    ):
+                        raise Unauthorized(context=service.context)
                 servers_to_target.add((config_entry_id_context, parsed_server_name))
         elif _LOGGER.isEnabledFor(logging.DEBUG):
             is_manager_device = any(
@@ -69,6 +107,10 @@ async def resolve_server_targets(  # noqa: C901
     target_area_ids: List[str] = cv.ensure_list(service.data.get(ATTR_AREA_ID, []))
 
     for entity_id in target_entity_ids:
+        if user is not None and not user.permissions.check_entity(entity_id, policy):
+            raise Unauthorized(
+                context=service.context, entity_id=entity_id, permission=policy
+            )
         entity_entry = entity_reg.async_get(entity_id)
         if (
             entity_entry
@@ -120,12 +162,15 @@ async def resolve_server_targets(  # noqa: C901
         service.service,
         servers_to_target,
     )
+    for entry_id, _ in servers_to_target:
+        _own(hass, entry_id)
     return sorted(servers_to_target)
 
 
 async def resolve_manager_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
+    await _caller(service, hass, admin=True)
     config_entry_ids_to_target: Set[str] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -193,4 +238,6 @@ async def resolve_manager_targets(  # noqa: C901
         service.service,
         list(config_entry_ids_to_target),
     )
-    return list(config_entry_ids_to_target)
+    for entry_id in config_entry_ids_to_target:
+        _own(hass, entry_id)
+    return sorted(config_entry_ids_to_target)

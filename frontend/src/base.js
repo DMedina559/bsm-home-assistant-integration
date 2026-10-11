@@ -30,6 +30,7 @@ export class BsmCard extends LitElement {
     feedback: { state: true },
     confirmation: { state: true },
     revision: { state: true },
+    liveNotice: { state: true },
   };
   static styles = styles;
   static role = "server";
@@ -201,6 +202,10 @@ export class BsmCard extends LitElement {
     this._taskCache = this.runtime.tasks;
     this._releaseRuntime = this.runtime.acquire((type, data) => {
       if (type === "task") this._taskUpdate(data);
+      else if (type === "subscription_error")
+        this.liveNotice =
+          "Live event subscription unavailable. Task polling and Home Assistant entity updates remain active.";
+      else if (type === "subscription_ok") this.liveNotice = "";
       else if (type === "event") this._eventUpdate(data);
       else if (type === "reconnect") {
         this._generation++;
@@ -215,9 +220,25 @@ export class BsmCard extends LitElement {
   }
   _eventUpdate() {}
   reconnected() {
-    for (const entry of this._tasks.values())
+    if (
+      this.busy &&
+      ![...this._tasks.values()].some(
+        ({ task }) =>
+          !["completed", "failed", "cancelled"].includes(task.status),
+      )
+    ) {
+      this.busy = false;
+      this.feedback =
+        "Connection changed during the request. Check current server or task state before retrying.";
+    }
+    for (const entry of this._tasks.values()) {
+      const cached = this.runtime.tasks.get(
+        `${entry.task.manager_url}:${entry.task.id}`,
+      );
+      if (cached) this._taskUpdate(cached);
       if (!["completed", "failed", "cancelled"].includes(entry.task.status))
         this._watchTask(entry);
+    }
   }
   pollFailed() {}
   pollRecovered() {}
@@ -241,7 +262,9 @@ export class BsmCard extends LitElement {
     const failed = tasks.find((task) =>
       ["failed", "cancelled"].includes(task.status),
     );
-    this.error = failed ? taskError(failed) : "";
+    this.error = [this._targetErrors, failed ? taskError(failed) : ""]
+      .filter(Boolean)
+      .join(" · ");
     this.busy = tasks.some(
       (task) => !["completed", "failed", "cancelled"].includes(task.status),
     );
@@ -271,6 +294,7 @@ export class BsmCard extends LitElement {
     const generation = this._generation,
       target = { ...this.target };
     this.busy = true;
+    this._targetErrors = "";
     this.error = "";
     this.feedback = "Sending request…";
     this._tasks.clear();
@@ -279,6 +303,15 @@ export class BsmCard extends LitElement {
       const response = await this.responseService(service, data, target);
       if (generation !== this._generation) return false;
       this._lastResponse = response;
+      const failures = (response.results || []).filter(
+        (result) => result.error,
+      );
+      this.error = this._targetErrors = failures
+        .map(
+          (result) =>
+            `${result.server_name || result.manager_url}: ${result.error.message}`,
+        )
+        .join(" · ");
       for (const result of response.results || []) {
         const id = result.result?.task_id;
         if (!id) continue;
@@ -334,6 +367,7 @@ export class BsmCard extends LitElement {
     if (this.busy || unavailable(this.hass?.states?.[entityId])) return false;
     const generation = this._generation;
     this.busy = true;
+    this._targetErrors = "";
     this.error = "";
     try {
       await this.hass.callService(domain, service, data, {
@@ -353,6 +387,11 @@ export class BsmCard extends LitElement {
   }
   resourceNotice(state = this.state) {
     const status = state?.attributes.bsm_resource_state;
+    if (status === "forbidden")
+      return html`<small class="muted"
+        >The BSM account does not have permission to access this
+        resource.</small
+      >`;
     if (status === "unsupported")
       return html`<small class="muted"
         >This backend does not support this resource.</small
@@ -512,6 +551,7 @@ export class BsmCard extends LitElement {
         <h2>${this.config?.title || this.constructor.title}</h2>
         ${picker ? this.pick() : nothing}
         ${this.selection && !this.available ? html`<p class="notice" role="status">${this.state ? "This resource is unavailable. Controls are disabled until it recovers." : "The configured entity is missing. Choose another resource."}</p>` : nothing}
+        ${this.liveNotice ? html`<small role="status">${this.liveNotice}</small>` : nothing}
         ${this.resourceNotice()} ${body}
         <div aria-live="polite" role="status" ?hidden=${!this.feedback}>
           ${this.feedback}

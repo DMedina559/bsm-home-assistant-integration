@@ -30,6 +30,21 @@ class PluginSettingsCard extends BsmCard {
     this.schema = null;
     this.loading = false;
   }
+  reconnected() {
+    super.reconnected();
+    this.loading = false;
+    if (this.plugin && this.available) this.load(this.plugin, true);
+  }
+  input(title, value, change, type = "text") {
+    return html`<label
+      >${title}<input
+        aria-label=${title}
+        type=${type}
+        .value=${String(value ?? "")}
+        ?disabled=${this.busy || this.loading}
+        @input=${(e) => change(e.target.value)}
+    /></label>`;
+  }
   selectedChanged() {
     this.plugin = "";
     this.schema = null;
@@ -162,15 +177,17 @@ class PluginSettingsCard extends BsmCard {
         />${title}</label
       >`;
     else if (schema.enum)
-      control = this.selectInput(
-        title,
-        value,
-        schema.enum.map((item) => ({
-          value: String(item),
-          label: String(item),
-        })),
-        (v) => this.edit(key, v, schema),
-      );
+      control = html`<fieldset ?disabled=${this.busy || this.loading}>
+        ${this.selectInput(
+          title,
+          value,
+          schema.enum.map((item) => ({
+            value: String(item),
+            label: String(item),
+          })),
+          (v) => this.edit(key, v, schema),
+        )}
+      </fieldset>`;
     else if (["object", "array"].includes(schema.type))
       control = html`<label
         >${title} (JSON)<textarea

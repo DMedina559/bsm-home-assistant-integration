@@ -179,7 +179,6 @@ MANAGER_SENSOR_DESCRIPTIONS: Tuple[SensorEntityDescription, ...] = (
         key=KEY_MANAGER_APP_VERSION,
         name="Manager App Version",
         icon="mdi:information-outline",
-        entity_registry_enabled_default=False,
     ),
     SensorEntityDescription(
         key=KEY_PLUGIN_STATUSES,
@@ -465,6 +464,7 @@ class MinecraftServerSensor(
         process_info = data.get("process_info")
 
         if key == "status":
+            attrs["bsm_settings_revision"] = self.coordinator.state.generation
             if self._installed_version_static:  # This should now be safe
                 attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
 
@@ -668,6 +668,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         }
         if not self.available:
             return attrs
+        attrs["bsm_settings_revision"] = self.coordinator.state.generation
         if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
         if key == KEY_AVAILABLE_WORLDS_COUNT:

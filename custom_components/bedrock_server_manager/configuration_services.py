@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
 from .coordinator import json_data
+from .reconcile import SERVER_RESOURCES, refresh_after_action
 from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets, resolve_server_targets
 
@@ -35,7 +36,9 @@ SCHEMAS: dict[str, dict[Any, Any]] = {
 SERVER_ACTIONS = {"get_server_settings", "set_server_setting", "export_world"}
 
 
-async def configuration_action(hass: HomeAssistant, call: ServiceCall) -> dict:
+async def configuration_action(  # noqa: C901
+    hass: HomeAssistant, call: ServiceCall
+) -> dict:
     """Validate targets and return JSON-safe settings, contracts or action outcomes."""
     targets: list[tuple[str, str | None]]
     if call.service in SERVER_ACTIONS:
@@ -45,13 +48,23 @@ async def configuration_action(hass: HomeAssistant, call: ServiceCall) -> dict:
     else:
         targets = [(entry, None) for entry in await resolve_manager_targets(call, hass)]
     results = []
+    errors = []
     for entry_id, server in sorted(targets):
         data = hass.data[DOMAIN][entry_id]
         api = data["api"]
         try:
             response = await _execute(hass, api, call, server)
-        except (APIError, ValueError, OSError) as error:
-            raise HomeAssistantError(str(error)) from error
+        except (APIError, ValueError, OSError, HomeAssistantError) as error:
+            errors.append(error)
+            results.append(
+                {
+                    "manager_url": data["manager_identifier"][1],
+                    "server_name": server,
+                    "status": "failed",
+                    "error": {"message": str(error)},
+                }
+            )
+            continue
         results.append(
             {
                 "manager_url": data["manager_identifier"][1],
@@ -79,8 +92,16 @@ async def configuration_action(hass: HomeAssistant, call: ServiceCall) -> dict:
                 )
             for coordinator in coordinators:
                 if coordinator is not None:
-                    coordinator.invalidate({})
-                    await coordinator.async_request_refresh()
+                    refresh_after_action(
+                        coordinator,
+                        SERVER_RESOURCES.get(call.service) if server else None,
+                    )
+    if errors and len(errors) == len(results):
+        if isinstance(errors[0], HomeAssistantError):
+            raise errors[0]
+        raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
+            0
+        ]
     return {"results": results}
 
 

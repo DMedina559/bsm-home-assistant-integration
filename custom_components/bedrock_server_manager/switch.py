@@ -6,10 +6,6 @@ from typing import Any, Optional, Tuple
 
 from bsm_api_client import (
     APIError,
-    AuthError,
-    BedrockServerManagerApi,
-    CannotConnectError,
-    ServerNotFoundError,
     ServerNotRunningError,
 )
 from bsm_api_client.models import PluginStatusSetPayload, ServerSettingItemPayload
@@ -22,8 +18,10 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .action_common import _base_api_call_handler
 from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
+from .reconcile import refresh_after_action
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -214,7 +212,7 @@ class MinecraftServerSwitch(
         return (
             super().available
             and self.coordinator.data is not None
-            and "server_settings" not in self.coordinator.unavailable_resources
+            and "process_info" not in self.coordinator.unavailable_resources
         )
 
     @property
@@ -238,145 +236,26 @@ class MinecraftServerSwitch(
         return current_state_is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the server on."""
-        api: BedrockServerManagerApi = (
-            self.coordinator.api
-        )  # Get API client from coordinator
-        _LOGGER.info(
-            "Turning ON server '%s' via BSM '%s'.",
+        """Request start and reconcile confirmed process and status state."""
+        await _base_api_call_handler(
+            self.coordinator.api.servers.async_start_server(self._server_name),
+            "Start server",
             self._server_name,
-            self._manager_host_port_id,
         )
-        try:
-            await api.servers.async_start_server(self._server_name)
-            # After a successful action, request a refresh of the coordinator
-            await self.coordinator.async_request_refresh()
-        except AuthError as err:
-            _LOGGER.error(
-                "Auth error starting server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            raise HomeAssistantError(
-                f"Authentication failed for server {self._server_name}: {err.api_message or str(err)}"
-            ) from err
-        except CannotConnectError as err:
-            _LOGGER.error(
-                "Connection error starting server '%s': %s",
-                self._server_name,
-                err.args[0] if err.args else err,
-            )
-            raise HomeAssistantError(
-                f"Could not connect to BSM to start server {self._server_name}: {err.args[0] if err.args else str(err)}"
-            ) from err
-        except (
-            ServerNotFoundError
-        ) as err:  # Should ideally not happen if device exists, but API might change
-            _LOGGER.error(
-                "Server Not Found error starting server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            raise HomeAssistantError(
-                f"Server {self._server_name} not found by BSM API: {err.api_message or str(err)}"
-            ) from err
-        except (
-            APIError
-        ) as err:  # Catch other API errors (e.g., server already running, other 500s)
-            _LOGGER.error(
-                "API error starting server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            raise HomeAssistantError(
-                f"Failed to start server {self._server_name}: {err.api_message or str(err)}"
-            ) from err
-        except Exception as err:  # Catch-all for truly unexpected issues
-            _LOGGER.exception(
-                "Unexpected error turning ON server '%s'", self._server_name
-            )
-            raise HomeAssistantError(
-                f"Unexpected error starting server {self._server_name}: {type(err).__name__}"
-            ) from err
+        refresh_after_action(self.coordinator, {"process_info", "summary"})
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the server off."""
-        api: BedrockServerManagerApi = self.coordinator.api
-        _LOGGER.info(
-            "Turning OFF server '%s' via BSM '%s'.",
-            self._server_name,
-            self._manager_host_port_id,
-        )
+        """Request an idempotent stop and reconcile confirmed process state."""
         try:
-            await api.servers.async_stop_server(self._server_name)
-            await self.coordinator.async_request_refresh()
-        except (
-            ServerNotRunningError
-        ) as err:  # API/Client specifically indicates server wasn't running
-            _LOGGER.warning(
-                "Attempted to stop server '%s', but BSM reported it was not running: %s",
+            await _base_api_call_handler(
+                self.coordinator.api.servers.async_stop_server(self._server_name),
+                "Stop server",
                 self._server_name,
-                err.api_message or err,
             )
-            await self.coordinator.async_request_refresh()  # Refresh state even if "error" was benign
-            # Do not re-raise HomeAssistantError, this is an idempotent success.
-        except (
-            APIError
-        ) as err:  # Check for other API errors that might imply it was already stopped
-            # Use err.api_message from the client exception for more direct error string
-            err_msg_lower = (err.api_message or str(err)).lower()
-            if "not running" in err_msg_lower or "already stopped" in err_msg_lower:
-                _LOGGER.warning(
-                    "Attempted to stop server '%s'; API indicated it was not running: %s",
-                    self._server_name,
-                    err_msg_lower,
-                )
-                await self.coordinator.async_request_refresh()
-                return  # Idempotent success
-            _LOGGER.error(
-                "API error stopping server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            raise HomeAssistantError(
-                f"Failed to stop server {self._server_name}: {err.api_message or str(err)}"
-            ) from err
-        except (
-            AuthError
-        ) as err:  # Order matters, catch more specific before general APIError
-            _LOGGER.error(
-                "Auth error stopping server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            raise HomeAssistantError(
-                f"Authentication failed for server {self._server_name}: {err.api_message or str(err)}"
-            ) from err
-        except CannotConnectError as err:
-            _LOGGER.error(
-                "Connection error stopping server '%s': %s",
-                self._server_name,
-                err.args[0] if err.args else err,
-            )
-            raise HomeAssistantError(
-                f"Could not connect to BSM to stop server {self._server_name}: {err.args[0] if err.args else str(err)}"
-            ) from err
-        except ServerNotFoundError as err:  # Should ideally not happen if device exists
-            _LOGGER.error(
-                "Server Not Found error stopping server '%s': %s",
-                self._server_name,
-                err.api_message or err,
-            )
-            # Refresh, as server might have been deleted from BSM but HA entity still exists.
-            await self.coordinator.async_request_refresh()
-
-        except Exception as err:  # Catch-all
-            _LOGGER.exception(
-                "Unexpected error turning OFF server '%s'", self._server_name
-            )
-            raise HomeAssistantError(
-                f"Unexpected error stopping server {self._server_name}: {type(err).__name__}"
-            ) from err
+        except HomeAssistantError as error:
+            if not isinstance(error.__cause__, ServerNotRunningError):
+                raise
+        refresh_after_action(self.coordinator, {"process_info", "summary"})
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -510,24 +389,18 @@ class MinecraftServerSettingSwitch(
         await self._set_setting(False)
 
     async def _set_setting(self, state: bool) -> None:
-        api: BedrockServerManagerApi = self.coordinator.api
-        try:
-            payload = ServerSettingItemPayload(
-                key=f"settings.{self._setting_key}", value=state
-            )
-            await api.servers.async_set_server_setting(self._server_name, payload)
-            await self.coordinator.async_request_refresh()
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to set %s to %s for server '%s': %s",
-                self._setting_key,
-                state,
+        """Persist a typed setting and share mutation invalidation with actions."""
+        await _base_api_call_handler(
+            self.coordinator.api.servers.async_set_server_setting(
                 self._server_name,
-                err,
-            )
-            raise HomeAssistantError(
-                f"Failed to set {self._setting_key} to {state}"
-            ) from err
+                ServerSettingItemPayload(
+                    key=f"settings.{self._setting_key}", value=state
+                ),
+            ),
+            "Set server setting",
+            self._server_name,
+        )
+        refresh_after_action(self.coordinator, {"server_settings", "summary"})
 
 
 class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntity):
@@ -588,5 +461,4 @@ class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntit
             )
         except APIError as error:
             raise HomeAssistantError(str(error)) from error
-        self.coordinator.invalidate({})
-        await self.coordinator.async_request_refresh()
+        refresh_after_action(self.coordinator)

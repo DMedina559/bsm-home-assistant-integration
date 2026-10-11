@@ -56,6 +56,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         self._push_generation: dict[str, int] = {}
         self.unavailable_resources: set[str] = set()
         self.unsupported_resources: set[str] = set()
+        self.forbidden_resources: set[str] = set()
         self.resource_updated_at: dict[str, float] = {}
         self._requested_resources: set[str] | None = None
         self._full_refresh_pending = False
@@ -93,20 +94,24 @@ class BsmCoordinator(DataUpdateCoordinator):
         """Describe unsupported, unavailable and retained data independently."""
         updated = self.resource_updated_at.get(resource or "")
         state = (
-            "unsupported"
-            if resource in self.unsupported_resources
+            "forbidden"
+            if resource in self.forbidden_resources
             else (
-                "stale"
-                if updated
-                and (
-                    resource in self.unavailable_resources
-                    or not self.last_update_success
-                )
+                "unsupported"
+                if resource in self.unsupported_resources
                 else (
-                    "unavailable"
-                    if resource in self.unavailable_resources
-                    or not self.last_update_success
-                    else "current" if updated else "unknown"
+                    "stale"
+                    if updated
+                    and (
+                        resource in self.unavailable_resources
+                        or not self.last_update_success
+                    )
+                    else (
+                        "unavailable"
+                        if resource in self.unavailable_resources
+                        or not self.last_update_success
+                        else "current" if updated else "unknown"
+                    )
                 )
             )
         )
@@ -126,9 +131,9 @@ class BsmCoordinator(DataUpdateCoordinator):
         except TimeoutError as error:
             self.unavailable_resources.update(calls)
             raise UpdateFailed("Timed out communicating with BSM") from error
-        # Authentication failures on any endpoint must trigger reauthentication.
+        # Expired credentials trigger reauthentication; forbidden resources do not.
         for result in results:
-            if isinstance(result, AuthError):
+            if isinstance(result, AuthError) and result.status_code != 403:
                 raise ConfigEntryAuthFailed(str(result)) from result
         data = {**self.defaults, **(self.data or {})}
         if generation != self.state.generation:
@@ -137,7 +142,7 @@ class BsmCoordinator(DataUpdateCoordinator):
             data, calls, results, fields, critical, push_generation
         )
         if not successes:
-            if failures:
+            if failures and not set(failures) <= self.forbidden_resources:
                 raise UpdateFailed("No BSM data available: " + ", ".join(failures))
             return data
         data.update(status="success", message="Data updated")
@@ -163,10 +168,14 @@ class BsmCoordinator(DataUpdateCoordinator):
         failures = []
         for key, result in zip(calls, results):
             if isinstance(result, Exception):
+                if isinstance(result, AuthError) and result.status_code == 403:
+                    self.forbidden_resources.add(key)
+                    self.unavailable_resources.add(key)
+                    failures.append(key)
+                    continue
                 self.unavailable_resources.add(key)
                 if key == critical:
                     raise UpdateFailed(str(result)) from result
-                self.unavailable_resources.add(key)
                 failures.append(key)
                 continue
             if push_generation.get(key, 0) != self._push_generation.get(key, 0):
@@ -197,6 +206,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         else:
             value = payload.get(fields[key]) if fields[key] else payload
             data[key] = value if value is not None else self.defaults.get(key)
+        self.forbidden_resources.discard(key)
         self.unavailable_resources.discard(key)
         self.resource_updated_at[key] = time()
         return True
@@ -242,6 +252,8 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
         """Apply a revisioned process snapshot without inventing process values."""
         if not self.state.accept("process_info", payload):
             return
+        self.unavailable_resources.discard("process_info")
+        self.forbidden_resources.discard("process_info")
         self.resource_updated_at["process_info"] = time()
         # Prevent an HTTP poll started before this push from overwriting it.
         for key in ("process_info", "summary"):
@@ -339,7 +351,8 @@ class ManagerDataCoordinator(BsmCoordinator):
                 await discovery.discover()
                 self._discovered = True
             except AuthError as error:
-                raise ConfigEntryAuthFailed(str(error)) from error
+                if error.status_code != 403:
+                    raise ConfigEntryAuthFailed(str(error)) from error
             except Exception:
                 _LOGGER.debug(
                     "Runtime API discovery unavailable; using shipped contracts"

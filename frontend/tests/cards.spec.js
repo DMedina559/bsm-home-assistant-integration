@@ -363,7 +363,7 @@ test("settings preserve boolean and numeric values and block conflicting saves",
   page,
 }) => {
   await mount(page, "bsm-settings-card", { entity: "sensor.version" });
-  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("Application metrics interval").fill("5");
   await page.getByLabel("settings.autostart").check();
   await page.getByRole("button", { name: "Save settings" }).click();
   const changes = await page.evaluate(() =>
@@ -372,7 +372,7 @@ test("settings preserve boolean and numeric values and block conflicting saves",
       .map((r) => r.service_data),
   );
   expect(changes).toContainEqual({
-    key: "monitor.app_interval_seconds",
+    key: "monitoring.app_metrics_interval_sec",
     value: 5,
   });
   expect(changes).toContainEqual({ key: "settings.autostart", value: true });
@@ -382,10 +382,10 @@ test("live application settings detect conflicts without replacing drafts", asyn
   page,
 }) => {
   await mount(page, "bsm-settings-card", { entity: "sensor.version" });
-  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("Application metrics interval").fill("5");
   await page.evaluate(() => {
     window.settingsValues = {
-      monitor: { app_interval_seconds: 9 },
+      monitoring: { app_metrics_interval_sec: 9 },
       settings: { autostart: false },
     };
     window.event({
@@ -395,7 +395,7 @@ test("live application settings detect conflicts without replacing drafts", asyn
     });
   });
   await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
-  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+  await expect(page.getByLabel("Application metrics interval")).toHaveValue(
     "5",
   );
   await expect(
@@ -525,12 +525,12 @@ test("partial settings saves retain failed edits and identify applied changes", 
   page,
 }) => {
   await mount(page, "bsm-settings-card", { entity: "sensor.version" });
-  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("Application metrics interval").fill("5");
   await page.getByLabel("settings.autostart").check();
   await page.evaluate(() => (window.failSetting = "settings.autostart"));
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByLabel("Settings save results")).toContainText(
-    "Monitor.app interval seconds: Saved",
+    "Application metrics interval: Saved",
   );
   await expect(page.getByLabel("Settings save results")).toContainText(
     "Settings.autostart: Failed",
@@ -576,16 +576,16 @@ test("reconnect preserves task outcomes and reloads settings without losing edit
   page,
 }) => {
   await mount(page, "bsm-settings-card", { entity: "sensor.version" });
-  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("Application metrics interval").fill("5");
   await page.evaluate(() => {
     window.settingsValues = {
-      monitor: { app_interval_seconds: 8 },
+      monitoring: { app_metrics_interval_sec: 8 },
       settings: { autostart: false },
     };
     window.readyConnection();
   });
   await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
-  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+  await expect(page.getByLabel("Application metrics interval")).toHaveValue(
     "5",
   );
   expect(await page.evaluate(() => window.subscriptionCount)).toBe(2);
@@ -637,7 +637,7 @@ test("card runtime does not apply an HTTP response from before reconnect", async
   page,
 }) => {
   await mount(page, "bsm-settings-card", { entity: "sensor.version" });
-  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("Application metrics interval").fill("5");
   await page.evaluate(() => {
     window.delayResponse = true;
     window.card.load(true);
@@ -649,7 +649,7 @@ test("card runtime does not apply an HTTP response from before reconnect", async
     window.oldResolve = window.resolveResponse;
     window.delayResponse = false;
     window.settingsValues = {
-      monitor: { app_interval_seconds: 9 },
+      monitoring: { app_metrics_interval_sec: 9 },
       settings: { autostart: false },
     };
     window.readyConnection();
@@ -661,7 +661,9 @@ test("card runtime does not apply an HTTP response from before reconnect", async
         results: [
           {
             manager_url: "http://bsm",
-            result: { settings: { monitor: { app_interval_seconds: 1 } } },
+            result: {
+              settings: { monitoring: { app_metrics_interval_sec: 1 } },
+            },
           },
         ],
       },
@@ -669,10 +671,166 @@ test("card runtime does not apply an HTTP response from before reconnect", async
   );
   expect(
     await page.evaluate(
-      () => window.card.draft.live["monitor.app_interval_seconds"],
+      () => window.card.draft.live["monitoring.app_metrics_interval_sec"],
     ),
   ).toBe(9);
-  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+  await expect(page.getByLabel("Application metrics interval")).toHaveValue(
     "5",
+  );
+});
+
+test("reconnect releases an unacknowledged command without replaying it", async ({
+  page,
+}) => {
+  await mount(page, "bsm-command-card", { entity: "sensor.server" });
+  await page.getByLabel("Command", { exact: true }).fill("say pending");
+  await page.evaluate(() => (window.delayResponse = true));
+  await page.getByRole("button", { name: "Send command" }).click();
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    window.oldResponse = window.resolveResponse;
+    window.delayResponse = false;
+    window.readyConnection();
+  });
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByText(/Check current server or task state/),
+  ).toBeVisible();
+  await page.evaluate(() => window.oldResponse({ response: { results: [] } }));
+  await expect(page.getByLabel("Command", { exact: true })).toHaveValue(
+    "say pending",
+  );
+  expect(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.service === "send_command").length,
+    ),
+  ).toBe(1);
+});
+
+test("manager selectors recover when the version entity is disabled", async ({
+  page,
+}) => {
+  await page.goto("/frontend/tests/fixture.html");
+  await page.waitForFunction(() => window.ready);
+  await page.evaluate(() => {
+    delete window.hass.states["sensor.version"];
+    window.mount("bsm-tasks-card", {});
+  });
+  await expect(page.getByLabel("Manager", { exact: true })).toContainText(
+    /plugin statuses/,
+  );
+  await page
+    .getByLabel("Manager", { exact: true })
+    .selectOption("sensor.manager");
+  expect(await page.evaluate(() => window.card.selection)).toBe(
+    "sensor.manager",
+  );
+});
+
+test("denied live subscriptions show a polling fallback notice", async ({
+  page,
+}) => {
+  await page.goto("/frontend/tests/fixture.html");
+  await page.waitForFunction(() => window.ready);
+  await page.evaluate(() => {
+    window.hass.connection.subscribeEvents = async () => {
+      throw Error("Unauthorized");
+    };
+    window.mount("bsm-command-card", { entity: "sensor.server" });
+  });
+  await expect(
+    page.getByText(/Live event subscription unavailable/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeDisabled();
+  await page.getByLabel("Command", { exact: true }).fill("say allowed");
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeEnabled();
+});
+
+test("task cards and shared history stay bounded", async ({ page }) => {
+  await mount(page, "bsm-tasks-card", { entity: "sensor.version" });
+  await page.evaluate(() => {
+    for (let i = 0; i < 700; i++)
+      window.task({ id: `task-${i}`, status: "completed", revision: 1 });
+  });
+  expect(await page.evaluate(() => window.card.items.size)).toBeLessThanOrEqual(
+    500,
+  );
+  expect(
+    await page.evaluate(() => window.card.runtime.tasks.size),
+  ).toBeLessThanOrEqual(500);
+});
+
+test("reconnect releases pending overview actions", async ({ page }) => {
+  await mount(page, "bsm-overview-card", {});
+  await page.evaluate(() => (window.delayResponse = true));
+  const button = page
+    .locator("section.tile")
+    .filter({ hasText: "Alpha" })
+    .getByRole("button", { name: "Update", exact: true });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await page.evaluate(() => {
+    window.delayResponse = false;
+    window.readyConnection();
+  });
+  await expect(button).toBeEnabled();
+  await expect(
+    page.getByText(/Check current server or task state/),
+  ).toBeVisible();
+});
+
+for (const [tag, entity] of [
+  ["bsm-plugin-settings-card", "sensor.manager"],
+  ["bsm-api-card", "sensor.version"],
+]) {
+  test(`${tag} recovers loading after reconnect`, async ({ page }) => {
+    await page.goto("/frontend/tests/fixture.html");
+    await page.waitForFunction(() => window.ready);
+    await page.evaluate(
+      ([tag, entity]) => {
+        window.delayResponse = true;
+        window.mount(tag, { entity });
+      },
+      [tag, entity],
+    );
+    if (tag === "bsm-plugin-settings-card")
+      await page.getByRole("tab", { name: "Backup" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.card.loading))
+      .toBe(true);
+    await page.evaluate(() => {
+      window.delayResponse = false;
+      window.readyConnection();
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.card.loading))
+      .toBe(false);
+  });
+}
+
+test("content sources cannot cross manager boundaries", async ({ page }) => {
+  await page.goto("/frontend/tests/fixture.html");
+  await page.waitForFunction(() => window.ready);
+  await page.evaluate(() => {
+    window.hass.states["sensor.worlds"].attributes.bsm_manager_url =
+      "http://other-manager";
+    window.mount("bsm-content-card", {
+      entity: "sensor.server",
+      content_source_sensor_entity: "sensor.worlds",
+    });
+  });
+  await expect(page.getByLabel("File", { exact: true })).not.toContainText(
+    "new.mcworld",
+  );
+  await expect(page.getByRole("button", { name: "Install world" })).toHaveCount(
+    0,
   );
 });

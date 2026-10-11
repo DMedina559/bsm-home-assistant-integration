@@ -116,7 +116,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             self._api_client_instance = None
 
     def _get_manager_display_name(self) -> str:
-        """Helper to get a display string for the manager (host or host:port)."""
+        """Return the configured manager URL for display."""
         return str(self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL"))
 
     async def async_step_init(
@@ -145,7 +145,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         manager_display_name = self._get_manager_display_name()
 
         if user_input is not None:
-            # Create a temporary data dict for validation, including existing host/port/ssl/verify_ssl
+            # Validate updated credentials with the existing base URL and TLS options.
             validation_data = {
                 CONF_BASE_URL: self.config_entry.data[CONF_BASE_URL],
                 CONF_VERIFY_SSL: self.config_entry.data.get(

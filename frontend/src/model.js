@@ -50,14 +50,25 @@ export function deviceId(hass, entityId) {
   );
 }
 export function entities(hass, role, key) {
-  return Object.entries(hass?.states || {})
-    .filter(
-      ([id, s]) =>
-        s.attributes?.bsm_role === role &&
-        (!key || entityKey(hass, id) === key),
-    )
+  const rows = Object.entries(hass?.states || {}).filter(
+    ([, s]) => s.attributes?.bsm_role === role,
+  );
+  if (role === "manager" && key === "bsm_version") {
+    const byDevice = new Map();
+    for (const row of rows) {
+      const identity =
+        deviceId(hass, row[0]) || row[1].attributes.bsm_manager_url;
+      if (!identity) continue;
+      if (!byDevice.has(identity) || entityKey(hass, row[0]) === key)
+        byDevice.set(identity, row);
+    }
+    return [...byDevice.values()].sort(([a], [b]) => a.localeCompare(b));
+  }
+  return rows
+    .filter(([id]) => !key || entityKey(hass, id) === key)
     .sort(([a], [b]) => a.localeCompare(b));
 }
+
 export function related(hass, anchor, key) {
   const anchorDevice = deviceId(hass, anchor);
   return Object.entries(hass?.states || {}).find(

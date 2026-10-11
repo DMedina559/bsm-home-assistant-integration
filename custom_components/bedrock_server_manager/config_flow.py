@@ -293,7 +293,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
                 ),
             )
 
-            # self._connection_data contains the original user input (host, port as float/int/None, user, pass, ssl flags)
+            # Retain the submitted base URL, credentials and TLS options.
             # This is what gets stored in config_entry.data
             return self.async_create_entry(
                 title=title,  # Use the cleaned title

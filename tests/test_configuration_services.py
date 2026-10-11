@@ -17,7 +17,9 @@ from custom_components.bedrock_server_manager.const import DOMAIN
 
 @pytest.mark.asyncio
 async def test_server_setting_retains_json_types_and_refreshes_target(hass, api):
-    coordinator = SimpleNamespace(invalidate=Mock(), async_request_refresh=AsyncMock())
+    coordinator = SimpleNamespace(
+        hass=hass, api=api, invalidate=Mock(), async_request_refresh=AsyncMock()
+    )
     api.servers.async_set_server_setting = AsyncMock(
         return_value=ServerSettingsResponse(
             status="success", settings={"settings": {"autostart": True}}
@@ -43,6 +45,7 @@ async def test_server_setting_retains_json_types_and_refreshes_target(hass, api)
     assert isinstance(payload, ServerSettingItemPayload)
     assert payload.value is True
     assert response["results"][0]["result"]["settings"]["settings"]["autostart"] is True
+    await hass.async_block_till_done()
     coordinator.async_request_refresh.assert_awaited_once()
 
 

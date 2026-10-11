@@ -6,7 +6,8 @@ from typing import Any
 class ResourceState:
     """Reject snapshots overtaken by events, older revisions, or retired epochs."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int = 500) -> None:
+        self.limit = limit
         self.generation = 0
         self.epoch: str | None = None
         self.retired_epochs: set[str] = set()
@@ -40,5 +41,8 @@ class ResourceState:
             self.generation += 1
         if revision < self.revisions.get(resource, -1):
             return False
+        self.revisions.pop(resource, None)
         self.revisions[resource] = revision
+        if len(self.revisions) > self.limit:
+            self.revisions.pop(next(iter(self.revisions)))
         return True

@@ -62,6 +62,8 @@ def _api_error_details(err: APIError | ValueError) -> str:
     """Describe an SDK failure without exposing transport internals."""
     if isinstance(err, ValueError):
         return f"Invalid input value provided. ({err})"
+    if isinstance(err, AuthError) and err.status_code == 403:
+        return "The BSM account does not have permission for this action"
     descriptions = (
         (ServerNotRunningError, "Server is not running"),
         (ServerNotFoundError, "Target server not found by API"),

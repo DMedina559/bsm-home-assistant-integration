@@ -19,7 +19,13 @@ class ApiCard extends BsmCard {
     this.parameters = "{}";
     this.body = "";
   }
+  reconnected() {
+    super.reconnected();
+    this.loading = false;
+    if (this.available) this.discover();
+  }
   selectedChanged() {
+    this.loading = false;
     this.operations = [];
     this.operation = "";
     this.result = null;

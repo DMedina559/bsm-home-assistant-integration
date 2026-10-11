@@ -14,6 +14,7 @@ from .configuration_services import (
     unregister_configuration_services,
 )
 from .const import DOMAIN
+from .reconcile import refresh_after_action
 from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets
 
@@ -27,26 +28,34 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
     """Read schemas or validate updates through the plugin's declared API contract."""
     targets = await resolve_manager_targets(call, hass)
     result = []
+    errors = []
     for entry_id in sorted(targets):
         data = hass.data[DOMAIN][entry_id]
         plugin_name = call.data["plugin_name"]
         plugin = (data["manager_coordinator"].data.get("plugins_status") or {}).get(
             plugin_name
         )
-        if not plugin or not plugin.get("has_settings"):
-            raise ServiceValidationError(
-                f"Plugin '{plugin_name}' does not declare settings"
-            )
         try:
+            if not plugin or not plugin.get("has_settings"):
+                raise ServiceValidationError(
+                    f"Plugin '{plugin_name}' does not declare settings"
+                )
             if call.service == "update_plugin_settings":
                 await data["api"].plugins.async_update_plugin_settings(
                     plugin_name, PluginSettingsPayload(settings=call.data["settings"])
                 )
-                data["manager_coordinator"].invalidate({})
-                await data["manager_coordinator"].async_request_refresh()
+                refresh_after_action(data["manager_coordinator"])
             response = await data["api"].plugins.async_get_plugin_settings(plugin_name)
-        except APIError as error:
-            raise HomeAssistantError(str(error)) from error
+        except (APIError, ValueError, HomeAssistantError) as error:
+            errors.append(error)
+            result.append(
+                {
+                    "manager_url": data["manager_identifier"][1],
+                    "plugin_name": plugin_name,
+                    "error": {"message": str(error)},
+                }
+            )
+            continue
         result.append(
             {
                 "manager_url": data["manager_identifier"][1],
@@ -54,6 +63,12 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
                 **response.model_dump(mode="json"),
             }
         )
+    if errors and len(errors) == len(result):
+        if isinstance(errors[0], HomeAssistantError):
+            raise errors[0]
+        raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
+            0
+        ]
     return {"managers": result}
 
 
@@ -103,6 +118,7 @@ async def task_action(hass: HomeAssistant, call: ServiceCall) -> dict:
     """Return current typed task outcomes visible to each targeted manager account."""
     targets = await resolve_manager_targets(call, hass)
     managers = []
+    errors = []
     for entry_id in sorted(targets):
         data = hass.data[DOMAIN][entry_id]
         try:
@@ -115,6 +131,17 @@ async def task_action(hass: HomeAssistant, call: ServiceCall) -> dict:
                 tasks = await data["api"].tasks.async_list_tasks()
                 outcome = {"tasks": [task.model_dump(mode="json") for task in tasks]}
         except APIError as error:
-            raise HomeAssistantError(str(error)) from error
+            errors.append(error)
+            managers.append(
+                {
+                    "manager_url": data["manager_identifier"][1],
+                    "error": {"message": str(error)},
+                }
+            )
+            continue
         managers.append({"manager_url": data["manager_identifier"][1], **outcome})
+    if errors and len(errors) == len(managers):
+        raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
+            0
+        ]
     return {"managers": managers}

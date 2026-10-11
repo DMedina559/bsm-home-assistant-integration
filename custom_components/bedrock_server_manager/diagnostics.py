@@ -1,16 +1,14 @@
-# custom_components/bedrock_server_manager/diagnostics.py
 """Diagnostics support for Bedrock Server Manager."""
 
-from __future__ import annotations  # Ensures all type hints are forward references
+from __future__ import annotations
 
 import logging
-from typing import List  # Added cast for type hinting clarity
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
-from bsm_api_client import BedrockServerManagerApi  # For type hinting
+from bsm_api_client import BedrockServerManagerApi
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME  # Standard HA constants
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
@@ -24,8 +22,7 @@ from homeassistant.helpers.entity_registry import (
 )
 from homeassistant.helpers.entity_registry import async_get as er_async_get
 
-# --- IMPORT FROM LOCAL MODULES ---
-from .const import DOMAIN  # CONF_SERVER_NAMES is not directly used here
+from .const import DOMAIN
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 from .utils import device_config_entry_ids
 
@@ -45,6 +42,8 @@ TO_REDACT_CONFIG = {
     "access_token",
     "refresh_token",
     "jwt_token",
+    "jwt_secret_key",
+    "web.jwt_secret_key",
     "_jwt_token",
     "api_key",
     "secret",
@@ -318,9 +317,7 @@ async def async_get_device_diagnostics(
     # Find the identifier that belongs to our DOMAIN to identify if it's a manager or server device
     for identifier_tuple in device.identifiers:
         if identifier_tuple[0] == DOMAIN:
-            device_primary_id_value = identifier_tuple[
-                1
-            ]  # This is e.g., "host:port" or "servername_host:port"
+            device_primary_id_value = identifier_tuple[1]
             break
 
     if device_primary_id_value:

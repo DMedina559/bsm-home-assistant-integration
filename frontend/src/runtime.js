@@ -51,6 +51,7 @@ class CardRuntime {
   start() {
     const generation = ++this.generation;
     this.unsubscribers = [];
+    let subscribed = 0;
     for (const [type, event] of [
       ["task", `${DOMAIN}_task_update`],
       ["event", `${DOMAIN}_event`],
@@ -64,7 +65,10 @@ class CardRuntime {
         }, event)
         .then((unsubscribe) => {
           if (generation !== this.generation) unsubscribe();
-          else this.unsubscribers.push(unsubscribe);
+          else {
+            this.unsubscribers.push(unsubscribe);
+            if (++subscribed === 2) this.emit("subscription_ok", {});
+          }
         })
         .catch(() => {
           if (generation === this.generation)
@@ -86,7 +90,13 @@ class CardRuntime {
     this.inflight.clear();
   }
   emit(type, data) {
-    for (const listener of this.owners) listener(type, data);
+    for (const listener of this.owners) {
+      try {
+        listener(type, data);
+      } catch (error) {
+        console.error("BSM card update failed", error);
+      }
+    }
   }
   accept(task) {
     if (
@@ -125,6 +135,7 @@ class CardRuntime {
       retired.add(previous.epoch);
     if (!stamped && previous && terminal(previous) && !terminal(task)) return;
     this.retired.set(key, retired);
+    this.tasks.delete(key);
     this.tasks.set(key, task);
     if (this.tasks.size > 500) {
       const oldest = this.tasks.keys().next().value;

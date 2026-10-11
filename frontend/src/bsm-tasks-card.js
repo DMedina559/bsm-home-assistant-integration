@@ -58,10 +58,17 @@ class TasksCard extends BsmCard {
     const state = this.state;
     return state?.attributes.bsm_manager_url || this._managerUrl;
   }
+  pruneItems() {
+    for (const id of this.items.keys())
+      if (!this.runtime.tasks.has(`${this.managerUrl()}:${id}`))
+        this.items.delete(id);
+  }
   _taskUpdate(task) {
     super._taskUpdate(task);
     if (!this.managerUrl() || task.manager_url !== this.managerUrl()) return;
+    this.items.delete(task.id);
     this.items.set(task.id, task);
+    this.pruneItems();
     this.requestUpdate();
   }
   async load() {
@@ -89,6 +96,7 @@ class TasksCard extends BsmCard {
           managerUrl: this.managerUrl(),
           all: true,
         });
+      this.pruneItems();
       this.error = "";
     } catch (error) {
       if (generation === this._generation)

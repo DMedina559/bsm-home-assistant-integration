@@ -1,7 +1,14 @@
-import{b as u,f,g as n,j as $,k as m}from"./shared-EVDKEACZ.js";function p(d,e){return d?.$ref?.startsWith("#/")?d.$ref.slice(2).split("/").reduce((i,t)=>i?.[t],e)||d:d?.anyOf?p(d.anyOf.find(i=>i.type!=="null")||d,e):d||{}}var b=class extends m{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.plugin="",this.schema=null,this.loading=!1}selectedChanged(){this.plugin="",this.schema=null,this.loading=!1}async load(e,i=!1){if(this.draft.dirty&&e!==this.plugin){this.error="Discard or save your edits before switching plugins.";return}let t=this._generation,a=this._request=(this._request||0)+1;this.plugin=e,this.loading=!0,this.error="";try{let l=await this.responseService("get_plugin_settings",{plugin_name:e});if(t!==this._generation||a!==this._request)return;let h=l.managers?.[0];if(!h)throw Error("No plugin settings were returned.");this.schema=h.settings_schema||{type:"object",properties:Object.fromEntries(Object.entries(h.settings).map(([o,r])=>[o,{title:u(o),type:Array.isArray(r)?"array":typeof r=="boolean"?"boolean":typeof r=="number"?"number":r!==null&&typeof r=="object"?"object":"string"}]))},i?this.draft.update(h.settings):this.draft.reset(h.settings),this.revision++}catch(l){t===this._generation&&a===this._request&&(this.error=l.message||String(l))}finally{t===this._generation&&a===this._request&&(this.loading=!1)}}syncState(){let e=this.state;this.plugin&&this.available&&e!==this._lastState&&!this.busy&&!this.loading&&this.load(this.plugin,!0),this._lastState=e}edit(e,i,t){try{let a=e.split("."),l=a.shift(),h=f(i,t);if(!a.length)this.draft.set(l,h);else{let o=structuredClone(this.draft.value[l]||{}),r=o;for(let s of a.slice(0,-1))r=r[s]||={};r[a.at(-1)]=h,this.draft.set(l,o)}this.error=""}catch(a){this.error=`${u(e)}: ${a.message}`}this.requestUpdate()}field(e,i){let t=p(i,this.schema),a=e.split(".").reduce((s,c)=>s?.[c],this.draft.value)??t.default,l=t.title||u(e),h=t.description,o=p(t.items,this.schema),r;return t.type==="object"&&t.properties?r=n`<fieldset ?disabled=${this.busy||this.loading}>
+import{b as c,f,g as n,j as $,k as m}from"./shared-7UTSRN4G.js";function p(d,e){return d?.$ref?.startsWith("#/")?d.$ref.slice(2).split("/").reduce((i,t)=>i?.[t],e)||d:d?.anyOf?p(d.anyOf.find(i=>i.type!=="null")||d,e):d||{}}var b=class extends m{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.plugin="",this.schema=null,this.loading=!1}reconnected(){super.reconnected(),this.loading=!1,this.plugin&&this.available&&this.load(this.plugin,!0)}input(e,i,t,a="text"){return n`<label
+      >${e}<input
+        aria-label=${e}
+        type=${a}
+        .value=${String(i??"")}
+        ?disabled=${this.busy||this.loading}
+        @input=${l=>t(l.target.value)}
+    /></label>`}selectedChanged(){this.plugin="",this.schema=null,this.loading=!1}async load(e,i=!1){if(this.draft.dirty&&e!==this.plugin){this.error="Discard or save your edits before switching plugins.";return}let t=this._generation,a=this._request=(this._request||0)+1;this.plugin=e,this.loading=!0,this.error="";try{let l=await this.responseService("get_plugin_settings",{plugin_name:e});if(t!==this._generation||a!==this._request)return;let h=l.managers?.[0];if(!h)throw Error("No plugin settings were returned.");this.schema=h.settings_schema||{type:"object",properties:Object.fromEntries(Object.entries(h.settings).map(([o,r])=>[o,{title:c(o),type:Array.isArray(r)?"array":typeof r=="boolean"?"boolean":typeof r=="number"?"number":r!==null&&typeof r=="object"?"object":"string"}]))},i?this.draft.update(h.settings):this.draft.reset(h.settings),this.revision++}catch(l){t===this._generation&&a===this._request&&(this.error=l.message||String(l))}finally{t===this._generation&&a===this._request&&(this.loading=!1)}}syncState(){let e=this.state;this.plugin&&this.available&&e!==this._lastState&&!this.busy&&!this.loading&&this.load(this.plugin,!0),this._lastState=e}edit(e,i,t){try{let a=e.split("."),l=a.shift(),h=f(i,t);if(!a.length)this.draft.set(l,h);else{let o=structuredClone(this.draft.value[l]||{}),r=o;for(let s of a.slice(0,-1))r=r[s]||={};r[a.at(-1)]=h,this.draft.set(l,o)}this.error=""}catch(a){this.error=`${c(e)}: ${a.message}`}this.requestUpdate()}field(e,i){let t=p(i,this.schema),a=e.split(".").reduce((s,u)=>s?.[u],this.draft.value)??t.default,l=t.title||c(e),h=t.description,o=p(t.items,this.schema),r;return t.type==="object"&&t.properties?r=n`<fieldset ?disabled=${this.busy||this.loading}>
         <legend>${l}</legend>
         <div class="grid">
-          ${Object.entries(t.properties).map(([s,c])=>this.field(`${e}.${s}`,c))}
+          ${Object.entries(t.properties).map(([s,u])=>this.field(`${e}.${s}`,u))}
         </div>
       </fieldset>`:t.type==="array"&&o.enum?r=n`<fieldset ?disabled=${this.busy||this.loading}>
         <legend>${l}</legend>
@@ -11,7 +18,7 @@ import{b as u,f,g as n,j as $,k as m}from"./shared-EVDKEACZ.js";function p(d,e){
                 type="checkbox"
                 aria-label=${String(s)}
                 .checked=${(a||[]).includes(s)}
-                @change=${c=>{let g=new Set(a||[]);c.target.checked?g.add(s):g.delete(s),this.edit(e,[...g],t)}}
+                @change=${u=>{let g=new Set(a||[]);u.target.checked?g.add(s):g.delete(s),this.edit(e,[...g],t)}}
               />${s}</label
             >`)}
       </fieldset>`:t.type==="boolean"?r=n`<label class="row"
@@ -23,7 +30,9 @@ import{b as u,f,g as n,j as $,k as m}from"./shared-EVDKEACZ.js";function p(d,e){
           ?disabled=${this.busy||this.loading}
           @change=${s=>this.edit(e,s.target.checked,t)}
         />${l}</label
-      >`:t.enum?r=this.selectInput(l,a,t.enum.map(s=>({value:String(s),label:String(s)})),s=>this.edit(e,s,t)):["object","array"].includes(t.type)?r=n`<label
+      >`:t.enum?r=n`<fieldset ?disabled=${this.busy||this.loading}>
+        ${this.selectInput(l,a,t.enum.map(s=>({value:String(s),label:String(s)})),s=>this.edit(e,s,t))}
+      </fieldset>`:["object","array"].includes(t.type)?r=n`<label
         >${l} (JSON)<textarea
           aria-label=${l}
           .value=${JSON.stringify(a??(t.type==="array"?[]:{}),null,2)}

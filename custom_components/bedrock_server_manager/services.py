@@ -109,6 +109,7 @@ from .manager_actions import (
     _async_handle_set_plugin_enabled,
     _async_handle_trigger_plugin_event,
 )
+from .reconcile import SERVER_RESOURCES, refresh_after_action
 from .server_actions import (
     _async_handle_add_server_ban,
     _async_handle_add_to_allowlist,
@@ -418,43 +419,36 @@ async def _execute_targeted_service(
 ):
     """Run every selected server action and reconcile state even without WebSockets."""
     targets = await resolve_server_targets(service_call, hass)
-    calls = []
-    for entry_id, name in targets:
-        data = hass.data[DOMAIN][entry_id]
-        calls.append(
-            handler_coro(
-                data["api"],
-                name,
-                *handler_args,
-                **_action_kwargs(handler_coro, data["manager_identifier"][1]),
-            )
+    contexts = [
+        (entry_id, name, hass.data[DOMAIN][entry_id]) for entry_id, name in targets
+    ]
+    calls = [
+        handler_coro(
+            data["api"],
+            name,
+            *handler_args,
+            **_action_kwargs(handler_coro, data["manager_identifier"][1]),
         )
+        for _, name, data in contexts
+    ]
     results = await asyncio.gather(*calls, return_exceptions=True)
-    refreshes = []
-    for (entry_id, name), result in zip(targets, results):
+    outcomes = []
+    for (_, name, data), result in zip(contexts, results):
         if not isinstance(result, Exception):
-            coordinator = (
-                hass.data.get(DOMAIN, {})
-                .get(entry_id, {})
-                .get("servers", {})
-                .get(name, {})
-                .get("coordinator")
+            refresh_after_action(
+                data.get("servers", {}).get(name, {}).get("coordinator"),
+                SERVER_RESOURCES.get(service_call.service),
             )
-            if coordinator:
-                coordinator.invalidate({})
-                refreshes.append(coordinator.async_request_refresh())
-    await asyncio.gather(*refreshes)
-    _raise_action_errors(results)
-    return {
-        "results": [
+        outcomes.append(
             {
-                "manager_url": hass.data[DOMAIN][entry_id]["manager_identifier"][1],
+                "manager_url": data["manager_identifier"][1],
                 "server_name": name,
-                "result": json_data(result),
+                **_outcome(result),
             }
-            for (entry_id, name), result in zip(targets, results)
-        ]
-    }
+        )
+    if all(isinstance(result, Exception) for result in results):
+        _raise_action_errors(results)
+    return {"results": outcomes}
 
 
 async def _execute_manager_targeted_service(
@@ -465,38 +459,38 @@ async def _execute_manager_targeted_service(
 ):
     """Supply typed action context and refresh successfully changed manager resources."""
     targets = await resolve_manager_targets(service_call, hass)
-    calls = []
-    for entry_id in targets:
-        data = hass.data[DOMAIN][entry_id]
-        calls.append(
+    contexts = [hass.data[DOMAIN][entry_id] for entry_id in targets]
+    results = await asyncio.gather(
+        *(
             handler_coro(
                 data["api"],
                 *handler_args,
                 **_action_kwargs(handler_coro, data["manager_identifier"][1]),
             )
+            for data in contexts
+        ),
+        return_exceptions=True,
+    )
+    outcomes = []
+    for data, result in zip(contexts, results):
+        if not isinstance(result, Exception):
+            for key in ("manager_coordinator", "monitor_coordinator"):
+                refresh_after_action(data.get(key))
+        outcomes.append(
+            {"manager_url": data["manager_identifier"][1], **_outcome(result)}
         )
-    results = await asyncio.gather(*calls, return_exceptions=True)
-    refreshes = []
-    for entry_id, result in zip(targets, results):
-        if isinstance(result, Exception):
-            continue
-        data = hass.data.get(DOMAIN, {}).get(entry_id, {})
-        for key in ("manager_coordinator", "monitor_coordinator"):
-            coordinator = data.get(key)
-            if coordinator:
-                coordinator.invalidate({})
-                refreshes.append(coordinator.async_request_refresh())
-    await asyncio.gather(*refreshes)
-    _raise_action_errors(results)
-    return {
-        "results": [
-            {
-                "manager_url": hass.data[DOMAIN][entry_id]["manager_identifier"][1],
-                "result": json_data(result),
-            }
-            for entry_id, result in zip(targets, results)
-        ]
-    }
+    if all(isinstance(result, Exception) for result in results):
+        _raise_action_errors(results)
+    return {"results": outcomes}
+
+
+def _outcome(result: Any) -> dict:
+    """Retain successful target outcomes when another target fails."""
+    return (
+        {"error": {"message": str(result)}, "status": "failed"}
+        if isinstance(result, Exception)
+        else {"result": json_data(result)}
+    )
 
 
 def _raise_action_errors(results: list[Any]) -> None:
@@ -1094,83 +1088,16 @@ async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAss
     )
 
 
-async def async_handle_configure_os_service_service(  # noqa: C901
+async def async_handle_configure_os_service_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    autoupdate_val = service.data[FIELD_AUTOUPDATE]
-    autostart_val = service.data.get(FIELD_AUTOSTART)
-
-    try:
-        resolved_targets = await resolve_server_targets(service, hass)
-    except (HomeAssistantError, ServiceValidationError) as e:
-        _LOGGER.error("Failed to resolve targets for configure_os_service: %s", e)
-        raise
-
-    tasks = []
-    queue_errors: list[Exception] = []
-    processed_targets_info = []
-    for config_entry_id, server_name in resolved_targets:
-        try:
-            entry_data = hass.data[DOMAIN][config_entry_id]
-            api_client: BedrockServerManagerApi = entry_data["api"]
-            manager_host_port_id = entry_data["manager_identifier"][1]
-            manager_os_type = entry_data.get("manager_os_type", "unknown").lower()
-
-            payload: Dict[str, bool] = {FIELD_AUTOUPDATE: autoupdate_val}
-            if autostart_val is not None:
-                if manager_os_type == "linux":
-                    payload[FIELD_AUTOSTART] = autostart_val
-                else:
-                    _LOGGER.warning(
-                        "Autostart config for server '%s' (manager '%s') ignored as manager OS '%s' is not Linux, but %s was provided.",
-                        server_name,
-                        manager_host_port_id,
-                        manager_os_type,
-                        FIELD_AUTOSTART,
-                    )
-
-            tasks.append(
-                _async_handle_configure_os_service(
-                    api_client, server_name, payload, manager_host_port_id
-                )
-            )
-            processed_targets_info.append(
-                {
-                    "cid": config_entry_id,
-                    "sname": server_name,
-                    "manager_id": manager_host_port_id,
-                }
-            )
-        except KeyError as err:
-            queue_errors.append(err)
-            _LOGGER.error(
-                "Data missing for config entry %s (server %s) for OS service config. Skipping.",
-                config_entry_id,
-                server_name,
-            )
-        except Exception as err:
-            queue_errors.append(err)
-            _LOGGER.exception(
-                "Error queueing configure_os_service for server %s (entry %s)",
-                server_name,
-                config_entry_id,
-            )
-
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, result in enumerate(results):
-            target_info = processed_targets_info[i]
-            if isinstance(result, Exception):
-                _LOGGER.debug(
-                    "OS Service config for server '%s' (manager '%s') resulted in an exception (already logged by handler): %s",
-                    target_info["sname"],
-                    target_info["manager_id"],
-                    type(result).__name__,
-                )
-
-        _raise_action_errors([*queue_errors, *results])
-    else:
-        _raise_action_errors(queue_errors)
+    """Keep the existing action name while updating typed server settings."""
+    payload: Dict[str, bool] = {FIELD_AUTOUPDATE: service.data[FIELD_AUTOUPDATE]}
+    if FIELD_AUTOSTART in service.data:
+        payload[FIELD_AUTOSTART] = service.data[FIELD_AUTOSTART]
+    return await _execute_targeted_service(
+        service, hass, _async_handle_configure_os_service, payload
+    )
 
 
 async def async_handle_add_global_players_service(

@@ -33,6 +33,16 @@ class SettingsCard extends BsmCard {
     });
     return form;
   }
+  setConfig(config) {
+    const scopeChanged = this.config && this.config.scope !== config.scope;
+    super.setConfig(config);
+    if (scopeChanged) {
+      this._generation++;
+      this.selectedChanged();
+      this.draft.reset({});
+      this.syncState();
+    }
+  }
   _eventUpdate(envelope) {
     if (!this._managerUrl || envelope?.manager_url !== this._managerUrl) return;
     const name = envelope.event || envelope.topic?.replace("event:", "");
@@ -94,6 +104,16 @@ class SettingsCard extends BsmCard {
     this.saving = false;
   }
   syncState() {
+    const stamp = this.state?.attributes.bsm_settings_revision;
+    if (
+      this.available &&
+      this._loaded === this.selection &&
+      stamp !== this._stateStamp
+    ) {
+      if (this.loading || this.saving) this._reloadPending = true;
+      else this.load(true);
+    }
+    this._stateStamp = stamp;
     if (this.available && this._loaded !== this.selection) {
       this._loaded = this.selection;
       this.load();
@@ -226,7 +246,7 @@ class SettingsCard extends BsmCard {
         ></textarea>
       </label>`;
     return this.input(
-      label(key),
+      field.label || label(key),
       value,
       edit,
       field.type === "password"
@@ -270,7 +290,7 @@ class SettingsCard extends BsmCard {
         ${
           this.saveResults?.length
             ? html`<ul aria-label="Settings save results">
-                ${this.saveResults.map((result) => html`<li>${label(result.key)}: ${result.success ? "Saved" : "Failed"}</li>`)}
+                ${this.saveResults.map((result) => html`<li>${settingField(result.key).label || label(result.key)}: ${result.success ? "Saved" : "Failed"}</li>`)}
               </ul>`
             : ""
         }

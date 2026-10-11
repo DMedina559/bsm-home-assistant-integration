@@ -112,6 +112,8 @@ async def test_manager_action_can_target_a_sensor_entity(hass):
 @pytest.mark.asyncio
 async def test_plugin_settings_use_typed_payloads_and_return_schema(hass, api):
     coordinator = SimpleNamespace(
+        hass=hass,
+        api=api,
         data={"plugins_status": {"backup": {"has_settings": True}}},
         invalidate=Mock(),
         async_request_refresh=AsyncMock(),
@@ -169,7 +171,7 @@ async def test_service_registry_exposes_missing_actions_and_validates_typed_valu
         assert hass.services.has_service(DOMAIN, name)
     assert (
         SET_GLOBAL_SETTING_SERVICE_SCHEMA(
-            {"key": "monitor.app_interval_seconds", "value": 3}
+            {"key": "monitoring.app_metrics_interval_sec", "value": 3}
         )["value"]
         == 3
     )
@@ -182,7 +184,9 @@ async def test_global_settings_action_receives_manager_context_and_refreshes(has
         _execute_manager_targeted_service,
     )
 
-    coordinator = SimpleNamespace(invalidate=Mock(), async_request_refresh=AsyncMock())
+    coordinator = SimpleNamespace(
+        hass=hass, api=api, invalidate=Mock(), async_request_refresh=AsyncMock()
+    )
     hass.data[DOMAIN] = {
         "entry": {
             "api": api,
@@ -200,10 +204,11 @@ async def test_global_settings_action_receives_manager_context_and_refreshes(has
             call,
             hass,
             _async_handle_set_global_setting,
-            "monitor.app_interval_seconds",
+            "monitoring.app_metrics_interval_sec",
             3,
         )
     assert api.application.async_set_setting.call_args.args[0].value == 3
+    await hass.async_block_till_done()
     coordinator.async_request_refresh.assert_awaited_once()
 
 

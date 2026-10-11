@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 from bsm_api_client import (
     APIError,
@@ -33,6 +33,7 @@ from .coordinator import (
     MinecraftBedrockCoordinator,
 )
 from .frontend import BsmFrontendRegistration
+from .runtime import EntryRuntime
 from .websocket import MANAGER_EVENTS, SERVER_EVENTS, BsmWebSocketManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +88,9 @@ async def _async_setup_entry(  # noqa: C901
         verify_ssl=verify_ssl,
         session=async_get_clientsession(hass, verify_ssl=verify_ssl),
     )
+    runtime = EntryRuntime()
+    api_client = cast(BedrockServerManagerApi, runtime.transport(api_client))
+    hass.data[DOMAIN][entry.entry_id]["runtime"] = runtime
     hass.data[DOMAIN][entry.entry_id]["api"] = api_client
     _LOGGER.debug(
         "BedrockServerManagerApi client initialized for %s (Verify SSL: %s)",
@@ -382,10 +386,8 @@ async def _async_cleanup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Release runtime resources without removing shared dashboard modules."""
     domain_data = hass.data.get(DOMAIN, {})
     entry_data = domain_data.get(entry.entry_id, {})
-    start_task = entry_data.get("ws_start_task")
-    if start_task:
-        start_task.cancel()
-        await asyncio.gather(start_task, return_exceptions=True)
+    if runtime := entry_data.get("runtime"):
+        await runtime.shutdown()
     cleanup_calls = []
     if ws_manager := entry_data.get("ws_manager"):
         cleanup_calls.append(ws_manager.async_stop())

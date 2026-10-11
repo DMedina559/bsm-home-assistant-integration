@@ -27,6 +27,11 @@ class ContentCard extends BsmCard {
     this.canUpload = false;
     this._checked = "";
   }
+  reconnected() {
+    super.reconnected();
+    this._checked = "";
+    if (this.available) this.syncState();
+  }
   syncState() {
     if (!this.available || this._checked === this.selection) return;
     this._checked = this.selection;
@@ -43,12 +48,15 @@ class ContentCard extends BsmCard {
       });
   }
   render() {
+    const manager = this.state?.attributes.bsm_manager_url;
     const sources = Object.entries(this.hass?.states || {}).filter(
       ([, s]) =>
-        s.attributes.available_worlds_list ||
-        s.attributes.available_addons_list,
+        manager &&
+        s.attributes.bsm_manager_url === manager &&
+        (s.attributes.available_worlds_list ||
+          s.attributes.available_addons_list),
     );
-    const source = this.hass?.states[this.source],
+    const source = sources.find(([id]) => id === this.source)?.[1],
       type = source?.attributes.available_worlds_list ? "world" : "addon";
     const files = (
       source?.attributes.available_worlds_list ||

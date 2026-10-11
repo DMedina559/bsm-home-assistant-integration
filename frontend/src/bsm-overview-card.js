@@ -100,6 +100,8 @@ class OverviewCard extends BsmCard {
           entity_id: id,
         });
         if (generation !== this._generation) return;
+        const failure = response.results?.find((result) => result.error);
+        if (failure) throw Error(failure.error.message);
         let pending = false;
         for (const result of response.results || [])
           if (result.result?.task_id) {
@@ -155,9 +157,19 @@ class OverviewCard extends BsmCard {
   }
   reconnected() {
     super.reconnected();
-    for (const [id, operation] of this.operations)
-      if (operation.task)
-        this._watchTask({ target: { entity_id: id }, task: operation.task });
+    this.operations = new Map(this.operations);
+    for (const [id, operation] of this.operations) {
+      if (operation.task) {
+        const cached = this.runtime.tasks.get(operation.key);
+        if (cached) this._taskUpdate(cached);
+        if (this.operations.has(id))
+          this._watchTask({ target: { entity_id: id }, task: operation.task });
+      } else {
+        this.operations.delete(id);
+        this.cardFeedback =
+          "Connection changed during the request. Check current server or task state before retrying.";
+      }
+    }
   }
   frame(body, options) {
     const confirmation = this.confirmation;

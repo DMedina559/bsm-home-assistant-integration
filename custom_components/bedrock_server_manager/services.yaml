@@ -32,11 +32,11 @@ set_global_setting:
         text: {}
     value:
       name: Setting Value
-      description: "The new value for the setting. For complex values (like lists or objects), ensure correct YAML/JSON formatting if inputting as text. Simple values like strings, numbers, booleans can be entered directly."
+      description: "The new value for the setting. Use a YAML scalar, list or object to preserve the required setting type."
       required: true
       example: "INFO" # Could be a number like 11326, or a boolean like true, or a JSON string like '["item1", "item2"]'
       selector:
-        text: {} # Using text selector for flexibility with 'Any' type. User must format complex types correctly.
+        object: {}
 
 reload_global_settings:
   name: Reload Global Settings

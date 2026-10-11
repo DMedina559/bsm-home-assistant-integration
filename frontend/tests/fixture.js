@@ -273,7 +273,7 @@ window.hass = {
               manager_url: "http://bsm",
               result: {
                 settings: window.settingsValues || {
-                  monitor: { app_interval_seconds: 3 },
+                  monitoring: { app_metrics_interval_sec: 3 },
                   settings: { autostart: false },
                 },
               },
@@ -286,7 +286,7 @@ window.hass = {
       request.service === "set_server_setting"
     ) {
       window.settingsValues ||= {
-        monitor: { app_interval_seconds: 3 },
+        monitoring: { app_metrics_interval_sec: 3 },
         settings: { autostart: false },
       };
       const parts = request.service_data.key.split(".");

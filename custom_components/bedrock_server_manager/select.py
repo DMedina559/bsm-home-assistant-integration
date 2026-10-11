@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import MinecraftBedrockCoordinator
+from .reconcile import refresh_after_action
 
 
 async def async_setup_entry(
@@ -102,5 +103,4 @@ class UpdateChannelSelect(CoordinatorEntity[MinecraftBedrockCoordinator], Select
             )
         except (APIError, ValueError) as error:
             raise HomeAssistantError(str(error)) from error
-        self.coordinator.invalidate({}, {"server_settings"})
-        await self.coordinator.async_request_refresh()
+        refresh_after_action(self.coordinator, {"server_settings", "summary"})
