@@ -193,6 +193,8 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             "websocket_connected": monitor.websocket_connected,
             "data": monitor.data,
             "unavailable_resources": sorted(monitor.unavailable_resources),
+            "unsupported_resources": sorted(monitor.unsupported_resources),
+            "resource_updated_at": monitor.resource_updated_at,
         }
 
     # Add Server Coordinators diagnostics

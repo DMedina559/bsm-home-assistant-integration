@@ -28,6 +28,7 @@ const state = (id, key, role, attrs = {}, value = "0") => ({
     friendly_name: key.replaceAll("_", " "),
     bsm_key: key,
     bsm_role: role,
+    bsm_manager_url: "http://bsm",
     ...attrs,
   },
 });
@@ -66,6 +67,21 @@ const states = {
     {
       server_permissions: [
         { name: "Alex", xuid: "1234567890123456", permission_level: "member" },
+      ],
+    },
+    "1",
+  ),
+  "sensor.bans": state(
+    "sensor.bans",
+    "server_bans_count",
+    "server",
+    {
+      server_bans: [
+        {
+          player_name: "Blocked",
+          xuid: "1234567890123456",
+          reason: "Example ban",
+        },
       ],
     },
     "1",
@@ -158,7 +174,10 @@ const states = {
 };
 let listener;
 const eventListeners = new Map();
+const readyListeners = new Set();
+window.readyConnection = () => readyListeners.forEach((cb) => cb());
 window.unsubscribeCount = 0;
+window.subscriptionCount = 0;
 window.requests = [];
 window.hass = {
   states,
@@ -172,7 +191,12 @@ window.hass = {
     ]),
   ),
   connection: {
+    addEventListener: (name, cb) => {
+      if (name === "ready") readyListeners.add(cb);
+    },
+    removeEventListener: (name, cb) => readyListeners.delete(cb),
     subscribeEvents: async (cb, name) => {
+      window.subscriptionCount++;
       eventListeners.set(name, cb);
       if (name === "bedrock_server_manager_task_update") listener = cb;
       return () => {
@@ -186,7 +210,11 @@ window.hass = {
     window.requests.push(request);
     if (window.delayResponse)
       return new Promise((resolve) => (window.resolveResponse = resolve));
-    if (window.fail) throw Error("Backend rejected the action");
+    if (
+      window.fail ||
+      (window.failSetting && request.service_data?.key === window.failSetting)
+    )
+      throw Error("Backend rejected the action");
     if (request.service === "get_plugin_settings")
       return {
         response: {
@@ -253,6 +281,19 @@ window.hass = {
           ],
         },
       };
+    if (
+      request.service === "set_global_setting" ||
+      request.service === "set_server_setting"
+    ) {
+      window.settingsValues ||= {
+        monitor: { app_interval_seconds: 3 },
+        settings: { autostart: false },
+      };
+      const parts = request.service_data.key.split(".");
+      let value = window.settingsValues;
+      for (const part of parts.slice(0, -1)) value = value[part] ||= {};
+      value[parts.at(-1)] = request.service_data.value;
+    }
     if (request.service === "get_task")
       return {
         response: {

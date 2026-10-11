@@ -249,6 +249,7 @@ class MinecraftServerSensor(
             "pid",
             "uptime",
             "bsm_settings_revision",
+            "bsm_updated_at",
         }
     )
     _attr_device_info: dr.DeviceInfo
@@ -348,9 +349,8 @@ class MinecraftServerSensor(
         )
 
     @property
-    def available(self) -> bool:
-        key = self.entity_description.key
-        resource = {
+    def resource(self) -> str | None:
+        return {
             "status": "summary",
             ATTR_CPU_PERCENT: "process_info",
             ATTR_MEMORY_MB: "process_info",
@@ -365,8 +365,15 @@ class MinecraftServerSensor(
             KEY_ALLOWLIST_COUNT: "allowlist",
             KEY_ONLINE_PLAYERS_COUNT: "summary",
             KEY_SERVER_BANS_COUNT: "server_bans",
-        }.get(key)
-        if resource in self.coordinator.unavailable_resources:
+        }.get(self.entity_description.key)
+
+    @property
+    def available(self) -> bool:
+        resource = self.resource
+        if (
+            resource in self.coordinator.unavailable_resources
+            or resource in self.coordinator.unsupported_resources
+        ):
             return False
         if resource == "process_info" and not (self.coordinator.data or {}).get(
             "process_info"
@@ -377,11 +384,7 @@ class MinecraftServerSensor(
     @property
     def native_value(self) -> Any:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
-            return {
-                "bsm_role": "server",
-                "bsm_key": self.entity_description.key,
-                "bsm_server_name": self._server_name,
-            }
+            return None
         data = self.coordinator.data
         key = self.entity_description.key
         process_info = data.get("process_info")
@@ -448,14 +451,16 @@ class MinecraftServerSensor(
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
-        if not self.available or not isinstance(self.coordinator.data, dict):
-            return None
-        data = self.coordinator.data
+        data = self.coordinator.data or {}
         attrs: Dict[str, Any] = {
             "bsm_role": "server",
             "bsm_key": self.entity_description.key,
             "bsm_server_name": self._server_name,
+            "bsm_manager_url": self._manager_host_port_id,
+            **self.coordinator.resource_metadata(self.resource),
         }
+        if not self.available:
+            return attrs
         key = self.entity_description.key
         process_info = data.get("process_info")
 
@@ -575,6 +580,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             "pid",
             "uptime",
             "bsm_settings_revision",
+            "bsm_updated_at",
         }
     )
     _attr_device_info: dr.DeviceInfo
@@ -614,7 +620,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
     @property
     def native_value(self) -> Optional[Any]:
         if not self.available or not isinstance(self.coordinator.data, dict):
-            return {"bsm_role": "manager", "bsm_key": self.entity_description.key}
+            return None
         data = self.coordinator.data
         key = self.entity_description.key
         if key == KEY_GLOBAL_PLAYERS_COUNT:
@@ -645,11 +651,23 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
 
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
-        if not self.available or not isinstance(self.coordinator.data, dict):
-            return None
-        data = self.coordinator.data
+        data = self.coordinator.data or {}
         key = self.entity_description.key
-        attrs: Dict[str, Any] = {"bsm_role": "manager", "bsm_key": key}
+        resource = {
+            KEY_GLOBAL_PLAYERS_COUNT: "global_players",
+            KEY_AVAILABLE_WORLDS_COUNT: "available_worlds",
+            KEY_AVAILABLE_ADDONS_COUNT: "available_addons",
+            KEY_MANAGER_APP_VERSION: "info",
+            KEY_PLUGIN_STATUSES: "plugins_status",
+        }.get(key)
+        attrs: Dict[str, Any] = {
+            "bsm_role": "manager",
+            "bsm_key": key,
+            "bsm_manager_url": self._manager_host_port_id,
+            **self.coordinator.resource_metadata(resource),
+        }
+        if not self.available:
+            return attrs
         if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
         if key == KEY_AVAILABLE_WORLDS_COUNT:

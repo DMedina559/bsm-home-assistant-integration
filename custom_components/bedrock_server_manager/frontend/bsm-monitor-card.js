@@ -1,4 +1,4 @@
-import{a as e,b as r,e as o,j as a,k as i}from"./shared-5SVUCQ5X.js";var s=class extends i{static title="Server monitor";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"history_hours",selector:{number:{min:1,max:168,mode:"box"}}}),t}render(){let t=o(this.hass,this.selection,"server_control");return this.frame(e`<div class="grid">
+import{a as r,d as o,g as e,j as a,k as i}from"./shared-EVDKEACZ.js";var s=class extends i{static title="Server monitor";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"history_hours",selector:{number:{min:1,max:168,mode:"box"}}}),t}render(){let t=o(this.hass,this.selection,"server_control");return this.frame(e`<div class="grid">
           ${["status","online_players_count","cpu_percent","memory_mb","uptime_seconds"].map(n=>this.metric(this.stateFor(n)))}
         </div>
         <div class="actions">

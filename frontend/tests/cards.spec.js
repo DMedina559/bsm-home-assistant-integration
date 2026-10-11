@@ -175,7 +175,7 @@ test("subscriptions are released when dashboard cards disconnect", async ({
 }) => {
   await mount(page, "bsm-command-card", { entity: "sensor.server" });
   await page.evaluate(() => window.card.remove());
-  await expect.poll(() => page.evaluate(() => window.unsubscribeCount)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.unsubscribeCount)).toBe(2);
 });
 for (const mode of ["light", "dark"])
   test(`all cards fit a mobile dashboard in ${mode} mode`, async ({ page }) => {
@@ -186,6 +186,11 @@ for (const mode of ["light", "dark"])
       await page.evaluate(() => document.body.classList.add("dark"));
     for (const [name, entity] of [
       ["fleet", null],
+      ["overview", null],
+      ["tasks", "sensor.version"],
+      ["settings", "sensor.version"],
+      ["api", "sensor.version"],
+      ["bans", "sensor.bans"],
       ["monitor", "sensor.server"],
       ["health", "sensor.version"],
       ["properties", "sensor.props"],
@@ -423,4 +428,251 @@ test("task failures show structured error details and raw response", async ({
   await expect(page.getByRole("alert")).toContainText("worlds/Alpha");
   await page.getByText("Raw response").click();
   await expect(page.locator("pre")).toContainText('"revision": 3');
+});
+
+test("multiple task cards share subscriptions, requests and ordered outcomes", async ({
+  page,
+}) => {
+  await page.goto("/frontend/tests/fixture.html");
+  await page.waitForFunction(() => window.ready);
+  await page.evaluate(async () => {
+    const mount = document.getElementById("mount");
+    window.cards = [0, 1].map(() => {
+      const card = document.createElement("bsm-tasks-card");
+      card.setConfig({ entity: "sensor.version" });
+      card.hass = window.hass;
+      mount.append(card);
+      return card;
+    });
+    await Promise.all(window.cards.map((card) => card.updateComplete));
+  });
+  await expect(page.getByText("Running · Installing")).toHaveCount(2);
+  expect(await page.evaluate(() => window.subscriptionCount)).toBe(2);
+  expect(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.service === "list_tasks").length,
+    ),
+  ).toBe(1);
+  await page.evaluate(() =>
+    window.task({
+      status: "completed",
+      message: "Shared outcome",
+      revision: 8,
+      result: { outcome: "installed" },
+    }),
+  );
+  await expect(page.getByText("Completed · Shared outcome")).toHaveCount(2);
+  await page.evaluate(() => window.cards[0].remove());
+  expect(await page.evaluate(() => window.unsubscribeCount)).toBe(0);
+  await page.evaluate(() => window.cards[1].remove());
+  await expect.poll(() => page.evaluate(() => window.unsubscribeCount)).toBe(2);
+});
+
+test("switching managers during a task fetch clears loading and ignores the old response", async ({
+  page,
+}) => {
+  await page.goto("/frontend/tests/fixture.html");
+  await page.waitForFunction(() => window.ready);
+  await page.evaluate(() => {
+    window.hass.states["sensor.second"] = {
+      ...window.hass.states["sensor.version"],
+      entity_id: "sensor.second",
+      attributes: {
+        ...window.hass.states["sensor.version"].attributes,
+        bsm_manager_url: "http://second",
+      },
+    };
+    window.hass.entities["sensor.second"] = { device_id: "second" };
+    window.delayResponse = true;
+    window.mount("bsm-tasks-card", { entity: "sensor.version" });
+  });
+  await expect
+    .poll(() => page.evaluate(() => typeof window.resolveResponse))
+    .toBe("function");
+  await page.evaluate(() => {
+    window.oldResolve = window.resolveResponse;
+    window.delayResponse = false;
+    window.card.select("sensor.second");
+    window.card.hass = { ...window.hass };
+  });
+  await expect(
+    page.getByRole("button", { name: "Refresh tasks" }),
+  ).toBeEnabled();
+  await page.evaluate(() =>
+    window.oldResolve({
+      response: {
+        managers: [
+          {
+            manager_url: "http://bsm",
+            tasks: [
+              {
+                id: "old",
+                status: "completed",
+                message: "Old manager",
+                epoch: "a",
+                revision: 9,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  await expect(page.getByText("Completed · Old manager")).toHaveCount(0);
+});
+
+test("partial settings saves retain failed edits and identify applied changes", async ({
+  page,
+}) => {
+  await mount(page, "bsm-settings-card", { entity: "sensor.version" });
+  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("settings.autostart").check();
+  await page.evaluate(() => (window.failSetting = "settings.autostart"));
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByLabel("Settings save results")).toContainText(
+    "Monitor.app interval seconds: Saved",
+  );
+  await expect(page.getByLabel("Settings save results")).toContainText(
+    "Settings.autostart: Failed",
+  );
+  await expect(page.getByRole("alert")).toContainText(
+    "unsaved edits are retained",
+  );
+  expect(await page.evaluate(() => window.card.draft.changes)).toEqual({
+    "settings.autostart": true,
+  });
+  await page.evaluate(() => (window.failSetting = null));
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(
+    page.getByText("Unsaved changes.", { exact: false }),
+  ).toHaveCount(0);
+});
+
+test("overview allows independent server actions and supports monitor navigation", async ({
+  page,
+}) => {
+  await mount(page, "bsm-overview-card", {
+    monitor_path: "/dashboard/monitor/{server}",
+  });
+  await page.evaluate(() => (window.acceptTask = true));
+  const tiles = page.locator("section.tile");
+  await tiles
+    .filter({ hasText: "Alpha" })
+    .getByRole("button", { name: "Update", exact: true })
+    .click();
+  await expect(
+    tiles
+      .filter({ hasText: "Beta" })
+      .getByRole("button", { name: "Update", exact: true }),
+  ).toBeEnabled();
+  await tiles
+    .filter({ hasText: "Beta" })
+    .getByRole("button", { name: "Beta", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dashboard\/monitor\/Beta$/);
+});
+
+test("reconnect preserves task outcomes and reloads settings without losing edits", async ({
+  page,
+}) => {
+  await mount(page, "bsm-settings-card", { entity: "sensor.version" });
+  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.evaluate(() => {
+    window.settingsValues = {
+      monitor: { app_interval_seconds: 8 },
+      settings: { autostart: false },
+    };
+    window.readyConnection();
+  });
+  await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
+  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+    "5",
+  );
+  expect(await page.evaluate(() => window.subscriptionCount)).toBe(2);
+});
+
+test("task polling pauses when hidden and releases the final manager watch", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mount(page, "bsm-tasks-card", { entity: "sensor.version" });
+  await page.getByText("Running · Installing").waitFor();
+  const initial = await page.evaluate(
+    () => window.requests.filter((r) => r.service === "list_tasks").length,
+  );
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(20000);
+  expect(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.service === "list_tasks").length,
+    ),
+  ).toBe(initial);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.requests.filter((r) => r.service === "list_tasks").length,
+      ),
+    )
+    .toBe(initial + 1);
+  await page.evaluate(() => window.card.remove());
+  const count = await page.evaluate(() => window.requests.length);
+  await page.clock.fastForward(20000);
+  expect(await page.evaluate(() => window.requests.length)).toBe(count);
+});
+
+test("card runtime does not apply an HTTP response from before reconnect", async ({
+  page,
+}) => {
+  await mount(page, "bsm-settings-card", { entity: "sensor.version" });
+  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.evaluate(() => {
+    window.delayResponse = true;
+    window.card.load(true);
+  });
+  await expect
+    .poll(() => page.evaluate(() => typeof window.resolveResponse))
+    .toBe("function");
+  await page.evaluate(() => {
+    window.oldResolve = window.resolveResponse;
+    window.delayResponse = false;
+    window.settingsValues = {
+      monitor: { app_interval_seconds: 9 },
+      settings: { autostart: false },
+    };
+    window.readyConnection();
+  });
+  await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
+  await page.evaluate(() =>
+    window.oldResolve({
+      response: {
+        results: [
+          {
+            manager_url: "http://bsm",
+            result: { settings: { monitor: { app_interval_seconds: 1 } } },
+          },
+        ],
+      },
+    }),
+  );
+  expect(
+    await page.evaluate(
+      () => window.card.draft.live["monitor.app_interval_seconds"],
+    ),
+  ).toBe(9);
+  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+    "5",
+  );
 });

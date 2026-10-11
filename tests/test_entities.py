@@ -142,3 +142,74 @@ def test_server_uptime_is_a_native_duration(value, expected):
     from custom_components.bedrock_server_manager.sensor import uptime_seconds
 
     assert uptime_seconds(value) == expected
+
+
+@pytest.mark.asyncio
+async def test_native_setting_number_reads_confirmed_values_and_uses_typed_payload(
+    hass, api
+):
+
+    from custom_components.bedrock_server_manager.coordinator import (
+        ManagerDataCoordinator,
+    )
+    from custom_components.bedrock_server_manager.number import SettingNumber
+
+    coordinator = ManagerDataCoordinator(hass, api, 600)
+    coordinator.async_set_updated_data(
+        {"application_settings": {"monitoring": {"app_metrics_interval_sec": 3}}}
+    )
+    entity = SettingNumber(
+        coordinator,
+        ("bedrock_server_manager", "http://host"),
+        "monitoring.app_metrics_interval_sec",
+    )
+    assert entity.native_value == 3
+    assert entity.available
+    api.application.async_set_setting = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    await entity.async_set_native_value(5)
+    assert api.application.async_set_setting.call_args.args[0].value == 5
+    assert entity.native_value == 3  # Confirmation comes from the coordinator.
+    coordinator.async_request_refresh.assert_awaited_once()
+    coordinator.unavailable_resources.add("application_settings")
+    assert not entity.available
+
+
+@pytest.mark.asyncio
+async def test_native_update_channel_retains_exact_versions(hass, api):
+    from custom_components.bedrock_server_manager.select import UpdateChannelSelect
+
+    coordinator = MinecraftBedrockCoordinator(hass, api, "selected", 30)
+    coordinator.async_set_updated_data(
+        {"server_settings": {"settings": {"target_version": "1.21.99"}}}
+    )
+    entity = UpdateChannelSelect(coordinator, ("bedrock_server_manager", "http://host"))
+    assert entity.current_option == "1.21.99"
+    assert entity.options == ["LATEST", "PREVIEW", "1.21.99"]
+    api.servers.async_set_server_setting = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    await entity.async_select_option("PREVIEW")
+    assert api.servers.async_set_server_setting.call_args.args[1].value == "PREVIEW"
+    assert entity.current_option == "1.21.99"
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_server_identity_survives_unavailable_data(hass, api):
+    from homeassistant.components.sensor import SensorEntityDescription
+
+    from custom_components.bedrock_server_manager.sensor import MinecraftServerSensor
+
+    coordinator = MinecraftBedrockCoordinator(hass, api, "selected", 30)
+    entity = MinecraftServerSensor(
+        coordinator,
+        SensorEntityDescription(key="status", name="Status"),
+        "selected",
+        ("bedrock_server_manager", "http://host"),
+        None,
+        None,
+        None,
+    )
+    assert entity.native_value is None
+    assert entity.extra_state_attributes["bsm_server_name"] == "selected"
+    assert entity.extra_state_attributes["bsm_manager_url"] == "http://host"

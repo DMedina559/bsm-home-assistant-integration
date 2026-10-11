@@ -21,6 +21,8 @@ PLATFORMS = [
     "button",
     "binary_sensor",
     "text",
+    "number",
+    "select",
 ]
 
 # --- Configuration Keys (used in config_flow.py, options_flow.py, and config_entry) ---

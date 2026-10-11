@@ -139,3 +139,21 @@ def test_all_bundled_cards_are_registered_for_ha_dashboards():
         )
     }
     assert bundles == {module["filename"] for module in JS_MODULES}
+
+
+def test_service_translations_cover_all_declared_actions_and_fields():
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    root = Path("custom_components/bedrock_server_manager")
+    definitions = yaml.safe_load((root / "services.yaml").read_text())
+    strings = json.loads((root / "strings.json").read_text())
+    assert strings == json.loads((root / "translations/en.json").read_text())
+    for name, definition in definitions.items():
+        assert name in strings["services"]
+        assert (
+            definition.get("fields", {}).keys()
+            <= strings["services"][name].get("fields", {}).keys()
+        )

@@ -36,7 +36,7 @@ def server_api(api):
             status="success", process_info=None, epoch="one", revision=1
         ),
         "async_get_server_settings": ServerSettingsResponse(
-            status="success", settings={"server_info": {"target_version": "LATEST"}}
+            status="success", settings={"settings": {"target_version": "LATEST"}}
         ),
         "async_get_server_allowlist": GetAllowlistResponse(
             status="success", players=[{"name": "Alex", "ignoresPlayerLimit": False}]
@@ -216,3 +216,25 @@ async def test_optional_bans_skip_absent_runtime_capability(hass, api):
     await coordinator.async_refresh()
     api.servers.async_get_server_bans.assert_not_awaited()
     assert coordinator.data["server_bans"] == []
+
+
+@pytest.mark.asyncio
+async def test_resource_freshness_distinguishes_current_stale_and_unsupported(
+    hass, api
+):
+    coordinator = MinecraftBedrockCoordinator(hass, server_api(api), "test", 30)
+    await coordinator.async_refresh()
+    assert (
+        coordinator.resource_metadata("properties")["bsm_resource_state"] == "current"
+    )
+    previous = coordinator.resource_updated_at["properties"]
+    api.servers.async_get_server_properties.side_effect = CannotConnectError("offline")
+    coordinator.invalidate({}, {"properties"})
+    await coordinator.async_refresh()
+    metadata = coordinator.resource_metadata("properties")
+    assert metadata == {"bsm_resource_state": "stale", "bsm_updated_at": previous}
+    coordinator.unsupported_resources.add("server_bans")
+    assert (
+        coordinator.resource_metadata("server_bans")["bsm_resource_state"]
+        == "unsupported"
+    )

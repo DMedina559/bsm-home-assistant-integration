@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Mapping
 from datetime import timedelta
+from time import time
 from typing import Any
 
 from bsm_api_client import AuthError, BedrockServerManagerApi
@@ -54,6 +55,8 @@ class BsmCoordinator(DataUpdateCoordinator):
         self.defaults: dict[str, Any] = {}
         self._push_generation: dict[str, int] = {}
         self.unavailable_resources: set[str] = set()
+        self.unsupported_resources: set[str] = set()
+        self.resource_updated_at: dict[str, float] = {}
         self._requested_resources: set[str] | None = None
         self._full_refresh_pending = False
         super().__init__(
@@ -86,6 +89,29 @@ class BsmCoordinator(DataUpdateCoordinator):
         capabilities = getattr(self.api, "capabilities", None)
         return capabilities is None or capabilities.has(operation_id)
 
+    def resource_metadata(self, resource: str | None) -> dict[str, Any]:
+        """Describe unsupported, unavailable and retained data independently."""
+        updated = self.resource_updated_at.get(resource or "")
+        state = (
+            "unsupported"
+            if resource in self.unsupported_resources
+            else (
+                "stale"
+                if updated
+                and (
+                    resource in self.unavailable_resources
+                    or not self.last_update_success
+                )
+                else (
+                    "unavailable"
+                    if resource in self.unavailable_resources
+                    or not self.last_update_success
+                    else "current" if updated else "unknown"
+                )
+            )
+        )
+        return {"bsm_resource_state": state, "bsm_updated_at": updated}
+
     async def _fetch(
         self,
         calls: Mapping[str, Awaitable[Any]],
@@ -98,6 +124,7 @@ class BsmCoordinator(DataUpdateCoordinator):
             async with asyncio.timeout(MIN_API_TIMEOUT):
                 results = await asyncio.gather(*calls.values(), return_exceptions=True)
         except TimeoutError as error:
+            self.unavailable_resources.update(calls)
             raise UpdateFailed("Timed out communicating with BSM") from error
         # Authentication failures on any endpoint must trigger reauthentication.
         for result in results:
@@ -136,6 +163,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         failures = []
         for key, result in zip(calls, results):
             if isinstance(result, Exception):
+                self.unavailable_resources.add(key)
                 if key == critical:
                     raise UpdateFailed(str(result)) from result
                 self.unavailable_resources.add(key)
@@ -170,6 +198,7 @@ class BsmCoordinator(DataUpdateCoordinator):
             value = payload.get(fields[key]) if fields[key] else payload
             data[key] = value if value is not None else self.defaults.get(key)
         self.unavailable_resources.discard(key)
+        self.resource_updated_at[key] = time()
         return True
 
 
@@ -213,6 +242,7 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
         """Apply a revisioned process snapshot without inventing process values."""
         if not self.state.accept("process_info", payload):
             return
+        self.resource_updated_at["process_info"] = time()
         # Prevent an HTTP poll started before this push from overwriting it.
         for key in ("process_info", "summary"):
             self._push_generation[key] = self._push_generation.get(key, 0) + 1
@@ -245,6 +275,10 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
                 else {}
             ),
         }
+        if not self.supports("get_server_bans"):
+            self.unsupported_resources.add("server_bans")
+        else:
+            self.unsupported_resources.discard("server_bans")
         requested = self._requested_resources
         self._requested_resources = None
         self._full_refresh_pending = False
@@ -290,6 +324,7 @@ class ManagerDataCoordinator(BsmCoordinator):
             hass, api_client, f"{DOMAIN} Manager", scan_interval, config_entry
         )
         self.defaults = {
+            "application_settings": {},
             "info": {},
             "global_players": [],
             "available_worlds": [],
@@ -309,8 +344,20 @@ class ManagerDataCoordinator(BsmCoordinator):
                 _LOGGER.debug(
                     "Runtime API discovery unavailable; using shipped contracts"
                 )
+        if not self.supports("get_settings"):
+            self.unsupported_resources.add("application_settings")
+        else:
+            self.unsupported_resources.discard("application_settings")
         return await self._fetch(
             {
+                **(
+                    {
+                        "application_settings": self.api.application.async_get_all_settings()
+                    }
+                    if hasattr(self.api.application, "async_get_all_settings")
+                    and self.supports("get_settings")
+                    else {}
+                ),
                 "info": self.api.application.async_get_info(),
                 "global_players": self.api.players.async_get_players(),
                 "available_worlds": self.api.content.async_get_content_worlds(),
@@ -318,6 +365,7 @@ class ManagerDataCoordinator(BsmCoordinator):
                 "plugins_status": self.api.plugins.async_get_plugin_statuses(),
             },
             {
+                "application_settings": "settings",
                 "info": "info",
                 "global_players": "players",
                 "available_worlds": "files",
@@ -359,6 +407,7 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
             return
         self._push_generation["metrics"] = self._push_generation.get("metrics", 0) + 1
         self.unavailable_resources.discard("metrics")
+        self.resource_updated_at["metrics"] = time()
         self.async_set_updated_data(
             {
                 **self.defaults,
@@ -369,6 +418,17 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
         )
 
     async def _async_update_data(self) -> dict:
+        for resource, operation in (
+            ("metrics", "get_application_metrics"),
+            ("health", "get_application_health"),
+        ):
+            if self.supports(operation):
+                self.unsupported_resources.discard(resource)
+            else:
+                self.unsupported_resources.add(resource)
+        if len(self.unsupported_resources) == 2:
+            self.http_connected = False
+            return {**self.defaults, **(self.data or {})}
         try:
             data = await self._fetch(
                 {

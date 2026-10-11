@@ -54,6 +54,7 @@ class ApplicationHealthSensor(
     ) -> None:
         super().__init__(coordinator)
         self.key = key
+        self.manager_url = manager_identifier[1]
         self._attr_unique_id = (
             f"{DOMAIN}_{manager_identifier[1]}_{key}".lower().replace(":", "_")
         )
@@ -82,6 +83,7 @@ class ApplicationHealthSensor(
         return (
             super().available
             and "health" not in self.coordinator.unavailable_resources
+            and "health" not in self.coordinator.unsupported_resources
             and (
                 bool(health)
                 if self.key == "health"
@@ -102,7 +104,14 @@ class ApplicationHealthSensor(
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        metadata = {"bsm_role": "manager", "bsm_key": self.key}
+        metadata = {
+            "bsm_role": "manager",
+            "bsm_key": self.key,
+            "bsm_manager_url": self.manager_url,
+            **self.coordinator.resource_metadata(
+                "health" if self.key not in {"connection", "websocket"} else None
+            ),
+        }
         if self.key in {"connection", "websocket", "health"}:
             return metadata
         check = (

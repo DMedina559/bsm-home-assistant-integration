@@ -1,4 +1,4 @@
-import{a as e,j as l,k as s}from"./shared-5SVUCQ5X.js";var i=class extends s{static title="Server allowlist";static key="allowlist_count";static properties={player:{state:!0},ignoreLimit:{state:!0}};constructor(){super(),this.player="",this.ignoreLimit=!1}selectedChanged(){this.player=""}async add(){this.player.trim()&&await this.action("add_to_allowlist",{players:[this.player.trim()],ignores_player_limit:this.ignoreLimit},"Player added.")&&(this.player="")}render(){let a=this.state?.attributes.allowed_players||[];return this.frame(e`<div class="scroll">
+import{g as e,j as l,k as s}from"./shared-EVDKEACZ.js";var i=class extends s{static title="Server allowlist";static key="allowlist_count";static properties={player:{state:!0},ignoreLimit:{state:!0}};constructor(){super(),this.player="",this.ignoreLimit=!1}selectedChanged(){this.player=""}async add(){this.player.trim()&&await this.action("add_to_allowlist",{players:[this.player.trim()],ignores_player_limit:this.ignoreLimit},"Player added.")&&(this.player="")}render(){let a=this.state?.attributes.allowed_players||[];return this.frame(e`<div class="scroll">
           <table>
             <thead>
               <tr>

@@ -1,5 +1,5 @@
 import { BsmCard, html, register } from "./base.js";
-import { label, related } from "./model.js";
+import { label } from "./model.js";
 import { taskOutcome } from "./task-outcome.js";
 class TasksCard extends BsmCard {
   static role = "manager";
@@ -14,13 +14,39 @@ class TasksCard extends BsmCard {
   }
   selectedChanged() {
     this.items?.clear();
+    this.loading = false;
+    this._releaseListing?.();
+    this._releaseListing = null;
     this._loaded = "";
     this._managerUrl = "";
-    clearTimeout(this._refreshTimer);
   }
   disconnectedCallback() {
-    clearTimeout(this._refreshTimer);
+    this._releaseListing?.();
+    this._releaseListing = null;
     super.disconnectedCallback();
+  }
+  reconnected() {
+    super.reconnected();
+    this._releaseListing?.();
+    this._releaseListing = null;
+    this._loaded = "";
+    this.loading = false;
+    if (this.runtime && this.managerUrl())
+      for (const task of this.runtime.tasks.values())
+        if (task.manager_url === this.managerUrl())
+          this.items.set(task.id, task);
+    if (this.available) this.load();
+  }
+  pollFailed(data) {
+    if (data.manager_url === this.managerUrl())
+      this.error = `Live updates interrupted: ${data.message}. Retained task data may be stale.`;
+  }
+  pollRecovered(data) {
+    if (
+      data.manager_url === this.managerUrl() &&
+      this.error?.startsWith("Live updates interrupted:")
+    )
+      this.error = "";
   }
   syncState() {
     if (this.available && this._loaded !== this.selection) {
@@ -34,13 +60,7 @@ class TasksCard extends BsmCard {
   }
   _taskUpdate(task) {
     super._taskUpdate(task);
-    const accepted = this._taskCache.get(`${task.manager_url}:${task.id}`);
-    if (
-      accepted !== task ||
-      !this.managerUrl() ||
-      task.manager_url !== this.managerUrl()
-    )
-      return;
+    if (!this.managerUrl() || task.manager_url !== this.managerUrl()) return;
     this.items.set(task.id, task);
     this.requestUpdate();
   }
@@ -52,14 +72,23 @@ class TasksCard extends BsmCard {
       const response = await this.responseService("list_tasks", {});
       if (generation !== this._generation) return;
       for (const manager of response.managers || []) {
+        if (
+          this.state?.attributes.bsm_manager_url &&
+          manager.manager_url !== this.state.attributes.bsm_manager_url
+        )
+          continue;
         this._managerUrl = manager.manager_url;
         for (const task of manager.tasks || []) {
           const key = `${manager.manager_url}:${task.id}`;
-          this._taskUpdate({ ...task, manager_url: manager.manager_url });
           const accepted = this._taskCache.get(key);
-          this.items.set(task.id, accepted);
+          if (accepted) this.items.set(task.id, accepted);
         }
       }
+      if (!this._releaseListing && this.runtime)
+        this._releaseListing = this.runtime.watch(this.hass, this.target, {
+          managerUrl: this.managerUrl(),
+          all: true,
+        });
       this.error = "";
     } catch (error) {
       if (generation === this._generation)
@@ -68,9 +97,6 @@ class TasksCard extends BsmCard {
       if (generation === this._generation) {
         this.loading = false;
         this.requestUpdate();
-        clearTimeout(this._refreshTimer);
-        if (this.isConnected)
-          this._refreshTimer = setTimeout(() => this.load(), 5000);
       }
     }
   }

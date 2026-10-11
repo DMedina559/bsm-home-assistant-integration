@@ -316,3 +316,37 @@ file. World export outcomes appear in the task display.
 Known configuration mutations refresh only the affected server resources. Reconnects,
 terminal task events and unknown plugin mutations retain full refreshes. Runtime API
 discovery also lets optional metrics, health and ban endpoints be skipped when absent.
+
+### Card runtime and native settings
+
+Cards on the same Home Assistant connection share one runtime: one pair of BSM event
+subscriptions, coalesced concurrent reads, a bounded cache of 500 revision-ordered task
+outcomes, and one fallback poll per watched manager. Subscriptions and timers stop when
+the last card releases them. Polling pauses while the browser document is hidden and
+reconciles when it becomes visible or the connection recovers. No backend credentials,
+server state or task results are written to browser storage. HA coordinators and entity
+states remain authoritative for backend resources; recorder owns metric history.
+
+Settings saves report success/failure per field, stop on the first failed update and
+retain unsaved edits for retry. Field validation errors stay attached to their fields.
+Reconnects retain drafts and detect conflicting backend changes.
+
+The overview supports `sort: name`, `status` or `players`, independent busy states for
+each server, and optional `monitor_path`/`settings_path` navigation. Paths must be local
+HA paths; `{server}` is replaced with the encoded server name. `monitor_paths` and
+`settings_paths` optionally map individual server status entity IDs to destinations.
+Without a configured destination, server titles open native entity details.
+
+Optional native configuration entities (disabled by default) expose application and
+Bedrock metric intervals, startup/shutdown/task-drain timeouts as `number` entities and
+server update channels as `select` entities. The channel selector includes LATEST,
+PREVIEW and any currently configured exact version; the existing text entity remains
+available for arbitrary exact versions. Enable these entities on the manager/server
+device to use them in native dashboards and automations. Writes are confirmed through
+coordinator refreshes rather than optimistic state.
+
+Resource metadata preserves manager/server identity during outages and distinguishes
+`current`, `stale`, `unsupported`, `unavailable` and `unknown` data. `bsm_updated_at` is
+the last locally received successful resource update; it is not a backend task timestamp.
+Cards label retained stale data and unsupported resources. Service translations cover
+the declared actions and current payload fields.

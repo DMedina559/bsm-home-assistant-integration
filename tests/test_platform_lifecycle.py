@@ -127,6 +127,8 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
             "switch",
             "text",
             "button",
+            "number",
+            "select",
         }
         status = next(
             entity

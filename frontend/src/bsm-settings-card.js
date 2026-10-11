@@ -19,7 +19,12 @@ class SettingsCard extends BsmCard {
   static role = "manager";
   static key = "bsm_version";
   static title = "Application settings";
-  static properties = { loading: { state: true } };
+  static properties = {
+    loading: { state: true },
+    saving: { state: true },
+    fieldErrors: { state: true },
+    saveResults: { state: true },
+  };
   static getConfigForm() {
     const form = super.getConfigForm();
     form.schema.push({
@@ -28,51 +33,26 @@ class SettingsCard extends BsmCard {
     });
     return form;
   }
-  connectedCallback() {
-    super.connectedCallback();
-    this._subscribeChanges();
+  _eventUpdate(envelope) {
+    if (!this._managerUrl || envelope?.manager_url !== this._managerUrl) return;
+    const name = envelope.event || envelope.topic?.replace("event:", "");
+    if (this.config.scope === "server") {
+      const server =
+        envelope.data?.server_name || envelope.data?.result?.server_name;
+      if (
+        name !== "after_set_server_setting" ||
+        server !== this.state?.attributes.bsm_server_name
+      )
+        return;
+    } else if (name !== "after_setting_update") return;
+    if (this.loading || this.saving) this._reloadPending = true;
+    else this.load(true);
   }
-  disconnectedCallback() {
-    this._changesConnection = null;
-    this._unsubscribeChanges?.();
-    this._unsubscribeChanges = null;
-    super.disconnectedCallback();
-  }
-  async _subscribeChanges() {
-    const connection = this.hass?.connection;
-    if (
-      !connection ||
-      !this.isConnected ||
-      this._changesConnection === connection
-    )
-      return;
-    this._unsubscribeChanges?.();
-    this._changesConnection = connection;
-    try {
-      const unsubscribe = await connection.subscribeEvents((event) => {
-        const envelope = event.data;
-        const manager = this._managerUrl;
-        if (!manager || envelope?.manager_url !== manager) return;
-        const name = envelope.event || envelope.topic?.replace("event:", "");
-        if (this.config.scope === "server") {
-          const server =
-            envelope.data?.server_name || envelope.data?.result?.server_name;
-          if (
-            name !== "after_set_server_setting" ||
-            server !== this.state?.attributes.bsm_server_name
-          )
-            return;
-        } else if (name !== "after_setting_update") return;
-        if (this.loading || this.busy) this._reloadPending = true;
-        else this.load(true);
-      }, "bedrock_server_manager_event");
-      if (!this.isConnected || this._changesConnection !== connection)
-        unsubscribe();
-      else this._unsubscribeChanges = unsubscribe;
-    } catch {
-      if (this._changesConnection === connection)
-        this._changesConnection = null;
-    }
+  reconnected() {
+    super.reconnected();
+    this.loading = false;
+    this.saving = false;
+    if (this.available) this.load(true);
   }
   normalizeSelection() {
     if (this.config.scope === "server") {
@@ -109,9 +89,11 @@ class SettingsCard extends BsmCard {
     this.loading = false;
     this._managerUrl = "";
     this._reloadPending = false;
+    this.fieldErrors = {};
+    this.saveResults = [];
+    this.saving = false;
   }
   syncState() {
-    this._subscribeChanges();
     if (this.available && this._loaded !== this.selection) {
       this._loaded = this.selection;
       this.load();
@@ -140,7 +122,7 @@ class SettingsCard extends BsmCard {
     } finally {
       if (generation === this._generation) {
         this.loading = false;
-        if (this._reloadPending && !this.busy) {
+        if (this._reloadPending && !this.busy && !this.saving) {
           this._reloadPending = false;
           this.load(true);
         }
@@ -148,19 +130,53 @@ class SettingsCard extends BsmCard {
     }
   }
   async save() {
-    if (this.draft.conflicts.length) return;
-    for (const [key, value] of Object.entries(this.draft.changes)) {
-      if (
-        !(await this.action(
-          this.config.scope === "server"
-            ? "set_server_setting"
-            : "set_global_setting",
-          { key, value },
-        ))
-      )
-        return;
+    if (
+      this.saving ||
+      this.loading ||
+      !this.available ||
+      this.draft.conflicts.length ||
+      Object.keys(this.fieldErrors || {}).length
+    )
+      return;
+    const generation = this._generation,
+      changes = Object.entries(this.draft.changes);
+    this.saving = true;
+    this.saveResults = [];
+    for (const [key, value] of changes) {
+      const success = await this.action(
+        this.config.scope === "server"
+          ? "set_server_setting"
+          : "set_global_setting",
+        { key, value },
+      );
+      if (generation !== this._generation) return;
+      this.saveResults = [
+        ...this.saveResults,
+        { key, success, message: success ? "Saved" : this.error },
+      ];
+      if (!success) break;
+      this.draft.base[key] = structuredClone(value);
+      this.draft.live[key] = structuredClone(value);
+      delete this.draft.changes[key];
     }
-    await this.load();
+    if (generation !== this._generation) return;
+    this.saving = false;
+    const failure = this.saveResults.find((result) => !result.success);
+    await this.load(true);
+    if (generation !== this._generation) return;
+    if (failure)
+      this.error = `${failure.key}: ${failure.message}. Earlier saved changes remain applied; unsaved edits are retained.`;
+    this.requestUpdate();
+  }
+  input(title, value, change, type = "text") {
+    return html`<label
+      >${title}<input
+        aria-label=${title}
+        type=${type}
+        .value=${String(value ?? "")}
+        ?disabled=${this.busy || this.loading || this.saving}
+        @input=${(event) => change(event.target.value)}
+    /></label>`;
   }
   field(key, value) {
     const field = settingField(key);
@@ -182,9 +198,10 @@ class SettingsCard extends BsmCard {
           key,
           schemaValue(value, { type, minimum: field.min, maximum: field.max }),
         );
-        this.error = "";
+        this.fieldErrors = { ...this.fieldErrors };
+        delete this.fieldErrors[key];
       } catch (error) {
-        this.error = `${key}: ${error.message}`;
+        this.fieldErrors = { ...this.fieldErrors, [key]: error.message };
       }
       this.requestUpdate();
     };
@@ -195,7 +212,7 @@ class SettingsCard extends BsmCard {
           type="checkbox"
           aria-label=${key}
           .checked=${value}
-          ?disabled=${this.busy || this.loading}
+          ?disabled=${this.busy || this.loading || this.saving}
           @change=${(e) => edit(e.target.checked)}
         />${label(key)}</label
       >`;
@@ -205,7 +222,7 @@ class SettingsCard extends BsmCard {
           aria-label=${key}
           .value=${JSON.stringify(value, null, 2)}
           @change=${(e) => edit(e.target.value)}
-          ?disabled=${this.busy || this.loading}
+          ?disabled=${this.busy || this.loading || this.saving}
         ></textarea>
       </label>`;
     return this.input(
@@ -233,23 +250,30 @@ class SettingsCard extends BsmCard {
               <summary>${settingGroups[group] || label(group)}</summary>
               ${settingGroupHelp[group] ? html`<small>${settingGroupHelp[group]}</small>` : ""}
               <div class="grid">
-                ${fields.map(([key, value]) => this.field(key, value))}
+                ${fields.map(([key, value]) => html`<div>${this.field(key, value)}${this.fieldErrors?.[key] ? html`<small class="error" role="alert">${this.fieldErrors[key]}</small>` : ""}</div>`)}
               </div>
             </details>`,
         )}
         <div class="actions">
           <button
-            ?disabled=${this.loading || this.busy || !this.available}
+            ?disabled=${this.loading || this.busy || this.saving || !this.available}
             @click=${() => this.load(true)}
           >
             Check for updates</button
           ><button
-            ?disabled=${this.loading || this.busy || !this.available || !this.draft.dirty || this.draft.conflicts.length || Boolean(this.error)}
+            ?disabled=${this.loading || this.busy || this.saving || !this.available || !this.draft.dirty || this.draft.conflicts.length || Object.keys(this.fieldErrors || {}).length}
             @click=${this.save}
           >
             Save settings
           </button>
         </div>
+        ${
+          this.saveResults?.length
+            ? html`<ul aria-label="Settings save results">
+                ${this.saveResults.map((result) => html`<li>${label(result.key)}: ${result.success ? "Saved" : "Failed"}</li>`)}
+              </ul>`
+            : ""
+        }
         <small
           >Changes are validated by the backend. Some application settings
           require a restart.</small

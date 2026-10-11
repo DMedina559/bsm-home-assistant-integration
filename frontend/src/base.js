@@ -1,3 +1,4 @@
+import { runtimeFor } from "./runtime.js";
 import { LitElement, html, nothing } from "lit";
 import { taskOutcome } from "./task-outcome.js";
 import { styles } from "./styles.js";
@@ -58,7 +59,6 @@ export class BsmCard extends LitElement {
     this.revision = 0;
     this._generation = 0;
     this._taskCache = new Map();
-    this._retiredTaskEpochs = new Map();
     this._tasks = new Map();
   }
   setConfig(config) {
@@ -90,7 +90,7 @@ export class BsmCard extends LitElement {
     return this.hass?.states?.[this.selection];
   }
   get available() {
-    return !unavailable(this.state);
+    return this.hass?.connected !== false && !unavailable(this.state);
   }
   get target() {
     return this.selection.includes(".")
@@ -110,6 +110,7 @@ export class BsmCard extends LitElement {
     this.confirmation = null;
     this.draft.reset({});
     this._tasks.clear();
+    this._releaseTaskWatchers();
     this.selectedChanged();
   }
   selectedChanged() {}
@@ -120,10 +121,10 @@ export class BsmCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._generation++;
-    this._unsubscribe?.();
-    this._unsubscribe = null;
+    this._releaseRuntime?.();
+    this._releaseRuntime = null;
     this._connection = null;
-    clearTimeout(this._pollTimer);
+    this._releaseTaskWatchers();
     this._tasks.clear();
   }
   updated(changed) {
@@ -180,62 +181,57 @@ export class BsmCard extends LitElement {
       )}`;
   }
   syncState() {}
-  async _subscribeTasks() {
+  _releaseTaskWatchers() {
+    for (const release of this._taskWatchers || []) release();
+    this._taskWatchers = [];
+  }
+  _subscribeTasks() {
     const connection = this.hass?.connection;
     if (!this.isConnected || !connection || this._connection === connection)
       return;
-    this._connection = connection;
-    this._unsubscribe?.();
-    this._unsubscribe = null;
-    try {
-      const unsubscribe = await connection.subscribeEvents(
-        (event) => this._taskUpdate(event.data),
-        `${DOMAIN}_task_update`,
-      );
-      if (!this.isConnected || this._connection !== connection) unsubscribe();
-      else this._unsubscribe = unsubscribe;
-    } catch {
-      if (this._connection === connection) this._connection = null;
+    if (this._connection && this._connection !== connection) {
+      this._generation++;
+      for (const entry of this._tasks.values())
+        entry.generation = this._generation;
     }
+    this._releaseRuntime?.();
+    this._releaseTaskWatchers();
+    this._connection = connection;
+    this.runtime = runtimeFor(this.hass);
+    this._taskCache = this.runtime.tasks;
+    this._releaseRuntime = this.runtime.acquire((type, data) => {
+      if (type === "task") this._taskUpdate(data);
+      else if (type === "event") this._eventUpdate(data);
+      else if (type === "reconnect") {
+        this._generation++;
+        this._releaseTaskWatchers();
+        for (const entry of this._tasks.values())
+          entry.generation = this._generation;
+        this.reconnected();
+      } else if (type === "poll_error") this.pollFailed(data);
+      else if (type === "poll_ok") this.pollRecovered(data);
+    });
+    this.reconnected();
+  }
+  _eventUpdate() {}
+  reconnected() {
+    for (const entry of this._tasks.values())
+      if (!["completed", "failed", "cancelled"].includes(entry.task.status))
+        this._watchTask(entry);
+  }
+  pollFailed() {}
+  pollRecovered() {}
+  _watchTask(entry) {
+    this._taskWatchers ||= [];
+    this._taskWatchers.push(
+      this.runtime.watch(this.hass, entry.target, {
+        managerUrl: entry.task.manager_url,
+        taskId: entry.task.id,
+      }),
+    );
   }
   _taskUpdate(task) {
-    const cacheKey = `${task.manager_url}:${task.id}`;
-    const previous = this._taskCache.get(cacheKey);
-    if (
-      ![
-        "queued",
-        "running",
-        "cancelling",
-        "completed",
-        "failed",
-        "cancelled",
-      ].includes(task.status)
-    )
-      return;
-    const stamped = task.epoch != null || task.revision != null;
-    if (
-      stamped &&
-      (typeof task.epoch !== "string" ||
-        !task.epoch.trim() ||
-        !Number.isSafeInteger(task.revision) ||
-        task.revision < 1)
-    )
-      return;
-    if (previous?.epoch && !stamped) return;
-    const retired = this._retiredTaskEpochs.get(cacheKey) || new Set();
-    if (retired.has(task.epoch)) return;
-    if (previous?.epoch === task.epoch && previous.revision >= task.revision)
-      return;
-    if (previous?.epoch && task.epoch && previous.epoch !== task.epoch)
-      retired.add(previous.epoch);
-    this._retiredTaskEpochs.set(cacheKey, retired);
-    this._taskCache.set(cacheKey, task);
-    if (this._taskCache.size > 100) {
-      const oldest = this._taskCache.keys().next().value;
-      this._taskCache.delete(oldest);
-      this._retiredTaskEpochs.delete(oldest);
-    }
-    const tracked = this._tasks.get(cacheKey);
+    const tracked = this._tasks.get(`${task.manager_url}:${task.id}`);
     if (!tracked || tracked.generation !== this._generation) return;
     tracked.task = task;
     this._showTasks();
@@ -252,43 +248,12 @@ export class BsmCard extends LitElement {
     this.feedback = tasks
       .map((task) => `${label(task.status)}: ${task.message || task.id}`)
       .join(" · ");
+    if (!this.busy) this._releaseTaskWatchers();
     this.requestUpdate();
   }
-  async _pollTasks(generation) {
-    if (!this.isConnected || generation !== this._generation || !this.busy)
-      return;
-    for (const entry of this._tasks.values()) {
-      if (["completed", "failed", "cancelled"].includes(entry.task.status))
-        continue;
-      try {
-        const response = await this.responseService(
-          "get_task",
-          { task_id: entry.task.id },
-          entry.target,
-        );
-        if (generation !== this._generation) return;
-        for (const manager of response.managers || [])
-          this._taskUpdate({
-            manager_url: manager.manager_url,
-            ...manager.task,
-          });
-      } catch {
-        /* A connection outage keeps the outcome pending, not successful. */
-      }
-    }
-    if (generation === this._generation && this.busy)
-      this._pollTimer = setTimeout(() => this._pollTasks(generation), 3000);
-  }
   async responseService(service, data, target = this.target) {
-    const response = await this.hass.callWS({
-      type: "call_service",
-      domain: DOMAIN,
-      service,
-      service_data: data,
-      target,
-      return_response: true,
-    });
-    return response.response || {};
+    this._subscribeTasks();
+    return this.runtime.request(this.hass, service, data, target);
   }
   async action(service, data = {}, message = "Changes saved.", options = {}) {
     if (this.busy || (!options.allowUnavailable && !this.available))
@@ -309,6 +274,7 @@ export class BsmCard extends LitElement {
     this.error = "";
     this.feedback = "Sending request…";
     this._tasks.clear();
+    this._releaseTaskWatchers();
     try {
       const response = await this.responseService(service, data, target);
       if (generation !== this._generation) return false;
@@ -322,6 +288,7 @@ export class BsmCard extends LitElement {
           target,
           task: this._taskCache.get(key) || {
             id,
+            manager_url: result.manager_url,
             status: "queued",
             message: "Waiting for task outcome",
           },
@@ -329,7 +296,8 @@ export class BsmCard extends LitElement {
       }
       if (this._tasks.size) {
         this._showTasks();
-        this._pollTimer = setTimeout(() => this._pollTasks(generation), 1000);
+        if (this.busy)
+          for (const entry of this._tasks.values()) this._watchTask(entry);
       } else {
         this.busy = false;
         this.feedback =
@@ -383,6 +351,19 @@ export class BsmCard extends LitElement {
       if (generation === this._generation) this.busy = false;
     }
   }
+  resourceNotice(state = this.state) {
+    const status = state?.attributes.bsm_resource_state;
+    if (status === "unsupported")
+      return html`<small class="muted"
+        >This backend does not support this resource.</small
+      >`;
+    if (status === "stale")
+      return html`<small class="muted"
+        >Retained data may be
+        stale${state.attributes.bsm_updated_at ? ` · last received ${new Date(state.attributes.bsm_updated_at * 1000).toLocaleString()}` : ""}.</small
+      >`;
+    return nothing;
+  }
   metric(state) {
     if (!state) return nothing;
     const id = state.entity_id;
@@ -404,6 +385,7 @@ export class BsmCard extends LitElement {
         ${unavailable(state) ? "Unavailable" : value}
         ${state.attributes.unit_of_measurement || ""}
       </div>
+      ${this.resourceNotice(state)}
       ${state.attributes.message ? html`<small>${state.attributes.message}</small>` : nothing}
     </button>`;
   }
@@ -524,20 +506,20 @@ export class BsmCard extends LitElement {
         </div>`
       : nothing;
   }
-  frame(body, { picker = true } = {}) {
+  frame(body, { picker = true, confirmationControls = true } = {}) {
     return html`<ha-card
       ><div class="body">
         <h2>${this.config?.title || this.constructor.title}</h2>
         ${picker ? this.pick() : nothing}
         ${this.selection && !this.available ? html`<p class="notice" role="status">${this.state ? "This resource is unavailable. Controls are disabled until it recovers." : "The configured entity is missing. Choose another resource."}</p>` : nothing}
-        ${body}
+        ${this.resourceNotice()} ${body}
         <div aria-live="polite" role="status" ?hidden=${!this.feedback}>
           ${this.feedback}
         </div>
         ${this.taskOutcomes()}
         ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
         ${
-          this.confirmation
+          confirmationControls && this.confirmation
             ? html`<section class="confirm" aria-label="Confirm action">
                 <p>${this.confirmation.options.confirm}</p>
                 <div class="actions">

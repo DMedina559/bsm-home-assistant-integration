@@ -56,6 +56,14 @@ class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEnti
         )
 
     @property
+    def extra_state_attributes(self) -> dict:
+        """Keep identity and resource freshness available during outages."""
+        return {
+            **self._attr_extra_state_attributes,
+            **self.coordinator.resource_metadata("server_settings"),
+        }
+
+    @property
     def available(self) -> bool:
         return (
             super().available

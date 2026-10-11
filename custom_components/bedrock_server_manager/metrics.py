@@ -124,6 +124,7 @@ class ApplicationMetricSensor(
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self.manager_url = manager_identifier[1]
         self._attr_extra_state_attributes = {
             "bsm_role": "manager",
             "bsm_key": description.key,
@@ -136,11 +137,20 @@ class ApplicationMetricSensor(
         self._attr_device_info = DeviceInfo(identifiers={manager_identifier})
 
     @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            **self._attr_extra_state_attributes,
+            "bsm_manager_url": self.manager_url,
+            **self.coordinator.resource_metadata(self.entity_description.resource),
+        }
+
+    @property
     def available(self) -> bool:
         description = self.entity_description
         return (
             super().available
             and description.resource not in self.coordinator.unavailable_resources
+            and description.resource not in self.coordinator.unsupported_resources
             and self.native_value is not None
         )
 
