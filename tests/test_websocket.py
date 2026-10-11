@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from homeassistant.core import callback
 
-from custom_components.bedrock_server_manager.websocket import BsmWebSocketManager
+from custom_components.bedrock_server_manager.websocket import (
+    MANAGER_EVENTS,
+    SERVER_EVENTS,
+    BsmWebSocketManager,
+)
 
 
 def manager(hass, api):
@@ -52,12 +56,7 @@ async def test_selected_process_and_application_metrics(hass, api):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "event",
-    [
-        "after_set_server_setting",
-        "after_server_players_change",
-        "after_plugin_settings_update",
-        "after_remove_server_ban",
-    ],
+    sorted(SERVER_EVENTS | MANAGER_EVENTS),
 )
 async def test_mutation_stamp_comes_from_envelope(hass, api, event):
     ws = manager(hass, api)
@@ -152,7 +151,7 @@ async def test_worker_subscribes_selected_topics_and_stops_cleanly(hass, api):
     topics = [call.args[0] for call in client.subscribe.call_args_list]
     assert "resource-monitor:selected" in topics
     assert "application-metrics" in topics
-    assert "*" not in topics
+    assert "*" in topics
     api.websocket_connect.assert_awaited_once()
     await ws.async_stop()
     client.__aexit__.assert_awaited_once()
@@ -168,3 +167,44 @@ async def test_deleted_server_is_unsubscribed_and_removed_from_reconnect(hass, a
     await ws.async_remove_server("selected")
     ws.ws_client.unsubscribe.assert_awaited_once_with("resource-monitor:selected")
     assert not ws.server_names
+
+
+@pytest.mark.asyncio
+async def test_custom_and_before_events_are_available_to_automations(hass, api):
+    ws = manager(hass, api)
+    events = []
+
+    @callback
+    def capture(event):
+        events.append(event.data)
+
+    hass.bus.async_listen("bedrock_server_manager_event", capture)
+    for kind, topic in (
+        ("event", "event:before_properties_change"),
+        ("ws_event", "ws_event:plugin_notice"),
+        ("broadcast", "plugin:custom"),
+    ):
+        ws._handle_message(
+            {"type": kind, "topic": topic, "data": {"message": "Notice"}}
+        )
+    await hass.async_block_till_done()
+    assert len(events) == 3
+    assert all(event["manager_url"] == "http://bsm" for event in events)
+    ws.coordinator_refresh_callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_future_mutation_events_refresh_with_envelope_revision(hass, api):
+    ws = manager(hass, api)
+    ws._handle_message(
+        {
+            "type": "event",
+            "topic": "event:after_plugin_resource_change",
+            "epoch": "a",
+            "revision": 9,
+            "data": {"server_name": "selected", "result": {"status": "success"}},
+        }
+    )
+    topic, payload = ws.coordinator_refresh_callback.call_args.args
+    assert topic == "event:after_plugin_resource_change"
+    assert payload["revision"] == 9

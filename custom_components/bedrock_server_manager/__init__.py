@@ -272,20 +272,27 @@ async def _async_setup_entry(  # noqa: C901
         if not entry_data:
             return
         event = topic.removeprefix("event:")
+        unknown_mutation = event.startswith("after_") and event not in (
+            SERVER_EVENTS | MANAGER_EVENTS
+        )
         all_servers = topic == "reconnect" or topic.startswith("task:")
         if all_servers or event == "after_setting_update":
             if monitor_coordinator.invalidate(data):
                 hass.async_create_task(monitor_coordinator.async_request_refresh())
-        if all_servers or event in MANAGER_EVENTS:
+        if all_servers or event in MANAGER_EVENTS or unknown_mutation:
             if manager_coordinator.invalidate(data):
                 hass.async_create_task(manager_coordinator.async_request_refresh())
-        if all_servers or event in SERVER_EVENTS:
+        if all_servers or event in SERVER_EVENTS or unknown_mutation:
             result = data.get("result") or {}
             name = data.get("server_name") or (
                 result.get("server_name") if isinstance(result, dict) else None
             )
             for server_name, server_data in entry_data["servers"].items():
-                if all_servers or name == server_name:
+                if (
+                    all_servers
+                    or name == server_name
+                    or (unknown_mutation and not name)
+                ):
                     coordinator = server_data["coordinator"]
                     if coordinator.invalidate(data):
                         hass.async_create_task(coordinator.async_request_refresh())

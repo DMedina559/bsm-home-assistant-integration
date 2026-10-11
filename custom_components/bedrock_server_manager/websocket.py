@@ -18,6 +18,7 @@ SERVER_EVENTS = frozenset(
     {
         "after_server_start",
         "after_server_stop",
+        "after_command_send",
         "after_server_status_change",
         "after_server_players_change",
         "after_set_server_setting",
@@ -120,13 +121,11 @@ class BsmWebSocketManager:
             try:
                 self.ws_client = await self.api_client.websocket_connect()
                 async with self.ws_client:
-                    topics = ["application-metrics"] + [
+                    # The wildcard receives future core/plugin events and owner task updates.
+                    # Explicit resource topics still enable selected-server producers.
+                    topics = ["*", "application-metrics"] + [
                         f"resource-monitor:{name}" for name in self.server_names
                     ]
-                    topics.extend(
-                        f"event:{event}"
-                        for event in sorted(SERVER_EVENTS | MANAGER_EVENTS)
-                    )
                     for topic in topics:
                         await self.ws_client.subscribe(topic)
                     self._is_connected = True
@@ -179,7 +178,12 @@ class BsmWebSocketManager:
                 )
         elif kind == "event" and topic.startswith("event:"):
             event = topic.split(":", 1)[1]
-            if event not in SERVER_EVENTS | MANAGER_EVENTS:
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_event",
+                {**message, "manager_url": self.manager_url, "event": event},
+            )
+            # Before events describe intent, not committed state.
+            if not event.startswith("after_"):
                 return
             result = data.get("result")
             if isinstance(result, dict) and result.get("status") not in {
@@ -196,6 +200,10 @@ class BsmWebSocketManager:
             self.coordinator_refresh_callback(topic, payload)
         elif kind == "task_update" and topic.startswith("task:"):
             self._handle_task(topic, data)
+        elif kind in {"ws_event", "broadcast"}:
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_event", {**message, "manager_url": self.manager_url}
+            )
 
     def _handle_task(self, topic: str, data: dict[str, Any]) -> None:
         """Expose task snapshots, refreshing only once per terminal outcome."""
