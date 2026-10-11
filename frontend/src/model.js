@@ -93,6 +93,14 @@ export function schemaValue(value, schema) {
     const number = Number(value);
     if (schema.type === "integer" && !Number.isInteger(number))
       throw Error("Enter a whole number.");
+    if (schema.minimum != null && number < schema.minimum)
+      throw Error(`Minimum is ${schema.minimum}.`);
+    if (schema.maximum != null && number > schema.maximum)
+      throw Error(`Maximum is ${schema.maximum}.`);
+    if (schema.exclusiveMinimum != null && number <= schema.exclusiveMinimum)
+      throw Error(`Must exceed ${schema.exclusiveMinimum}.`);
+    if (schema.exclusiveMaximum != null && number >= schema.exclusiveMaximum)
+      throw Error(`Must be less than ${schema.exclusiveMaximum}.`);
     return number;
   }
   if (["object", "array"].includes(schema.type) && typeof value === "string")

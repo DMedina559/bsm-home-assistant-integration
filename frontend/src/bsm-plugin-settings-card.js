@@ -97,7 +97,17 @@ class PluginSettingsCard extends BsmCard {
   }
   edit(key, value, schema) {
     try {
-      this.draft.set(key, schemaValue(value, schema));
+      const parts = key.split(".");
+      const top = parts.shift();
+      const converted = schemaValue(value, schema);
+      if (!parts.length) this.draft.set(top, converted);
+      else {
+        const next = structuredClone(this.draft.value[top] || {});
+        let target = next;
+        for (const part of parts.slice(0, -1)) target = target[part] ||= {};
+        target[parts.at(-1)] = converted;
+        this.draft.set(top, next);
+      }
       this.error = "";
     } catch (error) {
       this.error = `${label(key)}: ${error.message}`;
@@ -106,12 +116,21 @@ class PluginSettingsCard extends BsmCard {
   }
   field(key, raw) {
     const schema = resolve(raw, this.schema),
-      value = this.draft.value[key] ?? schema.default;
+      value =
+        key.split(".").reduce((item, part) => item?.[part], this.draft.value) ??
+        schema.default;
     const title = schema.title || label(key),
       description = schema.description;
     const items = resolve(schema.items, this.schema);
     let control;
-    if (schema.type === "array" && items.enum)
+    if (schema.type === "object" && schema.properties)
+      control = html`<fieldset ?disabled=${this.busy || this.loading}>
+        <legend>${title}</legend>
+        <div class="grid">
+          ${Object.entries(schema.properties).map(([name, child]) => this.field(`${key}.${name}`, child))}
+        </div>
+      </fieldset>`;
+    else if (schema.type === "array" && items.enum)
       control = html`<fieldset ?disabled=${this.busy || this.loading}>
         <legend>${title}</legend>
         ${items.enum.map(
@@ -123,7 +142,7 @@ class PluginSettingsCard extends BsmCard {
                 aria-label=${String(option)}
                 .checked=${(value || []).includes(option)}
                 @change=${(e) => {
-                  const next = new Set(this.draft.value[key] || []);
+                  const next = new Set(value || []);
                   e.target.checked ? next.add(option) : next.delete(option);
                   this.edit(key, [...next], schema);
                 }}

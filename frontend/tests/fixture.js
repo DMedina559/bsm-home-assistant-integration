@@ -11,6 +11,11 @@ await Promise.all(
     "plugins",
     "event-trigger",
     "fleet",
+    "overview",
+    "tasks",
+    "settings",
+    "bans",
+    "api",
     "monitor",
     "health",
     "plugin-settings",
@@ -152,6 +157,7 @@ const states = {
   "text.target": state("text.target", "target_version", "server", {}, "LATEST"),
 };
 let listener;
+const eventListeners = new Map();
 window.unsubscribeCount = 0;
 window.requests = [];
 window.hass = {
@@ -166,9 +172,11 @@ window.hass = {
     ]),
   ),
   connection: {
-    subscribeEvents: async (cb) => {
-      listener = cb;
+    subscribeEvents: async (cb, name) => {
+      eventListeners.set(name, cb);
+      if (name === "bedrock_server_manager_task_update") listener = cb;
       return () => {
+        eventListeners.delete(name);
         window.unsubscribeCount++;
       };
     },
@@ -202,6 +210,44 @@ window.hass = {
                   interval: { type: "integer", title: "Interval", minimum: 1 },
                 },
                 $defs: { Server: { type: "string", enum: ["Alpha", "Beta"] } },
+              },
+            },
+          ],
+        },
+      };
+    if (request.service === "list_tasks")
+      return {
+        response: {
+          managers: [
+            {
+              manager_url: "http://bsm",
+              tasks: window.listedTasks || [
+                {
+                  id: "task",
+                  status: "running",
+                  message: "Installing",
+                  epoch: "a",
+                  revision: 1,
+                },
+              ],
+            },
+          ],
+        },
+      };
+    if (
+      request.service === "get_application_settings" ||
+      request.service === "get_server_settings"
+    )
+      return {
+        response: {
+          results: [
+            {
+              manager_url: "http://bsm",
+              result: {
+                settings: window.settingsValues || {
+                  monitor: { app_interval_seconds: 3 },
+                  settings: { autostart: false },
+                },
               },
             },
           ],
@@ -280,3 +326,6 @@ window.loadCardHelpers = async () => ({
   },
 });
 window.ready = true;
+
+window.event = (data) =>
+  eventListeners.get("bedrock_server_manager_event")?.({ data });

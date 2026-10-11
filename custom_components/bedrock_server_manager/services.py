@@ -3,9 +3,8 @@
 
 import asyncio
 import inspect
-import json  # Added for parsing setting values
 import logging
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List
 
 import probatio as vol
 from bsm_api_client import (
@@ -14,37 +13,22 @@ from bsm_api_client import (
     BedrockServerManagerApi,
     CannotConnectError,
     InvalidInputError,
-    ServerNotFoundError,
-    ServerNotRunningError,
 )
 from bsm_api_client.models import (
     AddonActionPayload,
     AddonReorderPayload,
     AddonSubpackPayload,
-    AddPlayersPayload,
-    AllowlistAddPayload,
-    AllowlistRemovePayload,
-    BackupActionPayload,
-    BanAddRequest,
-    BanRemoveRequest,
-    CommandPayload,
-    FileNamePayload,
     InstallServerPayload,
-    PermissionsSetPayload,
-    PlayerPermissionPayload,
-    PluginStatusSetPayload,
-    PropertiesPayload,
-    PruneDownloadsPayload,
-    RestoreActionPayload,
-    ServerSettingItemPayload,
-    SettingItemResponse,
-    TriggerEventPayload,
 )
 from homeassistant.components.persistent_notification import async_create
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 
+from .action_common import (
+    _api_error_details,
+    _base_api_call_handler,
+)
 from .const import (
     CONF_SERVER_NAMES,
     DOMAIN,
@@ -108,8 +92,34 @@ from .const import (
     SERVICE_UPDATE_ADDON_SUBPACK,
     SERVICE_UPDATE_PROPERTIES,
 )
+from .content_actions import (
+    _async_handle_install_addon,
+    _async_handle_install_world,
+    _async_handle_prune_downloads,
+    _async_handle_restore_backup,
+    _async_handle_trigger_backup,
+)
 from .coordinator import json_data
 from .data_services import register_data_services, unregister_data_services
+from .manager_actions import (
+    _async_handle_add_global_players,
+    _async_handle_reload_global_settings,
+    _async_handle_scan_players,
+    _async_handle_set_global_setting,
+    _async_handle_set_plugin_enabled,
+    _async_handle_trigger_plugin_event,
+)
+from .server_actions import (
+    _async_handle_add_server_ban,
+    _async_handle_add_to_allowlist,
+    _async_handle_configure_os_service,
+    _async_handle_remove_from_allowlist,
+    _async_handle_remove_server_ban,
+    _async_handle_restore_latest_all,
+    _async_handle_send_command,
+    _async_handle_set_permissions,
+    _async_handle_update_properties,
+)
 from .service_schemas import (
     ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
     ADD_SERVER_BAN_SERVICE_SCHEMA,
@@ -146,315 +156,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # --- Service Handler Helper Functions ---
-async def _base_api_call_handler(
-    api_call_coro: Coroutine[Any, Any, Any],
-    error_message_prefix: str,
-    log_context_identifier: Optional[str] = None,
-) -> Any:
-    context_msg = f" for '{log_context_identifier}'" if log_context_identifier else ""
-    try:
-        response = await api_call_coro
-        status = (
-            response.get("status")
-            if isinstance(response, dict)
-            else getattr(response, "status", None)
-        )
-        if status in ("error", "failed", "failure"):
-            raise HomeAssistantError(
-                f"{error_message_prefix}{context_msg}: API reported {status}"
-            )
-        _LOGGER.debug(
-            "API call %s successful%s. Response: %s",
-            error_message_prefix,
-            context_msg,
-            response,
-        )
-        return response
-    except HomeAssistantError:
-        raise
-    except (APIError, ValueError) as err:
-        details = _api_error_details(err)
-        msg = f"{error_message_prefix}{context_msg}: {details}"
-        _LOGGER.error(msg)
-        error_type = (
-            ServiceValidationError
-            if isinstance(err, (InvalidInputError, ValueError))
-            else HomeAssistantError
-        )
-        raise error_type(msg) from err
-    except Exception as err:
-        _LOGGER.exception("%s%s: Unexpected error.", error_message_prefix, context_msg)
-        raise HomeAssistantError(
-            f"{error_message_prefix}{context_msg}: Unexpected error - {type(err).__name__}"
-        ) from err
-
-
-def _api_error_details(err: APIError | ValueError) -> str:
-    """Describe an SDK failure without exposing transport internals."""
-    if isinstance(err, ValueError):
-        return f"Invalid input value provided. ({err})"
-    descriptions = (
-        (ServerNotRunningError, "Server is not running"),
-        (ServerNotFoundError, "Target server not found by API"),
-        (InvalidInputError, "Invalid input provided"),
-        (AuthError, "Authentication failed"),
-        (CannotConnectError, "Cannot connect to BSM API"),
-    )
-    for error_type, description in descriptions:
-        if isinstance(err, error_type):
-            return f"{description}. ({err.api_message or err})"
-    return f"BSM API error (status: {err.status_code}). ({err.api_message or err})"
 
 
 # --- Handlers ---
-async def _async_handle_send_command(
-    api: BedrockServerManagerApi, server: str, command: str
-):
-    payload = CommandPayload(command=command)
-    return await _base_api_call_handler(
-        api.servers.async_send_server_command(server, payload), "Send command", server
-    )
-
-
-async def _async_handle_prune_downloads(
-    api: BedrockServerManagerApi, directory: str, keep: Optional[int], manager_id: str
-):
-    payload = PruneDownloadsPayload(directory=directory, keep=keep)
-    return await _base_api_call_handler(
-        api.application.async_prune_downloads(payload),
-        "Prune downloads",
-        manager_id,
-    )
-
-
-async def _async_handle_trigger_backup(
-    api: BedrockServerManagerApi,
-    server: str,
-    backup_type: str,
-    file_to_backup: Optional[str],
-):
-    payload = BackupActionPayload(
-        backup_type=backup_type, file_to_backup=file_to_backup
-    )
-    return await _base_api_call_handler(
-        api.content.async_trigger_server_backup(server, payload),
-        "Trigger backup",
-        server,
-    )
-
-
-async def _async_handle_restore_backup(
-    api: BedrockServerManagerApi, server: str, restore_type: str, backup_file: str
-):
-    payload = RestoreActionPayload(restore_type=restore_type, backup_file=backup_file)
-    return await _base_api_call_handler(
-        api.content.async_restore_server_backup(server, payload),
-        "Restore backup",
-        server,
-    )
-
-
-async def _async_handle_restore_latest_all(api: BedrockServerManagerApi, server: str):
-    return await _base_api_call_handler(
-        api.content.async_restore_server_latest_all(server),
-        "Restore latest all",
-        server,
-    )
-
-
-async def _async_handle_add_to_allowlist(
-    api: BedrockServerManagerApi, server: str, players: List[str], ignore_limit: bool
-):
-    payload = AllowlistAddPayload(players=players, ignoresPlayerLimit=ignore_limit)
-    return await _base_api_call_handler(
-        api.servers.async_add_server_allowlist(server, payload),
-        "Add to allowlist",
-        server,
-    )
-
-
-async def _async_handle_remove_from_allowlist(
-    api: BedrockServerManagerApi, server: str, players: List[str]
-):
-    payload = AllowlistRemovePayload(players=players)
-    return await _base_api_call_handler(
-        api.servers.async_remove_server_allowlist_players(server, payload),
-        "Remove from allowlist",
-        server,
-    )
-
-
-async def _async_handle_add_server_ban(
-    api: BedrockServerManagerApi,
-    server: str,
-    player_name: str,
-    xuid: str,
-    reason: str | None,
-):
-    payload = BanAddRequest(player_name=player_name, xuid=xuid, reason=reason)
-    return await _base_api_call_handler(
-        api.servers.async_add_server_ban(server, payload),
-        "Add server ban",
-        server,
-    )
-
-
-async def _async_handle_remove_server_ban(
-    api: BedrockServerManagerApi, server: str, xuid: str
-):
-    payload = BanRemoveRequest(xuid=xuid)
-    return await _base_api_call_handler(
-        api.servers.async_remove_server_ban(server, payload),
-        "Remove server ban",
-        server,
-    )
-
-
-async def _async_handle_set_permissions(
-    api: BedrockServerManagerApi, server: str, permissions_list: List[Dict[str, str]]
-):
-    permissions = [PlayerPermissionPayload.model_validate(p) for p in permissions_list]
-    payload = PermissionsSetPayload(permissions=permissions)
-    return await _base_api_call_handler(
-        api.servers.async_set_server_permissions(server, payload),
-        "Set permissions",
-        server,
-    )
-
-
-async def _async_handle_update_properties(
-    api: BedrockServerManagerApi, server: str, properties_dict: Dict[str, Any]
-):
-    payload = PropertiesPayload(
-        properties={
-            key: str(value).lower() if isinstance(value, bool) else str(value)
-            for key, value in properties_dict.items()
-        }
-    )
-    return await _base_api_call_handler(
-        api.servers.async_update_server_properties(server, payload),
-        "Update properties",
-        server,
-    )
-
-
-async def _async_handle_install_world(
-    api: BedrockServerManagerApi, server: str, filename: str
-):
-    payload = FileNamePayload(filename=filename)
-    return await _base_api_call_handler(
-        api.content.async_install_server_world(server, payload), "Install world", server
-    )
-
-
-async def _async_handle_install_addon(
-    api: BedrockServerManagerApi, server: str, filename: str
-):
-    payload = FileNamePayload(filename=filename)
-    return await _base_api_call_handler(
-        api.content.async_install_server_addon(server, payload), "Install addon", server
-    )
-
-
-async def _async_handle_configure_os_service(
-    api: BedrockServerManagerApi,
-    server: str,
-    payload_dict: Dict[str, bool],
-    manager_id: str,
-):
-    # Setting OS service via the new `async_set_server_setting` endpoints
-    tasks = []
-    for k, v in payload_dict.items():
-        # Maps e.g. "autoupdate" -> "settings.autoupdate"
-        setting_key = f"settings.{k}"
-        payload = ServerSettingItemPayload(key=setting_key, value=v)
-        tasks.append(
-            _base_api_call_handler(
-                api.servers.async_set_server_setting(server, payload),
-                f"Configure OS service ({k})",
-                f"{server} on manager '{manager_id}'",
-            )
-        )
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    # Return the last successful result or the first exception
-    for result in results:
-        if isinstance(result, Exception):
-            raise result
-    return results[-1] if results else None
-
-
-async def _async_handle_add_global_players(
-    api: BedrockServerManagerApi, players_data: List[str], manager_id: str
-):
-    payload = AddPlayersPayload(players=players_data)
-    return await _base_api_call_handler(
-        api.players.async_add_players(payload), "Add global players", manager_id
-    )
-
-
-async def _async_handle_scan_players(api: BedrockServerManagerApi, manager_id: str):
-    return await _base_api_call_handler(
-        api.players.async_scan_players(), "Scan players", manager_id
-    )
-
-
-async def _async_handle_set_plugin_enabled(
-    api: BedrockServerManagerApi, plugin_name: str, enabled: bool, manager_id: str
-):
-    payload = PluginStatusSetPayload(enabled=enabled)
-    return await _base_api_call_handler(
-        api.plugins.async_set_plugin_status(plugin_name, payload),
-        f"Set plugin '{plugin_name}' to {enabled}",
-        manager_id,
-    )
-
-
-async def _async_handle_trigger_plugin_event(
-    api: BedrockServerManagerApi,
-    event_name: str,
-    payload_dict: Optional[Dict[str, Any]],
-    manager_id: str,
-):
-    payload = TriggerEventPayload(event_name=event_name, payload=payload_dict)
-    return await _base_api_call_handler(
-        api.plugins.async_trigger_plugin_event(payload),
-        f"Trigger plugin event '{event_name}'",
-        manager_id,
-    )
-
-
-async def _async_handle_set_global_setting(
-    api: BedrockServerManagerApi, key: str, value: Any, manager_id: str
-):
-    parsed_value = value
-    if isinstance(value, str):
-        stripped_value = value.strip()
-        if (stripped_value.startswith("{") and stripped_value.endswith("}")) or (
-            stripped_value.startswith("[") and stripped_value.endswith("]")
-        ):
-            try:
-                parsed_value = json.loads(stripped_value)
-            except json.JSONDecodeError:
-                _LOGGER.warning(
-                    "Value for setting '%s' looked like JSON but failed to parse: %s. Sending as string.",
-                    key,
-                    value,
-                )
-
-    payload = SettingItemResponse(key=key, value=parsed_value)
-    return await _base_api_call_handler(
-        api.application.async_set_setting(payload),
-        f"Set global setting '{key}'",
-        manager_id,
-    )
-
-
-async def _async_handle_reload_global_settings(
-    api: BedrockServerManagerApi, manager_id: str
-):
-    return await _base_api_call_handler(
-        api.application.async_reload_settings(), "Reload global settings", manager_id
-    )
 
 
 async def _async_handle_install_server(
@@ -1751,3 +1455,6 @@ async def async_remove_services(hass: HomeAssistant) -> None:
         _LOGGER.debug(
             "Other BSM config entries still loaded. Services will not be removed."
         )
+
+
+__all__ = ["_base_api_call_handler", "_api_error_details"]

@@ -1,4 +1,4 @@
-import{a as s,h as i,i as l}from"./shared-26346ZH3.js";var a=class extends l{static title="Plugins";static role="manager";static key="plugin_statuses";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"reload_button_entity",selector:{entity:{domain:"button",integration:"bedrock_server_manager"}}}),t}render(){let t=this.state?.attributes.plugins_data||{};return this.frame(s`${Object.entries(t).map(([n,e])=>s`<section class="tile">
+import{a as s,j as i,k as l}from"./shared-5SVUCQ5X.js";var a=class extends l{static title="Plugins";static role="manager";static key="plugin_statuses";static getConfigForm(){let t=super.getConfigForm();return t.schema.push({name:"reload_button_entity",selector:{entity:{domain:"button",integration:"bedrock_server_manager"}}}),t}render(){let t=this.state?.attributes.plugins_data||{};return this.frame(s`${Object.entries(t).map(([n,e])=>s`<section class="tile">
             <div class="heading">
               <strong>${e.name||n}</strong
               ><small

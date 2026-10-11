@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import { taskOutcome } from "./task-outcome.js";
 import { styles } from "./styles.js";
 import {
   DOMAIN,
@@ -165,26 +166,16 @@ export class BsmCard extends LitElement {
   }
   taskOutcomes() {
     return html`${[...this._tasks.values()]
-      .filter(({ task }) => task.status === "completed" && task.result != null)
+      .filter(
+        ({ task }) =>
+          ["completed", "failed", "cancelled"].includes(task.status) &&
+          (task.result != null || task.error),
+      )
       .map(
         ({ task }) =>
           html`<details class="tile">
-            <summary>Completed outcome · ${task.id}</summary>
-            <dl>
-              ${Object.entries(
-                typeof task.result === "object" && !Array.isArray(task.result)
-                  ? task.result
-                  : { result: task.result },
-              )
-                .slice(0, 12)
-                .map(
-                  ([key, value]) =>
-                    html`<dt>${label(key)}</dt>
-                      <dd style="overflow-wrap:anywhere;margin:0 0 8px">
-                        ${typeof value === "object" ? JSON.stringify(value).slice(0, 1000) : String(value)}
-                      </dd>`,
-                )}
-            </dl>
+            <summary>${label(task.status)} outcome · ${task.id}</summary>
+            ${taskOutcome(task)}
           </details>`,
       )}`;
   }
@@ -230,6 +221,7 @@ export class BsmCard extends LitElement {
         task.revision < 1)
     )
       return;
+    if (previous?.epoch && !stamped) return;
     const retired = this._retiredTaskEpochs.get(cacheKey) || new Set();
     if (retired.has(task.epoch)) return;
     if (previous?.epoch === task.epoch && previous.revision >= task.revision)
@@ -320,6 +312,7 @@ export class BsmCard extends LitElement {
     try {
       const response = await this.responseService(service, data, target);
       if (generation !== this._generation) return false;
+      this._lastResponse = response;
       for (const result of response.results || []) {
         const id = result.result?.task_id;
         if (!id) continue;

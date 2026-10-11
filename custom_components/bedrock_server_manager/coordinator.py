@@ -54,6 +54,8 @@ class BsmCoordinator(DataUpdateCoordinator):
         self.defaults: dict[str, Any] = {}
         self._push_generation: dict[str, int] = {}
         self.unavailable_resources: set[str] = set()
+        self._requested_resources: set[str] | None = None
+        self._full_refresh_pending = False
         super().__init__(
             hass,
             _LOGGER,
@@ -62,9 +64,27 @@ class BsmCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=scan_interval),
         )
 
-    def invalidate(self, stamp: dict[str, Any]) -> bool:
+    def invalidate(
+        self, stamp: dict[str, Any], resources: set[str] | None = None
+    ) -> bool:
         """Discard in-flight HTTP data when an accepted mutation event arrives."""
-        return self.state.invalidate(stamp)
+        accepted = self.state.invalidate(stamp)
+        if accepted:
+            if resources is None:
+                self._requested_resources = None
+                self._full_refresh_pending = True
+            elif self.data is not None and not self._full_refresh_pending:
+                self._requested_resources = (
+                    self._requested_resources or set()
+                ) | resources
+        return accepted
+
+    def supports(self, operation_id: str) -> bool:
+        """Use discovered capabilities when available, otherwise shipped support."""
+        if getattr(self.api, "schema", None) is None:
+            return True
+        capabilities = getattr(self.api, "capabilities", None)
+        return capabilities is None or capabilities.has(operation_id)
 
     async def _fetch(
         self,
@@ -211,15 +231,29 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
 
     async def _async_update_data(self) -> dict:
         servers, content, name = self.api.servers, self.api.content, self.server_name
+        methods = {
+            "process_info": servers.async_get_server_process_info,
+            "server_settings": servers.async_get_server_settings,
+            "allowlist": servers.async_get_server_allowlist,
+            "properties": servers.async_get_server_properties,
+            "server_permissions": servers.async_get_server_permissions_data,
+            "server_addons": content.async_get_server_addons,
+            "summary": servers.async_get_server_summary,
+            **(
+                {"server_bans": servers.async_get_server_bans}
+                if self.supports("get_server_bans")
+                else {}
+            ),
+        }
+        requested = self._requested_resources
+        self._requested_resources = None
+        self._full_refresh_pending = False
         calls = {
-            "process_info": servers.async_get_server_process_info(name),
-            "server_settings": servers.async_get_server_settings(name),
-            "allowlist": servers.async_get_server_allowlist(name),
-            "properties": servers.async_get_server_properties(name),
-            "server_permissions": servers.async_get_server_permissions_data(name),
-            "server_addons": content.async_get_server_addons(name),
-            "summary": servers.async_get_server_summary(name),
-            "server_bans": servers.async_get_server_bans(name),
+            key: method(name)
+            for key, method in methods.items()
+            if requested is None
+            or key in requested
+            or key in self.unavailable_resources
         }
         fields = {
             "process_info": "process_info",
@@ -232,7 +266,12 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
         }
         for kind in ("world", "allowlist", "permissions", "properties"):
             key = f"{kind}_backups"
-            calls[key] = content.async_list_server_backups(name, kind)
+            if (
+                requested is None
+                or key in requested
+                or key in self.unavailable_resources
+            ):
+                calls[key] = content.async_list_server_backups(name, kind)
             fields[key] = "backups"
         return await self._fetch(calls, fields, critical="process_info")
 
@@ -259,6 +298,17 @@ class ManagerDataCoordinator(BsmCoordinator):
         }
 
     async def _async_update_data(self) -> dict:
+        discovery = getattr(self.api, "discovery", None)
+        if discovery is not None and not getattr(self, "_discovered", False):
+            try:
+                await discovery.discover()
+                self._discovered = True
+            except AuthError as error:
+                raise ConfigEntryAuthFailed(str(error)) from error
+            except Exception:
+                _LOGGER.debug(
+                    "Runtime API discovery unavailable; using shipped contracts"
+                )
         return await self._fetch(
             {
                 "info": self.api.application.async_get_info(),
@@ -322,8 +372,18 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
         try:
             data = await self._fetch(
                 {
-                    "metrics": self.api.application.async_get_application_metrics(),
-                    "health": self.api.application.async_get_application_health(),
+                    **(
+                        {
+                            "metrics": self.api.application.async_get_application_metrics()
+                        }
+                        if self.supports("get_application_metrics")
+                        else {}
+                    ),
+                    **(
+                        {"health": self.api.application.async_get_application_health()}
+                        if self.supports("get_application_health")
+                        else {}
+                    ),
                 },
                 {"metrics": "latest", "health": ""},
             )

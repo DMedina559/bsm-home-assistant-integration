@@ -645,3 +645,100 @@ reload_plugins:
   target:
     device:
       integration: bedrock_server_manager
+
+get_application_settings:
+  name: Get Application Settings
+  description: Get application settings.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+
+get_server_settings:
+  name: Get Server Settings
+  description: Get server settings.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+
+set_server_setting:
+  name: Set Server Setting
+  description: Set server setting.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    key:
+      name: Key
+      required: true
+      selector:
+        text: {}
+    value:
+      name: Value
+      required: true
+      selector:
+        object: {}
+
+discover_operations:
+  name: Discover Operations
+  description: Discover current core and plugin OpenAPI operations.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    refresh:
+      name: Refresh
+      required: false
+      selector:
+        boolean: {}
+
+call_operation:
+  name: Call Operation
+  description: Invoke an advertised operation using SDK contract validation and manager
+    authentication.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    operation_id:
+      name: Operation Id
+      required: true
+      selector:
+        text: {}
+    path_params:
+      name: Path Params
+      required: false
+      selector:
+        object: {}
+    query:
+      name: Query
+      required: false
+      selector:
+        object: {}
+    json_data:
+      name: Json Data
+      required: false
+      selector:
+        object: {}
+
+upload_content:
+  name: Upload Content
+  description: Upload a world or addon from a Home Assistant allowed path.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    file_path:
+      name: File Path
+      required: true
+      selector:
+        text: {}
+
+export_world:
+  name: Export World
+  description: Export world.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}

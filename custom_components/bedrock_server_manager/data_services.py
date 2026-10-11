@@ -9,6 +9,10 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
+from .configuration_services import (
+    register_configuration_services,
+    unregister_configuration_services,
+)
 from .const import DOMAIN
 from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets
@@ -55,6 +59,7 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
 
 def register_data_services(hass: HomeAssistant) -> None:
     """Register read/update actions that expose the backend validation schema."""
+    register_configuration_services(hass)
     for name, schema in (
         ("get_plugin_settings", GET_SETTINGS_SCHEMA),
         ("update_plugin_settings", UPDATE_SETTINGS_SCHEMA),
@@ -84,6 +89,7 @@ def register_data_services(hass: HomeAssistant) -> None:
 
 def unregister_data_services(hass: HomeAssistant) -> None:
     """Remove response-capable actions when the final manager unloads."""
+    unregister_configuration_services(hass)
     for name in (
         "get_plugin_settings",
         "update_plugin_settings",

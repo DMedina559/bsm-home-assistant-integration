@@ -183,3 +183,36 @@ async def test_mutation_invalidates_http_request_already_in_flight(hass, api):
     assert coordinator.invalidate({"epoch": "one", "revision": 2})
     release.set()
     assert (await task)["properties"] == {"server-name": "Example"}
+
+
+@pytest.mark.asyncio
+async def test_scoped_events_fetch_only_affected_resources_and_full_refresh_wins(
+    hass, api
+):
+    server_api(api)
+    coordinator = MinecraftBedrockCoordinator(hass, api, "test", 30)
+    await coordinator.async_refresh()
+    api.servers.async_get_server_process_info.reset_mock()
+    api.servers.async_get_server_properties.reset_mock()
+    coordinator.invalidate({}, {"properties"})
+    await coordinator.async_refresh()
+    api.servers.async_get_server_properties.assert_awaited_once()
+    api.servers.async_get_server_process_info.assert_not_awaited()
+    coordinator.invalidate({})
+    coordinator.invalidate({}, {"properties"})
+    await coordinator.async_refresh()
+    api.servers.async_get_server_process_info.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_optional_bans_skip_absent_runtime_capability(hass, api):
+
+    from bsm_api_client.openapi import ApiCapabilities
+
+    server_api(api)
+    api.schema = {"openapi": "3.1.0"}
+    api.capabilities = ApiCapabilities({})
+    coordinator = MinecraftBedrockCoordinator(hass, api, "test", 30)
+    await coordinator.async_refresh()
+    api.servers.async_get_server_bans.assert_not_awaited()
+    assert coordinator.data["server_bans"] == []

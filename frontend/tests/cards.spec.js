@@ -294,3 +294,133 @@ test("metrics fit narrow sections with long manager names", async ({
     )
     .toBe(true);
 });
+
+test("overview controls installed servers and offers a table layout", async ({
+  page,
+}) => {
+  await mount(page, "bsm-overview-card", {
+    layout: "table",
+    entities: ["sensor.server"],
+  });
+  await expect(page.getByRole("table")).toBeVisible();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  expect(await page.evaluate(() => window.requests.at(-1))).toEqual([
+    "switch",
+    "turn_on",
+    {},
+    { entity_id: "switch.run" },
+  ]);
+  await page.getByRole("button", { name: "Update", exact: true }).click();
+  expect(await page.evaluate(() => window.requests.at(-1).service)).toBe(
+    "update_server",
+  );
+});
+
+test("tasks preserve structured outcomes and reject older HTTP snapshots", async ({
+  page,
+}) => {
+  await mount(page, "bsm-tasks-card", { entity: "sensor.version" });
+  await expect(page.getByText("Running · Installing")).toBeVisible();
+  await page.evaluate(() =>
+    window.task({
+      id: "task",
+      status: "completed",
+      message: "Installed",
+      epoch: "a",
+      revision: 3,
+      result: {
+        server_name: "Alpha",
+        outcome: "installed",
+        details: { files: 12 },
+      },
+    }),
+  );
+  await page.getByText("Completed · Installed").click();
+  await expect(page.getByText("installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("12", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Refresh tasks" }).click();
+  await expect(page.getByText("Completed · Installed")).toBeVisible();
+  await page.evaluate(() =>
+    window.task({
+      id: "task",
+      manager_url: "http://other",
+      status: "failed",
+      message: "Wrong manager",
+      epoch: "a",
+      revision: 4,
+      error: { message: "Wrong manager" },
+    }),
+  );
+  await expect(page.getByText("Wrong manager")).toHaveCount(0);
+});
+
+test("settings preserve boolean and numeric values and block conflicting saves", async ({
+  page,
+}) => {
+  await mount(page, "bsm-settings-card", { entity: "sensor.version" });
+  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.getByLabel("settings.autostart").check();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  const changes = await page.evaluate(() =>
+    window.requests
+      .filter((r) => r.service === "set_global_setting")
+      .map((r) => r.service_data),
+  );
+  expect(changes).toContainEqual({
+    key: "monitor.app_interval_seconds",
+    value: 5,
+  });
+  expect(changes).toContainEqual({ key: "settings.autostart", value: true });
+});
+
+test("live application settings detect conflicts without replacing drafts", async ({
+  page,
+}) => {
+  await mount(page, "bsm-settings-card", { entity: "sensor.version" });
+  await page.getByLabel("Monitor.app interval seconds").fill("5");
+  await page.evaluate(() => {
+    window.settingsValues = {
+      monitor: { app_interval_seconds: 9 },
+      settings: { autostart: false },
+    };
+    window.event({
+      manager_url: "http://bsm",
+      event: "after_setting_update",
+      data: { result: { status: "success" } },
+    });
+  });
+  await expect(page.getByText(/Changed elsewhere/)).toBeVisible();
+  await expect(page.getByLabel("Monitor.app interval seconds")).toHaveValue(
+    "5",
+  );
+  await expect(
+    page.getByRole("button", { name: "Save settings" }),
+  ).toBeDisabled();
+});
+
+test("task failures show structured error details and raw response", async ({
+  page,
+}) => {
+  await mount(page, "bsm-tasks-card", { entity: "sensor.version" });
+  await page.getByText("Running · Installing").waitFor();
+  await page.evaluate(() =>
+    window.task({
+      id: "task",
+      status: "failed",
+      message: "Failed",
+      epoch: "a",
+      revision: 3,
+      error: {
+        message: "Disk full",
+        code: "storage_error",
+        details: { path: "worlds/Alpha" },
+      },
+    }),
+  );
+  await page.getByText("Failed · Failed", { exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Disk full");
+  await expect(page.getByRole("alert")).toContainText("storage_error");
+  await expect(page.getByRole("alert")).toContainText("worlds/Alpha");
+  await page.getByText("Raw response").click();
+  await expect(page.locator("pre")).toContainText('"revision": 3');
+});

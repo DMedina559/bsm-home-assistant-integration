@@ -91,6 +91,11 @@ The card picker includes:
 
 | Card type | Purpose |
 | --- | --- |
+| `custom:bsm-overview-card` | Server cards or table with start/stop, update and quick actions |
+| `custom:bsm-tasks-card` | Active and completed tasks, structured results, errors and raw response |
+| `custom:bsm-settings-card` | Grouped application or server settings with typed values |
+| `custom:bsm-bans-card` | Manage server bans and select known players |
+| `custom:bsm-api-card` | Discover and call core/plugin API operations using SDK validation |
 | `custom:bsm-fleet-card` | Compact server overview; click a server to open native entity details |
 | `custom:bsm-monitor-card` | Server controls, target version, settings, metrics and native history graphs |
 | `custom:bsm-health-card` | API/WebSocket connectivity, health checks, separate app/system metrics and history |
@@ -100,7 +105,7 @@ The card picker includes:
 | `custom:bsm-allowlist-card` | Manage allowed players |
 | `custom:bsm-permissions-card` | Stage and save player permissions |
 | `custom:bsm-restore-card` | Restore a selected backup or latest backups |
-| `custom:bsm-content-card` | Install available worlds or addons |
+| `custom:bsm-content-card` | Install worlds/addons, upload from HA allowed paths and export worlds |
 | `custom:bsm-addon-card` | Manage addon status, order and subpacks |
 | `custom:bsm-plugins-card` | Plugin status, enable/disable and reload |
 | `custom:bsm-event-trigger-card` | Trigger plugin events |
@@ -264,3 +269,50 @@ npm test
 ```
 
 Browser tests cover draft conflicts, unavailable resources, target-switch races, accepted tasks, missed WebSocket outcomes, plugin checklists, typed permission payloads, subscription cleanup and mobile layouts in light/dark themes. Python platform tests exercise real Home Assistant entry setup, entity/device registration, response-capable services, live metrics and unloading; network responses are simulated.
+
+### Overview, tasks and configuration
+
+Use `custom:bsm-overview-card` for fleet controls. `layout: cards` is the default;
+`layout: table` provides a compact table. An optional `entities` list restricts the
+servers shown. Start remains available for installed and updated servers. More
+Actions provides restart, backup and native details for configuration resources.
+
+```yaml
+type: grid
+columns: 1
+square: false
+cards:
+  - type: custom:bsm-overview-card
+    layout: cards
+  - type: custom:bsm-tasks-card
+    entity: sensor.my_manager_bsm_version
+  - type: custom:bsm-health-card
+    entity: sensor.my_manager_bsm_version
+```
+
+The tasks card loads tasks on selection, receives live updates and polls every five
+seconds while mounted. Completed outcomes remain visible when viewed. Filters show
+active, completed, failed or cancelled tasks. Results and nested error details use
+structured layouts with a raw-response disclosure. The backend exposes no percentage
+or task timestamps; the card displays its actual status and message.
+
+Use `custom:bsm-settings-card` with `scope: application` and a manager entity, or
+`scope: server` and a server status entity. Boolean and numeric values retain their
+JSON types. Application sections and server settings are grouped, external updates
+retain drafts, and conflicting edits block saving. Updates are sent individually;
+if one fails, earlier successful changes remain applied. Backend validation remains
+authoritative. Plugin settings additionally support declared schemas, nested objects,
+server checklists, descriptions and numeric bounds.
+
+Response-capable actions include `get_application_settings`, `get_server_settings`,
+`set_server_setting`, `discover_operations`, `call_operation`, `upload_content` and
+`export_world`. Dynamic calls use an operation ID, optional `path_params`, `query`
+and `json_data`; the SDK discovers and validates the contract using the configured
+manager credentials. `custom:bsm-api-card` exposes these operations and their request
+contracts. Binary responses are not supported by HA action responses. Content uploads require the content-uploader plugin and
+read an existing file from a Home Assistant allowed path; they do not upload a browser
+file. World export outcomes appear in the task display.
+
+Known configuration mutations refresh only the affected server resources. Reconnects,
+terminal task events and unknown plugin mutations retain full refreshes. Runtime API
+discovery also lets optional metrics, health and ban endpoints be skipped when absent.

@@ -294,7 +294,10 @@ async def _async_setup_entry(  # noqa: C901
                     or (unknown_mutation and not name)
                 ):
                     coordinator = server_data["coordinator"]
-                    if coordinator.invalidate(data):
+                    resources = (
+                        server_event_resources(event) if not all_servers else None
+                    )
+                    if coordinator.invalidate(data, resources):
                         hass.async_create_task(coordinator.async_request_refresh())
 
     def _ws_process(server_name, payload):
@@ -433,3 +436,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
     await _async_cleanup_entry(hass, entry)
     return True
+
+
+def server_event_resources(event: str) -> set[str] | None:
+    """Refresh known mutation domains; unknown mutations retain a full refresh."""
+    mapping = {
+        "after_set_server_setting": {"server_settings", "summary"},
+        "after_properties_change": {"properties", "summary"},
+        "after_allowlist_change": {"allowlist"},
+        "after_permission_change": {"server_permissions"},
+        "after_add_server_ban": {"server_bans"},
+        "after_remove_server_ban": {"server_bans"},
+    }
+    return mapping.get(event)

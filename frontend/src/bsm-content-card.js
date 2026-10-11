@@ -2,7 +2,12 @@ import { BsmCard, html, register, unavailable } from "./base.js";
 import { filename } from "./model.js";
 class ContentCard extends BsmCard {
   static title = "Install server content";
-  static properties = { source: { state: true }, file: { state: true } };
+  static properties = {
+    source: { state: true },
+    file: { state: true },
+    uploadPath: { state: true },
+    canUpload: { state: true },
+  };
   static getConfigForm() {
     const form = super.getConfigForm();
     form.schema.push({
@@ -19,6 +24,23 @@ class ContentCard extends BsmCard {
   }
   selectedChanged() {
     this.file = "";
+    this.canUpload = false;
+    this._checked = "";
+  }
+  syncState() {
+    if (!this.available || this._checked === this.selection) return;
+    this._checked = this.selection;
+    const generation = this._generation;
+    this.responseService("discover_operations", {})
+      .then((response) => {
+        if (generation === this._generation)
+          this.canUpload = (
+            response.results?.[0]?.result?.operations || []
+          ).some((op) => op.operation_id === "upload_content");
+      })
+      .catch(() => {
+        if (generation === this._generation) this._checked = "";
+      });
   }
   render() {
     const sources = Object.entries(this.hass?.states || {}).filter(
@@ -53,7 +75,23 @@ class ContentCard extends BsmCard {
           @click=${() => this.action(`install_${type}`, { filename: this.file }, "Request accepted.", { confirm: type === "world" ? "Installing a world replaces this server’s current world. Continue?" : null })}
         >
           Install ${type}
-        </button>`,
+        </button>
+        ${this.button("Export world", "export_world", {}, { message: "Export requested." })}
+        ${
+          this.canUpload
+            ? html`<details>
+                <summary>Upload from Home Assistant</summary>
+                <small
+                  >The file must be inside a Home Assistant allowed path.</small
+                >${this.input("File path", this.uploadPath || "", (v) => (this.uploadPath = v))}<button
+                  ?disabled=${!this.available || this.busy || !this.uploadPath}
+                  @click=${() => this.action("upload_content", { file_path: this.uploadPath }, "Content uploaded.")}
+                >
+                  Upload content
+                </button>
+              </details>`
+            : html`<small>Uploads require the content-uploader plugin.</small>`
+        }`,
     );
   }
 }

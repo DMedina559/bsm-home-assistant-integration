@@ -1,4 +1,4 @@
-import{a as s,h as a,i as e}from"./shared-26346ZH3.js";var m=class extends e{static title="Server command";static properties={command:{state:!0}};constructor(){super(),this.command=""}selectedChanged(){this.command=""}async send(){let t=this.command.trim();t&&await this.action("send_command",{command:t},"Command sent.")&&(this.command="")}render(){return this.frame(s`${this.input("Command",this.command,t=>this.command=t)}<button
+import{a as s,j as a,k as e}from"./shared-5SVUCQ5X.js";var m=class extends e{static title="Server command";static properties={command:{state:!0}};constructor(){super(),this.command=""}selectedChanged(){this.command=""}async send(){let t=this.command.trim();t&&await this.action("send_command",{command:t},"Command sent.")&&(this.command="")}render(){return this.frame(s`${this.input("Command",this.command,t=>this.command=t)}<button
           class="primary"
           ?disabled=${!this.available||this.busy||!this.command.trim()}
           @click=${this.send}
