@@ -382,6 +382,18 @@
           "name": "Task ID"
         }
       }
+    },
+    "update_server": {
+      "name": "Update server",
+      "description": "Check for updates and return an accepted task identifier."
+    },
+    "restart_server": {
+      "name": "Restart server",
+      "description": "Restart each selected server and return its outcome."
+    },
+    "reload_plugins": {
+      "name": "Reload plugins",
+      "description": "Reload plugins on each targeted manager."
     }
   }
 }

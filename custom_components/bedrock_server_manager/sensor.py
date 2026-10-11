@@ -230,6 +230,27 @@ async def async_setup_entry(
 class MinecraftServerSensor(
     CoordinatorEntity[MinecraftBedrockCoordinator], SensorEntity
 ):
+    _unrecorded_attributes = frozenset(
+        {
+            "server_properties",
+            "server_permissions",
+            "server_addons_list",
+            "world_backups_list",
+            "allowlist_backups_list",
+            "properties_backups_list",
+            "permissions_backups_list",
+            "allowed_players",
+            "online_players",
+            "server_bans",
+            "global_players_list",
+            "available_worlds_list",
+            "available_addons_list",
+            "plugins_data",
+            "pid",
+            "uptime",
+            "bsm_settings_revision",
+        }
+    )
     _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
 
@@ -245,6 +266,9 @@ class MinecraftServerSensor(
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        if description.key == "status":
+            # Dynamic flattened settings belong to live state, not recorder history.
+            self._unrecorded_attributes = frozenset({"*"})
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._bsm_os_type = bsm_os_type
@@ -353,7 +377,11 @@ class MinecraftServerSensor(
     @property
     def native_value(self) -> Any:  # noqa: C901
         if not self.available or not isinstance(self.coordinator.data, dict):
-            return None
+            return {
+                "bsm_role": "server",
+                "bsm_key": self.entity_description.key,
+                "bsm_server_name": self._server_name,
+            }
         data = self.coordinator.data
         key = self.entity_description.key
         process_info = data.get("process_info")
@@ -423,7 +451,11 @@ class MinecraftServerSensor(
         if not self.available or not isinstance(self.coordinator.data, dict):
             return None
         data = self.coordinator.data
-        attrs: Dict[str, Any] = {}
+        attrs: Dict[str, Any] = {
+            "bsm_role": "server",
+            "bsm_key": self.entity_description.key,
+            "bsm_server_name": self._server_name,
+        }
         key = self.entity_description.key
         process_info = data.get("process_info")
 
@@ -453,7 +485,7 @@ class MinecraftServerSensor(
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
-                    attrs[ATTR_PID] = f"\u00a0{process_info[ATTR_PID]}"
+                    attrs[ATTR_PID] = process_info[ATTR_PID]
                 if process_info.get(ATTR_UPTIME) is not None:
                     attrs[ATTR_UPTIME] = process_info[ATTR_UPTIME]
         elif key == KEY_SERVER_PERMISSIONS_COUNT:
@@ -469,8 +501,6 @@ class MinecraftServerSensor(
             attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
         elif key == KEY_PERMISSIONS_BACKUPS_COUNT:
             attrs[ATTR_PERMISSIONS_BACKUPS_LIST] = data.get("permissions_backups", [])
-        elif key == KEY_PROPERTIES_BACKUPS_COUNT:
-            attrs[ATTR_PROPERTIES_BACKUPS_LIST] = data.get("properties_backups", [])
         elif key == KEY_ALLOWLIST_COUNT:
             attrs[ATTR_ALLOWLISTED_PLAYERS] = [
                 p.get("name") for p in data.get("allowlist", []) if isinstance(p, dict)
@@ -526,6 +556,27 @@ class MinecraftServerSensor(
 
 
 class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity):
+    _unrecorded_attributes = frozenset(
+        {
+            "server_properties",
+            "server_permissions",
+            "server_addons_list",
+            "world_backups_list",
+            "allowlist_backups_list",
+            "properties_backups_list",
+            "permissions_backups_list",
+            "allowed_players",
+            "online_players",
+            "server_bans",
+            "global_players_list",
+            "available_worlds_list",
+            "available_addons_list",
+            "plugins_data",
+            "pid",
+            "uptime",
+            "bsm_settings_revision",
+        }
+    )
     _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
 
@@ -563,7 +614,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
     @property
     def native_value(self) -> Optional[Any]:
         if not self.available or not isinstance(self.coordinator.data, dict):
-            return None
+            return {"bsm_role": "manager", "bsm_key": self.entity_description.key}
         data = self.coordinator.data
         key = self.entity_description.key
         if key == KEY_GLOBAL_PLAYERS_COUNT:
@@ -598,7 +649,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             return None
         data = self.coordinator.data
         key = self.entity_description.key
-        attrs: Dict[str, Any] = {}
+        attrs: Dict[str, Any] = {"bsm_role": "manager", "bsm_key": key}
         if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
         if key == KEY_AVAILABLE_WORLDS_COUNT:
@@ -611,6 +662,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
                 info.get("os_type", "Unknown") if isinstance(info, dict) else "Unknown"
             )
         if key == KEY_PLUGIN_STATUSES:
+            attrs["bsm_settings_revision"] = self.coordinator.state.generation
             plugins_raw_data = data.get("plugins_status", {})
             if isinstance(plugins_raw_data, dict):
                 attrs[ATTR_PLUGINS_DATA] = plugins_raw_data

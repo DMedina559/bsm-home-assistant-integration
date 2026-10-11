@@ -132,7 +132,12 @@ class BsmCoordinator(DataUpdateCoordinator):
     ) -> bool:
         """Merge an accepted typed response into its independent resource."""
         payload = json_data(result)
-        if not self.state.accept(key, payload):
+        stamp = payload
+        if key == "metrics" and isinstance(payload.get("latest"), dict):
+            latest = payload["latest"]
+            if latest.get("epoch") is not None or latest.get("revision") is not None:
+                stamp = latest
+        if not self.state.accept(key, stamp):
             return False
         if key == "summary":
             data.update(

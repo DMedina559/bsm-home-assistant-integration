@@ -7,6 +7,7 @@ import json  # Added for parsing setting values
 import logging
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
+import probatio as vol
 from bsm_api_client import (
     APIError,
     AuthError,
@@ -40,7 +41,7 @@ from bsm_api_client.models import (
     TriggerEventPayload,
 )
 from homeassistant.components.persistent_notification import async_create
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 
@@ -107,6 +108,7 @@ from .const import (
     SERVICE_UPDATE_ADDON_SUBPACK,
     SERVICE_UPDATE_PROPERTIES,
 )
+from .coordinator import json_data
 from .data_services import register_data_services, unregister_data_services
 from .service_schemas import (
     ADD_GLOBAL_PLAYERS_SERVICE_SCHEMA,
@@ -131,6 +133,7 @@ from .service_schemas import (
     SET_GLOBAL_SETTING_SERVICE_SCHEMA,
     SET_PERMISSIONS_SERVICE_SCHEMA,
     SET_PLUGIN_ENABLED_SERVICE_SCHEMA,
+    TARGETING_SCHEMA_FIELDS,
     TRIGGER_BACKUP_SERVICE_SCHEMA,
     TRIGGER_PLUGIN_EVENT_SERVICE_SCHEMA,
     UNINSTALL_ADDON_SERVICE_SCHEMA,
@@ -738,6 +741,16 @@ async def _execute_targeted_service(
                 refreshes.append(coordinator.async_request_refresh())
     await asyncio.gather(*refreshes)
     _raise_action_errors(results)
+    return {
+        "results": [
+            {
+                "manager_url": hass.data[DOMAIN][entry_id]["manager_identifier"][1],
+                "server_name": name,
+                "result": json_data(result),
+            }
+            for (entry_id, name), result in zip(targets, results)
+        ]
+    }
 
 
 async def _execute_manager_targeted_service(
@@ -771,6 +784,15 @@ async def _execute_manager_targeted_service(
                 refreshes.append(coordinator.async_request_refresh())
     await asyncio.gather(*refreshes)
     _raise_action_errors(results)
+    return {
+        "results": [
+            {
+                "manager_url": hass.data[DOMAIN][entry_id]["manager_identifier"][1],
+                "result": json_data(result),
+            }
+            for entry_id, result in zip(targets, results)
+        ]
+    }
 
 
 def _raise_action_errors(results: list[Any]) -> None:
@@ -780,9 +802,39 @@ def _raise_action_errors(results: list[Any]) -> None:
         raise HomeAssistantError("BSM action failed: " + "; ".join(errors))
 
 
+async def _async_handle_server_lifecycle_action(api, server: str, action: str):
+    """Dispatch a fixed lifecycle action and preserve its typed outcome."""
+    methods = {
+        "update_server": api.servers.async_update_server,
+        "restart_server": api.servers.async_restart_server,
+    }
+    return await _base_api_call_handler(methods[action](server), action, server)
+
+
+async def async_handle_server_lifecycle_service(call: ServiceCall, hass: HomeAssistant):
+    """Expose response-capable server controls for dashboards and automations."""
+    return await _execute_targeted_service(
+        call, hass, _async_handle_server_lifecycle_action, call.service
+    )
+
+
+async def _async_handle_reload_plugins(api):
+    """Reload plugins and return any accepted task identifier."""
+    return await _base_api_call_handler(
+        api.plugins.async_reload_plugins(), "Reload plugins"
+    )
+
+
+async def async_handle_reload_plugins_service(call: ServiceCall, hass: HomeAssistant):
+    """Reload and reconcile plugins on each targeted manager."""
+    return await _execute_manager_targeted_service(
+        call, hass, _async_handle_reload_plugins
+    )
+
+
 # --- Main Service Handlers ---
 async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service, hass, _async_handle_send_command, service.data[FIELD_COMMAND]
     )
 
@@ -790,7 +842,7 @@ async def async_handle_send_command_service(service: ServiceCall, hass: HomeAssi
 async def async_handle_prune_downloads_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_prune_downloads,
@@ -808,7 +860,7 @@ async def async_handle_trigger_backup_service(
         raise ServiceValidationError(
             f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'."
         )
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_trigger_backup,
@@ -820,7 +872,7 @@ async def async_handle_trigger_backup_service(
 async def async_handle_restore_backup_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_restore_backup,
@@ -832,13 +884,15 @@ async def async_handle_restore_backup_service(
 async def async_handle_restore_latest_all_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(service, hass, _async_handle_restore_latest_all)
+    return await _execute_targeted_service(
+        service, hass, _async_handle_restore_latest_all
+    )
 
 
 async def async_handle_install_server_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_install_server,
@@ -849,13 +903,15 @@ async def async_handle_install_server_service(
 
 
 async def async_handle_scan_players_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_manager_targeted_service(service, hass, _async_handle_scan_players)
+    return await _execute_manager_targeted_service(
+        service, hass, _async_handle_scan_players
+    )
 
 
 async def async_handle_set_plugin_enabled_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_set_plugin_enabled,
@@ -867,7 +923,7 @@ async def async_handle_set_plugin_enabled_service(
 async def async_handle_trigger_plugin_event_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_trigger_plugin_event,
@@ -1013,7 +1069,7 @@ async def async_handle_delete_server_service(  # noqa: C901
 async def async_handle_add_to_allowlist_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_add_to_allowlist,
@@ -1025,7 +1081,7 @@ async def async_handle_add_to_allowlist_service(
 async def async_handle_remove_from_allowlist_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_remove_from_allowlist,
@@ -1036,7 +1092,7 @@ async def async_handle_remove_from_allowlist_service(
 async def async_handle_add_server_ban_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_add_server_ban,
@@ -1049,7 +1105,7 @@ async def async_handle_add_server_ban_service(
 async def async_handle_remove_server_ban_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_remove_server_ban,
@@ -1060,7 +1116,7 @@ async def async_handle_remove_server_ban_service(
 async def async_handle_set_permissions_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service, hass, _async_handle_set_permissions, service.data[FIELD_PERMISSIONS]
     )
 
@@ -1195,13 +1251,13 @@ async def async_handle_reset_world_service(  # noqa: C901
 async def async_handle_update_properties_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service, hass, _async_handle_update_properties, service.data[FIELD_PROPERTIES]
     )
 
 
 async def async_handle_install_world_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service, hass, _async_handle_install_world, service.data[FIELD_FILENAME]
     )
 
@@ -1272,7 +1328,7 @@ async def _async_handle_update_addon_subpack(
 
 
 async def async_handle_enable_addon_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_enable_addon,
@@ -1282,7 +1338,7 @@ async def async_handle_enable_addon_service(service: ServiceCall, hass: HomeAssi
 
 
 async def async_handle_disable_addon_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_disable_addon,
@@ -1294,7 +1350,7 @@ async def async_handle_disable_addon_service(service: ServiceCall, hass: HomeAss
 async def async_handle_uninstall_addon_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_uninstall_addon,
@@ -1306,7 +1362,7 @@ async def async_handle_uninstall_addon_service(
 async def async_handle_reorder_addons_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_reorder_addons,
@@ -1318,7 +1374,7 @@ async def async_handle_reorder_addons_service(
 async def async_handle_update_addon_subpack_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service,
         hass,
         _async_handle_update_addon_subpack,
@@ -1329,7 +1385,7 @@ async def async_handle_update_addon_subpack_service(
 
 
 async def async_handle_install_addon_service(service: ServiceCall, hass: HomeAssistant):
-    await _execute_targeted_service(
+    return await _execute_targeted_service(
         service, hass, _async_handle_install_addon, service.data[FIELD_FILENAME]
     )
 
@@ -1416,7 +1472,7 @@ async def async_handle_configure_os_service_service(  # noqa: C901
 async def async_handle_add_global_players_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service, hass, _async_handle_add_global_players, service.data[FIELD_PLAYERS]
     )
 
@@ -1424,7 +1480,7 @@ async def async_handle_add_global_players_service(
 async def async_handle_set_global_setting_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_set_global_setting,
@@ -1436,7 +1492,7 @@ async def async_handle_set_global_setting_service(
 async def async_handle_reload_global_settings_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    await _execute_manager_targeted_service(
+    return await _execute_manager_targeted_service(
         service,
         hass,
         _async_handle_reload_global_settings,
@@ -1447,7 +1503,9 @@ async def async_handle_reload_global_settings_service(
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register services with Home Assistant."""
     register_data_services(hass)
-    service_mapping = {
+    service_mapping: dict[
+        str, tuple[Callable[..., Coroutine[Any, Any, Any]], vol.Schema]
+    ] = {
         SERVICE_RESET_WORLD: (
             async_handle_reset_world_service,
             DELETE_SERVER_SERVICE_SCHEMA,
@@ -1562,6 +1620,23 @@ async def async_register_services(hass: HomeAssistant) -> None:
         ),
     }
 
+    service_mapping.update(
+        {
+            "update_server": (
+                async_handle_server_lifecycle_service,
+                vol.Schema(TARGETING_SCHEMA_FIELDS),
+            ),
+            "restart_server": (
+                async_handle_server_lifecycle_service,
+                vol.Schema(TARGETING_SCHEMA_FIELDS),
+            ),
+            "reload_plugins": (
+                async_handle_reload_plugins_service,
+                vol.Schema(TARGETING_SCHEMA_FIELDS),
+            ),
+        }
+    )
+
     for service_name, (handler, schema) in service_mapping.items():
         if not hass.services.has_service(DOMAIN, service_name):
 
@@ -1575,7 +1650,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     captured_handler.__name__,
                 )
                 try:
-                    await captured_handler(call, hass)
+                    result = await captured_handler(call, hass)
+                    return result or {"results": []}
                 except ServiceValidationError as sve:
                     _LOGGER.warning(
                         "Service validation error in %s for %s.%s: %s",
@@ -1606,7 +1682,11 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     ) from exc
 
             hass.services.async_register(
-                DOMAIN, service_name, service_wrapper_closure, schema=schema
+                DOMAIN,
+                service_name,
+                service_wrapper_closure,
+                schema=schema,
+                supports_response=SupportsResponse.OPTIONAL,
             )
             _LOGGER.debug("Registered service: %s.%s", DOMAIN, service_name)
 
@@ -1628,6 +1708,9 @@ async def async_remove_services(hass: HomeAssistant) -> None:
         services_to_unregister = [
             SERVICE_RESET_WORLD,
             SERVICE_SCAN_PLAYERS,
+            "update_server",
+            "restart_server",
+            "reload_plugins",
             SERVICE_SEND_COMMAND,
             SERVICE_PRUNE_DOWNLOADS,
             SERVICE_TRIGGER_BACKUP,

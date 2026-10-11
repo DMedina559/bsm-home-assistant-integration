@@ -1,6 +1,7 @@
 # custom_components/bedrock_server_manager/const.py
 """Constants for the Bedrock Server Manager integration."""
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -226,3 +227,27 @@ JS_MODULES = [
         "name": "BSM Event Trigger Card",
     },
 ]
+
+JS_MODULES.extend(
+    [
+        {
+            "filename": filename,
+            "version": INTEGRATION_VERSION,
+            "name": name,
+        }
+        for filename, name in (
+            ("bsm-fleet-card.js", "BSM Fleet Card"),
+            ("bsm-monitor-card.js", "BSM Server Monitor Card"),
+            ("bsm-health-card.js", "BSM Health and Metrics Card"),
+            ("bsm-plugin-settings-card.js", "BSM Plugin Settings Card"),
+        )
+    ]
+)
+
+# Content revisions invalidate browser caches whenever a bundled card changes.
+for module in JS_MODULES:
+    bundle = Path(__file__).parent / "frontend" / module["filename"]
+    if bundle.is_file():
+        module["version"] = (
+            f"{INTEGRATION_VERSION}.{hashlib.sha256(bundle.read_bytes()).hexdigest()[:12]}"
+        )

@@ -136,6 +136,10 @@ class MinecraftServerSwitch(
         """Initialize the server switch."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
+        self._attr_extra_state_attributes = {
+            "bsm_role": "server",
+            "bsm_key": description.key,
+        }
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._attr_installed_version_static = installed_version_static
@@ -439,6 +443,10 @@ class MinecraftServerSettingSwitch(
         """Initialize the setting switch."""
         super().__init__(coordinator)
         self.entity_description = description
+        self._attr_extra_state_attributes = {
+            "bsm_role": "server",
+            "bsm_key": description.key,
+        }
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._setting_key = setting_key
@@ -538,6 +546,10 @@ class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntit
     ) -> None:
         super().__init__(coordinator)
         self.plugin_name = plugin_name
+        self._attr_extra_state_attributes = {
+            "bsm_role": "manager",
+            "bsm_key": f"plugin:{plugin_name}",
+        }
         self._attr_name = f"Plugin {plugin_name}"
         self._attr_unique_id = (
             f"{DOMAIN}_{manager_identifier[1]}_plugin_{plugin_name}".lower().replace(

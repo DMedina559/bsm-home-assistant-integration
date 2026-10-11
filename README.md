@@ -75,17 +75,51 @@ Once installed and Home Assistant is restarted, configure the integration via th
     *   Click **Submit**.
 6.  The integration will set up a device for the BSM instance and child devices for each selected Minecraft server.
 
-## Lovelace Custom Cards
+## Dashboard cards
 
-This integration provides the backend entities and services. To create a more user-friendly interface in your dashboards, custom Lovelace cards are available:
+The integration registers locally bundled cards in dashboards using storage mode. They require no CDN connection. For YAML dashboards, register each desired module manually:
 
+```yaml
+resources:
+  - url: /bsm_cards/bsm-monitor-card.js
+    type: module
+  - url: /bsm_cards/bsm-health-card.js
+    type: module
+```
 
-- ### Send Server Commands
-- ### Server Properties Manager
-- ### Server Allowlist Manager
-- ### Server Permissions Manager
-- ### Server Restore Card
-- ### Server Content Installer
+The card picker includes:
+
+| Card type | Purpose |
+| --- | --- |
+| `custom:bsm-fleet-card` | Compact server overview; click a server to open native entity details |
+| `custom:bsm-monitor-card` | Server controls, target version, settings, metrics and native history graphs |
+| `custom:bsm-health-card` | API/WebSocket connectivity, health checks, separate app/system metrics and history |
+| `custom:bsm-plugin-settings-card` | Plugin tabs, typed settings, server checklists and backend validation |
+| `custom:bsm-command-card` | Send a server command |
+| `custom:bsm-properties-card` | Edit server properties |
+| `custom:bsm-allowlist-card` | Manage allowed players |
+| `custom:bsm-permissions-card` | Stage and save player permissions |
+| `custom:bsm-restore-card` | Restore a selected backup or latest backups |
+| `custom:bsm-content-card` | Install available worlds or addons |
+| `custom:bsm-addon-card` | Manage addon status, order and subpacks |
+| `custom:bsm-plugins-card` | Plugin status, enable/disable and reload |
+| `custom:bsm-event-trigger-card` | Trigger plugin events |
+
+Set the default server or manager with the visual editor's **Entity** field. Select the corresponding resource sensor (for example, a level-name sensor for properties or a plugin-status sensor for plugin settings). Runtime selectors list only matching resources. Entity IDs may be renamed: cards use resource metadata and device relationships, not entity-name conventions.
+
+```yaml
+type: custom:bsm-monitor-card
+entity: sensor.my_server_status
+history_hours: 6
+```
+
+All cards support optional `title` and `debug`. History cards support `history_hours` (1–168). The fleet card optionally accepts an `entities` list of server status sensors. The content card accepts `content_source_sensor_entity`. Existing `manager_entity`, `target_server_sensor_entity` and `target_device` configurations remain recognized; use `entity` for new configurations.
+
+Properties, permissions, addon order and plugin settings retain unsaved edits during live updates. Conflicting external changes block saving until edits are discarded and reloaded. Plugin settings include a **Check for updates** action. Plugins without settings stay out of the settings tabs. Restore, world install and addon removal require confirmation.
+
+Task-backed actions stay pending until a terminal outcome arrives. WebSocket events provide live feedback, with task-endpoint polling as a fallback. Switching targets or removing a card releases its task tracking and ignores late responses. Cards use Home Assistant's native recorder graphs, with unlike units on separate graphs. Enable additional diagnostic entities on the manager device to show their measurements.
+
+Large live lists (properties, players, addons, backups and plugin metadata) remain accessible to cards and automations but are excluded from recorder attribute history. Numeric sensor history remains available.
 
 ## Features
 
@@ -99,7 +133,7 @@ This integration provides the backend entities and services. To create a more us
 Entity IDs are typically `platform.server_name_entity_key` (e.g., `sensor.server_name_status`) or `platform.manager_id_entity_key` for global entities.
 
 *   **Sensors (Per Server Device):**
-    *   **Status:** Current state (`Running`, `Stopped`, etc.). *Attributes:* World Name, Installed Version, Allowlisted Players (list of names), All Server Properties (dictionary), PID, Uptime (when running).
+    *   **Status:** Current state (`RUNNING`, `STOPPED`, `INSTALLED`, etc.). *Attributes:* Installed Version and server settings. Properties, player lists and process details are provided by their corresponding sensors.
     *   **CPU Usage:** CPU percentage (%). *Attributes:* PID, Uptime (when running).
     *   **Memory Usage:** Memory usage (MiB).
     *   **Permissioned Players:** Count of players in the server's `permissions.json`. *Attributes:* Full list of permissioned players with XUIDs and levels.
@@ -216,3 +250,17 @@ python -m black --check --workers 1 custom_components tests
 python -m isort --check-only custom_components tests
 python -m flake8 --jobs 1 custom_components tests
 ```
+
+### Frontend development
+
+Card source lives in `frontend/src`; the committed modules under `custom_components/bedrock_server_manager/frontend` are the installable HACS resources. Build output includes the shared Lit runtime and its license notices.
+
+```bash
+npm ci
+npm run build
+npm run check:build
+npx playwright install chromium
+npm test
+```
+
+Browser tests cover draft conflicts, unavailable resources, target-switch races, accepted tasks, missed WebSocket outcomes, plugin checklists, typed permission payloads, subscription cleanup and mobile layouts in light/dark themes. Python platform tests exercise real Home Assistant entry setup, entity/device registration, response-capable services, live metrics and unloading; network responses are simulated.

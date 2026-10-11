@@ -626,3 +626,22 @@ get_task:
       required: true
       selector:
         text:
+
+update_server:
+  name: Update server
+  description: Check for a Bedrock update and return its task identifier when queued.
+  target:
+    device:
+      integration: bedrock_server_manager
+restart_server:
+  name: Restart server
+  description: Restart each selected server and return the backend outcome.
+  target:
+    device:
+      integration: bedrock_server_manager
+reload_plugins:
+  name: Reload plugins
+  description: Reload plugins on each targeted manager and return the backend outcome.
+  target:
+    device:
+      integration: bedrock_server_manager

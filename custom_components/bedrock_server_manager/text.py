@@ -44,6 +44,10 @@ class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEnti
         manager_identifier: tuple[str, str],
     ) -> None:
         super().__init__(coordinator)
+        self._attr_extra_state_attributes = {
+            "bsm_role": "server",
+            "bsm_key": "target_version",
+        }
         self._attr_unique_id = f"{DOMAIN}_{manager_identifier[1]}_{coordinator.server_name}_target_version".lower().replace(
             ":", "_"
         )

@@ -1,0 +1,20 @@
+{
+  "name": "bsm-home-assistant-cards",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node frontend/scripts/build.mjs",
+    "check:build": "node frontend/scripts/build.mjs --check",
+    "test": "playwright test",
+    "format": "prettier --write frontend package.json playwright.config.js",
+    "format:check": "prettier --check frontend package.json playwright.config.js"
+  },
+  "dependencies": {
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "esbuild": "^0.25.10",
+    "prettier": "^3.6.2"
+  }
+}

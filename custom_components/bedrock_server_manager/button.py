@@ -234,6 +234,10 @@ class MinecraftServerButton(
         """Initialize the server button."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
+        self._attr_extra_state_attributes = {
+            "bsm_role": "server",
+            "bsm_key": description.key,
+        }
         self._server_name = (
             server_name  # Store the server name (e.g., "s1", "my_world")
         )
@@ -454,6 +458,10 @@ class MinecraftManagerButton(
     ) -> None:
         """Initialize the manager button."""
         self.entity_description = description
+        self._attr_extra_state_attributes = {
+            "bsm_role": "manager",
+            "bsm_key": description.key,
+        }
         self._config_entry_id = (
             config_entry_id  # Store for retrieving API client if not passed directly
         )

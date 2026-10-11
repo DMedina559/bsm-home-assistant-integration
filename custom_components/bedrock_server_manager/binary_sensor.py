@@ -102,12 +102,13 @@ class ApplicationHealthSensor(
 
     @property
     def extra_state_attributes(self) -> dict | None:
+        metadata = {"bsm_role": "manager", "bsm_key": self.key}
         if self.key in {"connection", "websocket", "health"}:
-            return None
+            return metadata
         check = (
             (self.coordinator.data or {})
             .get("health", {})
             .get("checks", {})
             .get(self.key)
         )
-        return {"message": check["message"]} if check else None
+        return {**metadata, "message": check["message"]} if check else metadata

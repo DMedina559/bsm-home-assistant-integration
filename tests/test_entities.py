@@ -80,7 +80,7 @@ async def test_health_problems_are_separate_from_connection_and_live_state(hass,
     assert ApplicationHealthSensor(coordinator, identifier, "health").is_on
     database = ApplicationHealthSensor(coordinator, identifier, "database")
     assert database.available and database.is_on
-    assert database.extra_state_attributes == {"message": "Database unavailable"}
+    assert database.extra_state_attributes["message"] == "Database unavailable"
     assert not ApplicationHealthSensor(coordinator, identifier, "state").is_on
     coordinator.set_websocket_connected(True)
     coordinator.http_connected = False

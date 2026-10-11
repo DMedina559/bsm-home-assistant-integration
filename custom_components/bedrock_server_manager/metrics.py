@@ -124,6 +124,10 @@ class ApplicationMetricSensor(
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self._attr_extra_state_attributes = {
+            "bsm_role": "manager",
+            "bsm_key": description.key,
+        }
         self._attr_unique_id = (
             f"{DOMAIN}_{manager_identifier[1]}_{description.key}".lower().replace(
                 ":", "_"
