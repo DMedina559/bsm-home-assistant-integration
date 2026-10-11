@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from homeassistant.core import callback
 
 from custom_components.bedrock_server_manager.websocket import BsmWebSocketManager
 
@@ -95,9 +96,12 @@ async def test_before_failed_and_ack_messages_do_not_refresh(hass, api):
 async def test_tasks_expose_results_and_only_terminal_updates_refresh(hass, api):
     ws = manager(hass, api)
     events = []
-    hass.bus.async_listen(
-        "bedrock_server_manager_task_update", lambda event: events.append(event.data)
-    )
+
+    @callback
+    def capture_task(event):
+        events.append(event.data)
+
+    hass.bus.async_listen("bedrock_server_manager_task_update", capture_task)
     for revision, status in (
         (1, "queued"),
         (2, "running"),
@@ -120,7 +124,7 @@ async def test_tasks_expose_results_and_only_terminal_updates_refresh(hass, api)
             }
         )
     await hass.async_block_till_done()
-    assert len(events) == 3
+    assert [event["status"] for event in events] == ["queued", "running", "completed"]
     assert events[-1]["result"]["outcome"] == "installed"
     assert events[-1]["status"] == "completed"
     ws.coordinator_refresh_callback.assert_called_once()
