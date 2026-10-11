@@ -41,4 +41,4 @@ repos:
           - types-requests
           - types-PyYAML
           - homeassistant==2026.10.1
-          - bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@95bbb3cadf35d9670d21b4689c8c3445184450b9#subdirectory=packages/bsm-api-client
+          - bsm-api-client==1.7.0b1

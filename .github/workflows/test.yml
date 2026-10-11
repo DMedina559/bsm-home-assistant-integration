@@ -17,14 +17,8 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
-      # Test the pending SDK contract migration until its first stable release.
-      - uses: actions/checkout@v4
-        with:
-          repository: DMedina559/bsm-api-client
-          ref: 95bbb3cadf35d9670d21b4689c8c3445184450b9
-          path: api-client
       - name: Install Home Assistant and test dependencies
-        run: python -m pip install -r requirements-test.txt ./api-client/packages/bsm-api-client
+        run: python -m pip install -r requirements-test.txt
       - name: Check formatting and types
         run: |
           python -m black --check --workers 1 custom_components tests
