@@ -56,7 +56,8 @@
           "update_credentials": "Update API Credentials",
           "select_servers": "Select Servers to Monitor",
           "update_server_interval": "Set Server Data Polling Interval",
-          "update_manager_interval": "Set Manager Data Polling Interval"
+          "update_manager_interval": "Set Manager Data Polling Interval",
+          "update_monitor_interval": "Health and metrics fallback interval"
         }
       },
       "update_credentials": {
@@ -86,6 +87,13 @@
         "description": "Define how often Home Assistant polls global Bedrock Server Manager data (e.g., BSM OS/Version, Global Players List, Available Content). This is typically less frequent than individual server polling.",
         "data": {
           "manager_scan_interval": "Manager data update frequency (seconds)"
+        }
+      },
+      "update_monitor_interval": {
+        "title": "Health and metrics fallback interval",
+        "description": "Live metrics follow the BSM sampling interval. This controls HTTP fallback polling and health checks.",
+        "data": {
+          "monitor_scan_interval": "Fallback interval (seconds)"
         }
       }
     },
@@ -340,6 +348,40 @@
     "scan_players": {
       "name": "Scan player logs globally",
       "description": "Triggers a scan of all server log files on the BSM manager host to update the global list of known players. Targets a BSM manager instance."
+    },
+    "get_plugin_settings": {
+      "name": "Get plugin settings",
+      "description": "Read the settings and validation schema for a plugin that declares settings.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin name"
+        }
+      }
+    },
+    "update_plugin_settings": {
+      "name": "Update plugin settings",
+      "description": "Validate and update settings using the plugin settings schema.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin name"
+        },
+        "settings": {
+          "name": "Settings"
+        }
+      }
+    },
+    "list_tasks": {
+      "name": "List task outcomes",
+      "description": "Return tasks visible to the selected manager account, including results and errors."
+    },
+    "get_task": {
+      "name": "Get task outcome",
+      "description": "Return a current task snapshot.",
+      "fields": {
+        "task_id": {
+          "name": "Task ID"
+        }
+      }
     }
   }
 }

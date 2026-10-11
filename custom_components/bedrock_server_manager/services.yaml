@@ -577,3 +577,52 @@ update_addon_subpack:
       example: "subpack_folder_name"
       selector:
         text: {}
+
+get_plugin_settings:
+  name: Get plugin settings
+  description: Read a plugin's settings and validation schema. Supports response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    plugin_name:
+      name: Plugin name
+      required: true
+      selector:
+        text:
+update_plugin_settings:
+  name: Update plugin settings
+  description: Validate and persist settings for plugins that declare a settings schema.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    plugin_name:
+      name: Plugin name
+      required: true
+      selector:
+        text:
+    settings:
+      name: Settings
+      required: true
+      selector:
+        object:
+
+list_tasks:
+  name: List task outcomes
+  description: Return tasks visible to the selected manager account, including results and errors.
+  target:
+    device:
+      integration: bedrock_server_manager
+get_task:
+  name: Get task outcome
+  description: Return a task snapshot with its status, result, error and revision.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    task_id:
+      name: Task ID
+      required: true
+      selector:
+        text:

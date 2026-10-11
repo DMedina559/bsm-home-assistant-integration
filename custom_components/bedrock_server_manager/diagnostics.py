@@ -27,7 +27,6 @@ from homeassistant.helpers.entity_registry import async_get as er_async_get
 # --- IMPORT FROM LOCAL MODULES ---
 from .const import DOMAIN  # CONF_SERVER_NAMES is not directly used here
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
-
 from .utils import device_config_entry_ids
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,19 +35,45 @@ _LOGGER = logging.getLogger(__name__)
 TO_REDACT_CONFIG = {
     CONF_PASSWORD,
     CONF_USERNAME,
-    "base_url", "api_base_url", "configuration_url", "identifier_tuple", "identifiers",
-    "password", "token", "access_token", "refresh_token", "jwt_token", "_jwt_token",
-    "api_key", "secret", "authorization", "xuid", "uuid", "ip", "ip_address",
-    "global_players", "global_players_list", "online_players", "allowlist",
-    "allowlisted_players", "allowed_players", "server_permissions", "server_permissions_list", "server_bans",
+    "base_url",
+    "api_base_url",
+    "configuration_url",
+    "identifier_tuple",
+    "identifiers",
+    "password",
+    "token",
+    "access_token",
+    "refresh_token",
+    "jwt_token",
+    "_jwt_token",
+    "api_key",
+    "secret",
+    "authorization",
+    "xuid",
+    "uuid",
+    "ip",
+    "ip_address",
+    "global_players",
+    "global_players_list",
+    "online_players",
+    "allowlist",
+    "allowlisted_players",
+    "allowed_players",
+    "server_permissions",
+    "server_permissions_list",
+    "server_bans",
 }
 
 
-def _redact_diagnostics(data: Any, entry: ConfigEntry) -> Any:
+def _redact_diagnostics(data: Dict[str, Any], entry: ConfigEntry) -> Dict[str, Any]:
     """Redact nested keys and connection URLs embedded in registry strings."""
     redacted = async_redact_data(data, TO_REDACT_CONFIG)
     url = entry.data.get("base_url")
-    credentials = {str(entry.data.get(key)) for key in (CONF_USERNAME, CONF_PASSWORD) if entry.data.get(key)}
+    credentials = {
+        str(entry.data.get(key))
+        for key in (CONF_USERNAME, CONF_PASSWORD)
+        if entry.data.get(key)
+    }
 
     def scrub(value):
         if isinstance(value, dict):
@@ -62,7 +87,7 @@ def _redact_diagnostics(data: Any, entry: ConfigEntry) -> Any:
                 return value.replace(url, "**REDACTED**")
         return value
 
-    return scrub(redacted)
+    return cast(Dict[str, Any], scrub(redacted))
 
 
 async def async_get_config_entry_diagnostics(  # noqa: C901
@@ -75,7 +100,9 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             "title": entry.title,
             "entry_id": entry.entry_id,
             "data": async_redact_data(entry.data, TO_REDACT_CONFIG),
-            "options": async_redact_data(dict(entry.options), TO_REDACT_CONFIG),  # Include current options
+            "options": async_redact_data(
+                dict(entry.options), TO_REDACT_CONFIG
+            ),  # Include current options
             "source": entry.source,
             "version": entry.version,
             "disabled_by": entry.disabled_by,
@@ -137,13 +164,11 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
         "identifier_tuple": manager_identifier_tuple,
         "detected_os_type": manager_os,
         "detected_app_version": manager_version,
-        "api_base_url": getattr(
-            api_client,
-            "_base_url",
-            "Unknown (client not fully initialized or attribute missing)",
+        "api_base_url": entry.data.get("base_url"),
+        "websocket_connected": bool(
+            entry_specific_data.get("ws_manager")
+            and entry_specific_data["ws_manager"]._is_connected
         ),
-        "has_auth_token": hasattr(api_client, "_jwt_token")
-        and api_client._jwt_token is not None,
     }
 
     # Add Manager Coordinator diagnostics
@@ -152,7 +177,6 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             "name": manager_coordinator.name,
             "last_update_success": manager_coordinator.last_update_success,
             "data": async_redact_data(manager_coordinator.data, TO_REDACT_CONFIG),
-            "listeners_count": len(manager_coordinator._listeners),
             "update_interval_seconds": (
                 manager_coordinator.update_interval.total_seconds()
                 if manager_coordinator.update_interval
@@ -161,6 +185,15 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
         }
     else:
         diagnostics_data["manager_data_coordinator"] = "Not available or setup failed."
+
+    monitor = entry_specific_data.get("monitor_coordinator")
+    if monitor:
+        diagnostics_data["application_monitor"] = {
+            "http_connected": monitor.http_connected,
+            "websocket_connected": monitor.websocket_connected,
+            "data": monitor.data,
+            "unavailable_resources": sorted(monitor.unavailable_resources),
+        }
 
     # Add Server Coordinators diagnostics
     diagnostics_data["monitored_server_coordinators"] = {}
@@ -174,7 +207,6 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
                 "coordinator_name": coordinator.name,
                 "last_update_success": coordinator.last_update_success,
                 "data": async_redact_data(coordinator.data, TO_REDACT_CONFIG),
-                "listeners_count": len(coordinator._listeners),
                 "update_interval_seconds": (
                     coordinator.update_interval.total_seconds()
                     if coordinator.update_interval
@@ -293,13 +325,21 @@ async def async_get_device_diagnostics(
         manager_url = entry.data.get("base_url", "")
         server_prefix = f"{manager_url}_"
         if device_primary_id_value.startswith(server_prefix):
-            server_name = device_primary_id_value[len(server_prefix):]
-            server_diag = config_entry_diagnostics.get("monitored_server_coordinators", {}).get(server_name)
+            server_name = device_primary_id_value.removeprefix(server_prefix)
+            server_diag = config_entry_diagnostics.get(
+                "monitored_server_coordinators", {}
+            ).get(server_name)
             if server_diag:
-                device_specific_diagnostics["associated_server_coordinator_data"] = server_diag
+                device_specific_diagnostics["associated_server_coordinator_data"] = (
+                    server_diag
+                )
         elif device_primary_id_value == manager_url:
-            device_specific_diagnostics["associated_manager_info"] = config_entry_diagnostics.get("bsm_manager_connection", {})
-            device_specific_diagnostics["associated_manager_coordinator_data"] = config_entry_diagnostics.get("manager_data_coordinator", {})
+            device_specific_diagnostics["associated_manager_info"] = (
+                config_entry_diagnostics.get("bsm_manager_connection", {})
+            )
+            device_specific_diagnostics["associated_manager_coordinator_data"] = (
+                config_entry_diagnostics.get("manager_data_coordinator", {})
+            )
     else:
         _LOGGER.warning(
             "Device %s (ID: %s) has no primary %s domain identifier.",

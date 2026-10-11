@@ -23,8 +23,9 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 ## Prerequisites
 
-*   Home Assistant installation (Version 2025.x or later recommended).
-*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) application.
+*   Home Assistant 2026.10 or newer (Python 3.14).
+*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) with the current metrics, health, task and revisioned WebSocket contracts.
+*   `bsm-api-client` 1.6.1 or newer. This branch depends on its pending stable release; HACS installation requires that release to be published.
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.
 *   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
@@ -190,3 +191,28 @@ Changes trigger an automatic reload of the integration.
       logs:
         custom_components.bedrock_server_manager: debug
     ```
+
+## Metrics, health and live state
+
+The manager device provides separate application and system measurements: CPU, memory, uptime, background operations, asyncio tasks, threads, event loop lag, disk throughput and network throughput. Native units and measurement state classes support Home Assistant history, statistics and dashboard charts. Memory is reported in MiB and throughput in KiB/s; supported units can be changed through Home Assistant entity settings. Detailed diagnostic measurements are disabled by default and can be enabled on the device page.
+
+API and WebSocket connections have separate connectivity entities. An application problem entity and individual lifecycle, database, state and metrics checks distinguish a reachable backend from a degraded application. Health timestamps and lifecycle state are also available.
+
+Live samples follow the backend sampling interval (normally three seconds). The integration's **Health and metrics fallback interval** defaults to 30 seconds and controls HTTP fallback polling and health checks, independently of server and manager polling. Only the latest sample is held in coordinator state; Home Assistant's recorder owns history. Mutation events refresh affected resources, and reconnects reconcile all selected resources. Revisions and backend epochs prevent older HTTP results from replacing newer WebSocket data.
+
+Selected servers expose editable target versions and native uptime measurements. Plugins have enable switches, including plugins discovered after a reload. `get_plugin_settings` and `update_plugin_settings` actions expose the declared settings schema and validate changes through BSM. Plugins without declared settings cannot use these settings actions.
+
+`list_tasks` and `get_task` support response data containing typed status, result and error snapshots. Live task updates fire `bedrock_server_manager_task_update` events with `manager_url`, `id`, `status`, `message`, `result`, `error`, `epoch` and `revision`. Automations can filter by manager URL and task ID. Destructive actions wait for actual task completion before removing Home Assistant devices.
+
+## Development
+
+Use Python 3.14 and install `requirements-test.txt` plus the current API client package. Until SDK 1.6.1 is released, the test workflow and type-checking hook use the reviewed SDK commit shown in their configuration. Replace those development pins with the stable package when releasing this integration.
+
+```sh
+python -m pip install -r requirements-test.txt ../bsm-api-client/packages/bsm-api-client
+python -m pytest tests
+python -m mypy custom_components/bedrock_server_manager
+python -m black --check --workers 1 custom_components tests
+python -m isort --check-only custom_components tests
+python -m flake8 --jobs 1 custom_components tests
+```

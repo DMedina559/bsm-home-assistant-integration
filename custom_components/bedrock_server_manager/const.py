@@ -18,7 +18,9 @@ PLATFORMS = [
     "sensor",
     "switch",
     "button",
-]  # Add "binary_sensor", "select", etc., if used
+    "binary_sensor",
+    "text",
+]
 
 # --- Configuration Keys (used in config_flow.py, options_flow.py, and config_entry) ---
 CONF_BASE_URL = "base_url"

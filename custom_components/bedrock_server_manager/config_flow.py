@@ -4,7 +4,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-import voluptuous as vol
+import probatio as vol
 from bsm_api_client import (
     APIError,
     AuthError,
@@ -22,7 +22,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import CONF_BASE_URL, CONF_SERVER_NAMES, CONF_VERIFY_SSL, DOMAIN
 
 # Import the Options Flow Handler
-from .options_flow import BSMOptionsFlowHandler, STEP_CREDENTIALS_SCHEMA
+from .options_flow import STEP_CREDENTIALS_SCHEMA, BSMOptionsFlowHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,9 +70,9 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
     try:
         api_client = BedrockServerManagerApi(
             base_url=data[CONF_BASE_URL],
+            session=session,
             username=data[CONF_USERNAME],
             password=data[CONF_PASSWORD],
-            session=session,
             verify_ssl=user_requests_verify_ssl,
         )
         _LOGGER.debug(
@@ -85,7 +85,9 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
         _LOGGER.debug("Authentication successful for %s.", url_for_log)
 
         _LOGGER.debug("Fetching server names list from %s...", url_for_log)
-        discovered_server_names: List[str] = await api_client.async_get_server_names()
+        discovered_server_names: List[str] = (
+            await api_client.servers.async_get_server_names()
+        )
         _LOGGER.debug(
             "Successfully fetched server names from %s: %s",
             url_for_log,
@@ -131,15 +133,9 @@ async def validate_input(hass: HomeAssistant, data: dict) -> Dict[str, Any]:
         )
         raise exceptions.HomeAssistantError("unknown_validation_error") from err
     finally:
-        # The HA-managed session (validation_session) does not need to be closed here by us.
-        # If BedrockServerManagerApi had a specific close/cleanup that wasn't session-related, it would go here.
-        # If api_client has a .close() that is safe to call (e.g. idempotent or handles shared session), it's okay.
-        if api_client and hasattr(api_client, "close"):
-            # Assuming api_client.close() is safe for shared sessions or no-op if not needed.
-            await api_client.close()  # bsm_api_client ClientBase.close() is safe
-            _LOGGER.debug(
-                "Temporary API client for validation (using HA session) was closed (if applicable)."
-            )
+        # Close the SDK-owned transport; the borrowed HA session remains open.
+        if api_client is not None:
+            await api_client.close()
 
 
 # --- Config Flow Class ---
@@ -161,13 +157,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
         """Get the options flow for this handler."""
         return BSMOptionsFlowHandler()
 
-    async def async_step_reauth(self, entry_data: dict) -> config_entries.FlowResult:
+    async def async_step_reauth(
+        self, entry_data: dict
+    ) -> config_entries.ConfigFlowResult:
         """Recover expired credentials for the existing manager entry."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Validate replacement credentials before updating and reloading."""
         entry = self._get_reauth_entry()
         errors = {}
@@ -185,7 +183,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
             except exceptions.HomeAssistantError:
                 errors["base"] = "unknown_error"
             else:
-                return self.async_update_reload_and_abort(entry, data_updates=credentials)
+                return self.async_update_reload_and_abort(
+                    entry, data_updates=credentials
+                )
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=self.add_suggested_values_to_schema(
@@ -198,7 +198,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle the initial step."""
         errors: Dict[str, str] = {}
         description_placeholders: Optional[Dict[str, str]] = None
@@ -265,7 +265,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
 
     async def async_step_select_servers(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle the server selection step."""
         errors: Dict[str, str] = (
             {}
@@ -288,7 +288,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call
                 title,
                 self._connection_data[CONF_BASE_URL],
                 selected_servers,
-                async_redact_data(self._connection_data, [CONF_PASSWORD, CONF_USERNAME]),
+                async_redact_data(
+                    self._connection_data, [CONF_PASSWORD, CONF_USERNAME]
+                ),
             )
 
             # self._connection_data contains the original user input (host, port as float/int/None, user, pass, ssl flags)

@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from bsm_api_client import (
     APIError,
@@ -26,11 +27,30 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
+from .coordinator import (
+    ApplicationMonitorCoordinator,
+    ManagerDataCoordinator,
+    MinecraftBedrockCoordinator,
+)
 from .frontend import BsmFrontendRegistration
-from .websocket import BsmWebSocketManager
+from .websocket import MANAGER_EVENTS, SERVER_EVENTS, BsmWebSocketManager
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up an entry and release owned resources if any setup stage fails."""
+    try:
+        return await _async_setup_entry(hass, entry)
+    except (Exception, asyncio.CancelledError):
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        if entry_data.get("platforms_started"):
+            try:
+                await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+            except Exception:
+                _LOGGER.exception("Error unloading partially set up BSM platforms")
+        await _async_cleanup_entry(hass, entry)
+        raise
 
 
 async def _async_setup_entry(  # noqa: C901
@@ -64,8 +84,8 @@ async def _async_setup_entry(  # noqa: C901
         base_url=url,
         username=username,
         password=password,
-        session=async_get_clientsession(hass, verify_ssl=verify_ssl),
         verify_ssl=verify_ssl,
+        session=async_get_clientsession(hass, verify_ssl=verify_ssl),
     )
     hass.data[DOMAIN][entry.entry_id]["api"] = api_client
     _LOGGER.debug(
@@ -80,7 +100,10 @@ async def _async_setup_entry(  # noqa: C901
         "manager_scan_interval", 600  # Default to 10 minutes for manager-level data
     )
     manager_coordinator = ManagerDataCoordinator(
-        hass=hass, api_client=api_client, scan_interval=manager_scan_interval
+        hass=hass,
+        api_client=api_client,
+        scan_interval=manager_scan_interval,
+        config_entry=entry,
     )
 
     hass.data[DOMAIN][entry.entry_id]["manager_coordinator"] = manager_coordinator
@@ -106,12 +129,23 @@ async def _async_setup_entry(  # noqa: C901
             f"Unexpected error initializing manager data: {err}"
         ) from err
 
+    monitor_coordinator = ApplicationMonitorCoordinator(
+        hass,
+        api_client,
+        entry.options.get("monitor_scan_interval", 30),
+        config_entry=entry,
+    )
+    hass.data[DOMAIN][entry.entry_id]["monitor_coordinator"] = monitor_coordinator
+    await monitor_coordinator.async_config_entry_first_refresh()
+
     manager_os_type = "Unknown"
     manager_app_version = "Unknown"
     if manager_coordinator.last_update_success and manager_coordinator.data:
         manager_info_payload = manager_coordinator.data.get("info")
         if isinstance(manager_info_payload, dict):
-            manager_os_type = str(manager_info_payload.get("os_type") or "Unknown").lower()
+            manager_os_type = str(
+                manager_info_payload.get("os_type") or "Unknown"
+            ).lower()
             manager_app_version = manager_info_payload.get("app_version", "Unknown")
     else:
         _LOGGER.warning(
@@ -144,60 +178,13 @@ async def _async_setup_entry(  # noqa: C901
     hass.data[DOMAIN][entry.entry_id].update(
         {
             "manager_identifier": manager_identifier_tuple,
+            "manager_device_id": manager_device_entry.id,
             "manager_coordinator": manager_coordinator,
             "manager_os_type": manager_os_type,
             "manager_app_version": manager_app_version,
             "servers": {},
         }
     )
-
-    # --- Setup WebSocket Manager ---
-    def _ws_coordinator_refresh_callback(topic, data):
-        """Handle event updates requiring coordinator refresh."""
-        _LOGGER.debug(f"Triggering refresh for {topic}")
-        # Always refresh manager for global events or wildcard task updates
-        hass.async_create_task(manager_coordinator.async_request_refresh())
-
-        # Determine if we should refresh specific server coordinators based on the topic
-        for server_name, server_data in (
-            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("servers", {}).items()
-        ):
-            if "coordinator" in server_data:
-                # If we have a task update or an event, it might affect any server, so trigger a refresh.
-                if (topic.startswith("task:") or topic.startswith("event:")) and (
-                    not data.get("server_name") or data["server_name"] == server_name
-                ):
-                    hass.async_create_task(
-                        server_data["coordinator"].async_request_refresh()
-                    )
-
-    def _ws_update_server_process_info_callback(server_name, process_info):
-        """Handle direct resource monitor updates."""
-        server_data = (
-            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("servers", {}).get(server_name)
-        )
-        if server_data and "coordinator" in server_data:
-            server_data["coordinator"].update_process_info(process_info)
-
-    def _ws_update_server_event_callback(server_name, topic, data):
-        """Handle direct event state updates."""
-        server_data = (
-            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("servers", {}).get(server_name)
-        )
-        if server_data and "coordinator" in server_data:
-            server_data["coordinator"].update_from_event(topic, data)
-
-    ws_manager = BsmWebSocketManager(
-        hass=hass,
-        api_client=api_client,
-        coordinator_refresh_callback=_ws_coordinator_refresh_callback,
-        update_server_process_info_callback=_ws_update_server_process_info_callback,
-        update_server_event_callback=_ws_update_server_event_callback,
-    )
-    hass.data[DOMAIN][entry.entry_id]["ws_manager"] = ws_manager
-
-    # Start only after platforms and services have been set up successfully.
-    # --- End Setup WebSocket Manager ---
 
     selected_servers = entry.options.get(CONF_SERVER_NAMES, [])
     server_scan_interval = entry.options.get(
@@ -227,12 +214,9 @@ async def _async_setup_entry(  # noqa: C901
             server_name = selected_servers[i]
             if isinstance(result, Exception):
                 if isinstance(result, ConfigEntryAuthFailed):
-                    _LOGGER.error(
-                        "Auth error setting up server '%s': %s",
-                        server_name,
-                        result,
-                        exc_info=result,
-                    )
+                    raise result
+                elif isinstance(result, AuthError):
+                    raise ConfigEntryAuthFailed(str(result)) from result
                 elif isinstance(result, ConfigEntryNotReady):
                     _LOGGER.error(
                         "Coordinator for server '%s' not ready: %s",
@@ -254,8 +238,6 @@ async def _async_setup_entry(  # noqa: C901
                         result,
                         exc_info=result,
                     )
-                if isinstance(result, ConfigEntryAuthFailed):
-                    raise result
             else:
                 successful_setups += 1
 
@@ -284,6 +266,49 @@ async def _async_setup_entry(  # noqa: C901
                 url,
             )
 
+    def _ws_refresh(topic, data):
+        """Invalidate affected resources and coalesce refreshes through coordinators."""
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if not entry_data:
+            return
+        event = topic.removeprefix("event:")
+        all_servers = topic == "reconnect" or topic.startswith("task:")
+        if all_servers or event == "after_setting_update":
+            if monitor_coordinator.invalidate(data):
+                hass.async_create_task(monitor_coordinator.async_request_refresh())
+        if all_servers or event in MANAGER_EVENTS:
+            if manager_coordinator.invalidate(data):
+                hass.async_create_task(manager_coordinator.async_request_refresh())
+        if all_servers or event in SERVER_EVENTS:
+            result = data.get("result") or {}
+            name = data.get("server_name") or (
+                result.get("server_name") if isinstance(result, dict) else None
+            )
+            for server_name, server_data in entry_data["servers"].items():
+                if all_servers or name == server_name:
+                    coordinator = server_data["coordinator"]
+                    if coordinator.invalidate(data):
+                        hass.async_create_task(coordinator.async_request_refresh())
+
+    def _ws_process(server_name, payload):
+        """Apply process snapshots to their selected server only."""
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        server_data = entry_data.get("servers", {}).get(server_name)
+        if server_data:
+            server_data["coordinator"].update_process_info(payload)
+
+    ws_manager = BsmWebSocketManager(
+        hass,
+        api_client,
+        _ws_refresh,
+        _ws_process,
+        selected_servers,
+        url,
+        monitor_coordinator.update_metrics,
+        monitor_coordinator.set_websocket_connected,
+    )
+    hass.data[DOMAIN][entry.entry_id]["ws_manager"] = ws_manager
+
     hass.data[DOMAIN][entry.entry_id]["platforms_started"] = True
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(options_update_listener))
@@ -293,9 +318,7 @@ async def _async_setup_entry(  # noqa: C901
         hass.data[DOMAIN]["_services_registered"] = True
         _LOGGER.debug("Integration services registered.")
 
-    hass.data[DOMAIN][entry.entry_id]["ws_start_task"] = hass.async_create_background_task(
-        ws_manager.async_start(), f"{DOMAIN} websocket {entry.entry_id}"
-    )
+    await ws_manager.async_start()
     return True
 
 
@@ -313,8 +336,11 @@ async def _async_setup_server_coordinator(
         api_client=api_client,
         server_name=server_name,
         scan_interval=scan_interval,
+        config_entry=entry,
     )
-    hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})[server_name] = {"coordinator": coordinator}
+    hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})[server_name] = {
+        "coordinator": coordinator
+    }
     try:
         await coordinator.async_config_entry_first_refresh()
         hass.data[DOMAIN][entry.entry_id].setdefault("servers", {})
@@ -342,21 +368,6 @@ async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> No
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up an entry and release owned resources if any setup stage fails."""
-    try:
-        return await _async_setup_entry(hass, entry)
-    except (Exception, asyncio.CancelledError):
-        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-        if entry_data.get("platforms_started"):
-            try:
-                await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-            except Exception:
-                _LOGGER.exception("Error unloading partially set up BSM platforms")
-        await _async_cleanup_entry(hass, entry)
-        raise
-
-
 async def _async_cleanup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Release runtime resources without removing shared dashboard modules."""
     domain_data = hass.data.get(DOMAIN, {})
@@ -368,22 +379,38 @@ async def _async_cleanup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     cleanup_calls = []
     if ws_manager := entry_data.get("ws_manager"):
         cleanup_calls.append(ws_manager.async_stop())
-    coordinators = [entry_data.get("manager_coordinator")]
-    coordinators.extend(server.get("coordinator") for server in entry_data.get("servers", {}).values())
+    coordinators = [
+        entry_data.get("manager_coordinator"),
+        entry_data.get("monitor_coordinator"),
+    ]
+    coordinators.extend(
+        server.get("coordinator") for server in entry_data.get("servers", {}).values()
+    )
     for coordinator in coordinators:
         if coordinator is not None:
             cleanup_calls.append(coordinator.async_shutdown())
     # Stop the WebSocket before closing the API that it uses.
-    if cleanup_calls:
-        results = await asyncio.gather(*cleanup_calls, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception):
-                _LOGGER.warning("Error cleaning up BSM runtime: %s", result)
+    await _async_finish_cleanup(cleanup_calls)
     if api := entry_data.get("api"):
         try:
             await api.close()
         except Exception:
             _LOGGER.exception("Error closing BSM API client")
+    await _async_remove_entry_resources(hass, entry, domain_data)
+
+
+async def _async_finish_cleanup(cleanup_calls) -> None:
+    """Await all owned workers while keeping cleanup failures isolated."""
+    results = await asyncio.gather(*cleanup_calls, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            _LOGGER.warning("Error cleaning up BSM runtime: %s", result)
+
+
+async def _async_remove_entry_resources(
+    hass: HomeAssistant, entry: ConfigEntry, domain_data: dict[str, Any]
+) -> None:
+    """Remove entry bookkeeping and release shared services after the last entry."""
     domain_data.pop(entry.entry_id, None)
     if not any(not key.startswith("_") for key in domain_data):
         if domain_data.get("_services_registered"):

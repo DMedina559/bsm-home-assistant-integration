@@ -37,4 +37,8 @@ repos:
     rev: v1.20.1
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML, homeassistant]
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+          - homeassistant==2026.10.1
+          - bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@95bbb3cadf35d9670d21b4689c8c3445184450b9#subdirectory=packages/bsm-api-client

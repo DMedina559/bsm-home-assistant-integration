@@ -12,6 +12,7 @@ from bsm_api_client import (
     ServerNotFoundError,
     ServerNotRunningError,
 )
+from bsm_api_client.models import BackupActionPayload
 from homeassistant.components.button import (
     ButtonDeviceClass,
     ButtonEntity,
@@ -218,6 +219,7 @@ class MinecraftServerButton(
 ):
     """Representation of a button entity for a specific Minecraft server action."""
 
+    _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
 
     def __init__(
@@ -254,7 +256,11 @@ class MinecraftServerButton(
             self._attr_unique_id,
         )
 
-        config_entry_data = coordinator.config_entry.data
+        config_entry_data = (
+            coordinator.config_entry.data
+            if coordinator.config_entry
+            else {CONF_BASE_URL: manager_identifier[1]}
+        )
         safe_config_url = config_entry_data.get(CONF_BASE_URL)
 
         # Construct the model string
@@ -287,7 +293,11 @@ class MinecraftServerButton(
             )
             or installed_version_static
             or "Unknown",
-            via_device=manager_identifier,  # Link this server device TO the BSM manager device
+            **(
+                {"via_device_id": coordinator.manager_device_id}
+                if coordinator.manager_device_id
+                else {}
+            ),  # Link this server device TO the BSM manager device
             configuration_url=safe_config_url,  # URL to the BSM manager interface (where this server is managed)
         )
 
@@ -323,27 +333,27 @@ class MinecraftServerButton(
 
         try:
             if action_key == "restart_server":
-                api_call_coro = api.async_restart_server(self._server_name)
+                api_call_coro = api.servers.async_restart_server(self._server_name)
             elif action_key == "update_server":
-                api_call_coro = api.async_update_server(self._server_name)
+                api_call_coro = api.servers.async_update_server(self._server_name)
                 success_notification_message = (
                     f"Update check initiated for server '{self._server_name}'."
                 )
             elif action_key == "trigger_server_backup_all":
-                api_call_coro = api.async_trigger_server_backup(
-                    self._server_name, backup_type="all"
+                api_call_coro = api.content.async_trigger_server_backup(
+                    self._server_name, BackupActionPayload(backup_type="all")
                 )
                 success_notification_message = (
                     f"Full backup initiated for server '{self._server_name}'."
                 )
             elif action_key == "export_server_world":
-                api_call_coro = api.async_export_server_world(self._server_name)
+                api_call_coro = api.content.async_export_server_world(self._server_name)
                 success_notification_message = (
                     f"World export initiated for server '{self._server_name}'."
                 )
             elif action_key == "prune_server_backups":
-                api_call_coro = api.async_prune_server_backups(
-                    self._server_name, keep=None
+                api_call_coro = api.content.async_prune_server_backups(
+                    self._server_name
                 )  # Uses BSM default for keep
                 success_notification_message = (
                     f"Backup pruning initiated for server '{self._server_name}'."
@@ -364,6 +374,9 @@ class MinecraftServerButton(
                     self._server_name,
                     response,
                 )
+                task_id = getattr(response, "task_id", None)
+                if task_id:
+                    success_notification_message += f" Task: {task_id}."
                 _LOGGER.info(success_notification_message)
                 # Create a persistent notification for success
                 async_create_notification(
@@ -425,6 +438,7 @@ class MinecraftManagerButton(
 ):  # Does not need CoordinatorEntity if not reading state from it
     """Representation of a button entity for a global BSM manager action."""
 
+    _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -482,9 +496,9 @@ class MinecraftManagerButton(
 
         try:
             if action_key == "scan_players":
-                api_call_coro = self._api.async_scan_players()
+                api_call_coro = self._api.players.async_scan_players()
             elif action_key == "reload_plugins":
-                api_call_coro = self._api.async_reload_plugins()
+                api_call_coro = self._api.plugins.async_reload_plugins()
                 success_notification_message = "Plugin reload initiated successfully."
             else:
                 _LOGGER.error("Unhandled manager button action key: '%s'", action_key)

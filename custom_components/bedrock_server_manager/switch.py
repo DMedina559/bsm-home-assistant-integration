@@ -2,7 +2,7 @@
 """Switch platform for Bedrock Server Manager."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Optional, Tuple
 
 from bsm_api_client import (
     APIError,
@@ -12,9 +12,10 @@ from bsm_api_client import (
     ServerNotFoundError,
     ServerNotRunningError,
 )
-from bsm_api_client.models import ServerSettingItemPayload
+from bsm_api_client.models import PluginStatusSetPayload, ServerSettingItemPayload
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
@@ -48,135 +49,68 @@ AUTOSTART_SWITCH_DESCRIPTION = SwitchEntityDescription(
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up Bedrock Server Manager switch entities based on a config entry."""
-    _LOGGER.debug("Setting up switch platform for BSM entry: %s", entry.entry_id)
-    try:
-        entry_data = hass.data[DOMAIN][entry.entry_id]
-        servers_config_data: Dict[str, Dict[str, Any]] = entry_data.get("servers", {})
-        original_manager_identifier_tuple = cast(
-            Tuple[str, str], entry_data["manager_identifier"]
-        )
-        manager_coordinator = cast(
-            Optional[ManagerDataCoordinator], entry_data.get("manager_coordinator")
-        )
-    except KeyError as e:
-        _LOGGER.error(
-            "Switch setup failed for entry %s: Missing expected data (Key: %s). "
-            "This might happen if __init__.py did not complete successfully.",
-            entry.entry_id,
-            e,
-        )
-        return
-
-    if not servers_config_data:
-        _LOGGER.info(
-            "No servers configured for BSM '%s'; no switch entities will be created.",
-            entry.title,
-        )
-        return
-
-    manager_identifier_for_switches = original_manager_identifier_tuple
-
-    switches_to_add: List[MinecraftServerSwitch] = []
-
-    # Get BSM OS Type to pass to server switches
-    bsm_os_type_for_servers: str = "Unknown"  # Default value
-    if (
-        manager_coordinator
-        and manager_coordinator.last_update_success
-        and manager_coordinator.data
-    ):
-        manager_info = manager_coordinator.data.get("info", {})
-        if isinstance(manager_info, dict):
-            bsm_os_type_for_servers = manager_info.get("os_type", "Unknown")
-        _LOGGER.debug(
-            "BSM OS type determined as: %s for entry %s (switch setup)",
-            bsm_os_type_for_servers,
-            entry.title,
-        )
-    else:
-        _LOGGER.warning(
-            "ManagerDataCoordinator for BSM '%s' not available, has no data, or last update failed; "
-            "BSM OS type for server switch devices will default to '%s'.",
-            entry.title,
-            bsm_os_type_for_servers,
-        )
-
-    for server_name, server_data_dict in servers_config_data.items():
-        coordinator = cast(
-            Optional[MinecraftBedrockCoordinator], server_data_dict.get("coordinator")
-        )
-        if not coordinator:
-            _LOGGER.warning(
-                "Coordinator missing for server '%s' under BSM '%s'. Skipping its switch.",
-                server_name,
-                entry.title,
+    """Create stable controls for selected servers and discover plugin switches."""
+    data = hass.data[DOMAIN][entry.entry_id]
+    identifier = data["manager_identifier"]
+    manager = data["manager_coordinator"]
+    os_type = (manager.data or {}).get("info", {}).get("os_type", "Unknown")
+    entities: list[SwitchEntity] = []
+    for name, server in data["servers"].items():
+        coordinator = server["coordinator"]
+        entities.append(
+            MinecraftServerSwitch(
+                coordinator=coordinator,
+                description=SWITCH_DESCRIPTION,
+                server_name=name,
+                manager_identifier=identifier,
+                installed_version_static=server.get(ATTR_INSTALLED_VERSION),
+                bsm_os_type=os_type,
+                base_url=entry.data[CONF_BASE_URL],
             )
-            continue
-
-        # Get static version info, potentially fetched during __init__ or sensor setup
-        # This is for the initial DeviceInfo. It can be updated by _handle_coordinator_update.
-        installed_version_static = server_data_dict.get(
-            ATTR_INSTALLED_VERSION
-        )  # From __init__/sensor setup
-
-        if (
-            coordinator is not None
-        ):  # Check data is not None
-            switches_to_add.append(
-                MinecraftServerSwitch(
-                    coordinator=coordinator,
-                    description=SWITCH_DESCRIPTION,
-                    server_name=server_name,
-                    manager_identifier=manager_identifier_for_switches,
-                    installed_version_static=installed_version_static,
-                    bsm_os_type=bsm_os_type_for_servers,
-                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
-                )
-            )
-            switches_to_add.append(
+        )
+        for description in (
+            AUTOUPDATE_SWITCH_DESCRIPTION,
+            AUTOSTART_SWITCH_DESCRIPTION,
+        ):
+            entities.append(
                 MinecraftServerSettingSwitch(
                     coordinator=coordinator,
-                    description=AUTOUPDATE_SWITCH_DESCRIPTION,
-                    manager_identifier=manager_identifier_for_switches,
-                    server_name=server_name,
-                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
-                    bsm_os_type=bsm_os_type_for_servers,
-                    setting_key="autoupdate",
+                    description=description,
+                    manager_identifier=identifier,
+                    server_name=name,
+                    base_url=entry.data[CONF_BASE_URL],
+                    bsm_os_type=os_type,
+                    setting_key=description.key,
                 )
             )
-            switches_to_add.append(
-                MinecraftServerSettingSwitch(
-                    coordinator=coordinator,
-                    description=AUTOSTART_SWITCH_DESCRIPTION,
-                    manager_identifier=manager_identifier_for_switches,
-                    server_name=server_name,
-                    base_url=entry.data.get(CONF_BASE_URL, "Unknown BSM URL"),
-                    bsm_os_type=bsm_os_type_for_servers,
-                    setting_key="autostart",
-                )
-            )
-        else:
-            _LOGGER.warning(
-                "Coordinator for server '%s' (BSM '%s') has no data or last update failed; "
-                "skipping its switch entity. It might be created on next successful update.",
-                server_name,
-                entry.title,
-            )
+    async_add_entities(entities)
+    _watch_plugins(entry, manager, identifier, async_add_entities)
 
-    if switches_to_add:
-        _LOGGER.info(
-            "Adding %d BSM switch entities for BSM '%s'.",
-            len(switches_to_add),
-            entry.title,
-        )
-        async_add_entities(switches_to_add)
-    else:
-        _LOGGER.info("No switch entities were added for BSM '%s'.", entry.title)
+
+def _watch_plugins(
+    entry: ConfigEntry,
+    coordinator: ManagerDataCoordinator,
+    identifier: tuple[str, str],
+    add_entities: AddEntitiesCallback,
+) -> None:
+    """Discover plugins after reload and retain unavailable entities after removal."""
+    known_plugins: set[str] = set()
+
+    @callback
+    def add_plugin_switches() -> None:
+        plugins = (coordinator.data or {}).get("plugins_status") or {}
+        added = [
+            PluginEnabledSwitch(coordinator, identifier, name)
+            for name in sorted(set(plugins) - known_plugins)
+        ]
+        known_plugins.update(plugins)
+        if added:
+            add_entities(added)
+
+    entry.async_on_unload(coordinator.async_add_listener(add_plugin_switches))
+    add_plugin_switches()
 
 
 class MinecraftServerSwitch(
@@ -184,6 +118,7 @@ class MinecraftServerSwitch(
 ):
     """Represents a switch to control a Minecraft Bedrock server."""
 
+    _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True  # Name will be "Device Name Switch Name" (e.g. "Server MyServer Server Power")
 
     def __init__(
@@ -221,7 +156,11 @@ class MinecraftServerSwitch(
             self._attr_unique_id,
         )
 
-        config_entry_data = coordinator.config_entry.data
+        config_entry_data = (
+            coordinator.config_entry.data
+            if coordinator.config_entry
+            else {CONF_BASE_URL: manager_identifier[1]}
+        )
         safe_config_url = config_entry_data.get(CONF_BASE_URL)
 
         # Construct the model string
@@ -256,7 +195,11 @@ class MinecraftServerSwitch(
             )
             or installed_version_static
             or "Unknown",
-            via_device=manager_identifier,
+            **(
+                {"via_device_id": coordinator.manager_device_id}
+                if coordinator.manager_device_id
+                else {}
+            ),
             configuration_url=safe_config_url,
         )
 
@@ -264,7 +207,11 @@ class MinecraftServerSwitch(
     def available(self) -> bool:
         """Return True if coordinator is available and has data."""
         # last_update_success is checked by super().available
-        return super().available and self.coordinator.data is not None
+        return (
+            super().available
+            and self.coordinator.data is not None
+            and "server_settings" not in self.coordinator.unavailable_resources
+        )
 
     @property
     def is_on(self) -> bool:
@@ -297,7 +244,7 @@ class MinecraftServerSwitch(
             self._manager_host_port_id,
         )
         try:
-            await api.async_start_server(self._server_name)
+            await api.servers.async_start_server(self._server_name)
             # After a successful action, request a refresh of the coordinator
             await self.coordinator.async_request_refresh()
         except AuthError as err:
@@ -357,7 +304,7 @@ class MinecraftServerSwitch(
             self._manager_host_port_id,
         )
         try:
-            await api.async_stop_server(self._server_name)
+            await api.servers.async_stop_server(self._server_name)
             await self.coordinator.async_request_refresh()
         except (
             ServerNotRunningError
@@ -438,7 +385,7 @@ class MinecraftServerSwitch(
 
             # Dynamic SW Version update logic
             dynamic_version_from_coord = self.coordinator.data.get(
-                "current_installed_version"
+                "version"
             )  # Must match key in coordinator data
 
             current_device_sw_version = self._attr_device_info.get("sw_version")
@@ -512,14 +459,22 @@ class MinecraftServerSettingSwitch(
             name=f"{self._server_name} ({self._manager_host_port_id})",
             manufacturer="Bedrock Server Manager",
             model=f"Minecraft Server ({bsm_os_type.capitalize()})",
-            via_device=manager_identifier,
+            **(
+                {"via_device_id": coordinator.manager_device_id}
+                if coordinator.manager_device_id
+                else {}
+            ),
             configuration_url=safe_config_url,
         )
 
     @property
     def available(self) -> bool:
         """Return True if coordinator is available and has data."""
-        return super().available and self.coordinator.data is not None
+        return (
+            super().available
+            and self.coordinator.data is not None
+            and "server_settings" not in self.coordinator.unavailable_resources
+        )
 
     @property
     def is_on(self) -> bool:
@@ -552,7 +507,7 @@ class MinecraftServerSettingSwitch(
             payload = ServerSettingItemPayload(
                 key=f"settings.{self._setting_key}", value=state
             )
-            await api.async_set_server_setting(self._server_name, payload)
+            await api.servers.async_set_server_setting(self._server_name, payload)
             await self.coordinator.async_request_refresh()
         except Exception as err:
             _LOGGER.error(
@@ -565,3 +520,61 @@ class MinecraftServerSettingSwitch(
             raise HomeAssistantError(
                 f"Failed to set {self._setting_key} to {state}"
             ) from err
+
+
+class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntity):
+    """A plugin enable control that remains consistent with live backend changes."""
+
+    _attr_device_info: dr.DeviceInfo
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:puzzle"
+
+    def __init__(
+        self,
+        coordinator: ManagerDataCoordinator,
+        manager_identifier: tuple[str, str],
+        plugin_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self.plugin_name = plugin_name
+        self._attr_name = f"Plugin {plugin_name}"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{manager_identifier[1]}_plugin_{plugin_name}".lower().replace(
+                ":", "_"
+            )
+        )
+        self._attr_device_info = dr.DeviceInfo(identifiers={manager_identifier})
+
+    @property
+    def available(self) -> bool:
+        return (
+            super().available
+            and "plugins_status" not in self.coordinator.unavailable_resources
+            and self.plugin_name
+            in ((self.coordinator.data or {}).get("plugins_status") or {})
+        )
+
+    @property
+    def is_on(self) -> bool:
+        plugin = ((self.coordinator.data or {}).get("plugins_status") or {}).get(
+            self.plugin_name, {}
+        )
+        return bool(plugin.get("enabled"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        """Persist plugin status, then obtain the authoritative backend state."""
+        try:
+            await self.coordinator.api.plugins.async_set_plugin_status(
+                self.plugin_name, PluginStatusSetPayload(enabled=enabled)
+            )
+        except APIError as error:
+            raise HomeAssistantError(str(error)) from error
+        self.coordinator.invalidate({})
+        await self.coordinator.async_request_refresh()
