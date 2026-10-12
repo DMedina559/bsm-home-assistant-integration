@@ -231,3 +231,21 @@ async def test_invalid_snapshot_does_not_prevent_following_events(hass, api):
         }
     )
     ws.coordinator_refresh_callback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_partial_mutations_refresh_applied_work(hass, api):
+    ws = manager(hass, api)
+    ws._handle_message(
+        {
+            "type": "event",
+            "topic": "event:after_permission_change",
+            "epoch": "a",
+            "revision": 12,
+            "data": {
+                "server_name": "selected",
+                "result": {"status": "partial", "updated": 1},
+            },
+        }
+    )
+    ws.coordinator_refresh_callback.assert_called_once()

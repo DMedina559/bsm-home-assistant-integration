@@ -16,6 +16,14 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 _LOGGER = logging.getLogger(__name__)
 
 
+class OperationOutcomeError(HomeAssistantError):
+    """An operation ended without completing its requested work."""
+
+    def __init__(self, message: str, result: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.result = result
+
+
 async def _base_api_call_handler(
     api_call_coro: Coroutine[Any, Any, Any],
     error_message_prefix: str,
@@ -29,6 +37,15 @@ async def _base_api_call_handler(
             if isinstance(response, dict)
             else getattr(response, "status", None)
         )
+        if status == "partial":
+            from .coordinator import json_data
+
+            result = json_data(response)
+            raise OperationOutcomeError(
+                f"{error_message_prefix}{context_msg}: Operation partially completed. "
+                f"{result.get('message') or 'Review results before retrying.'}",
+                result,
+            )
         if status in ("error", "failed", "failure"):
             raise HomeAssistantError(
                 f"{error_message_prefix}{context_msg}: API reported {status}"
@@ -62,6 +79,8 @@ def _api_error_details(err: APIError | ValueError) -> str:
     """Describe an SDK failure without exposing transport internals."""
     if isinstance(err, ValueError):
         return f"Invalid input value provided. ({err})"
+    if err.api_code == "operation_incomplete":
+        return str(err)
     if isinstance(err, AuthError) and err.status_code == 403:
         return "The BSM account does not have permission for this action"
     descriptions = (

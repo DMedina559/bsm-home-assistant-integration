@@ -25,7 +25,7 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 *   Home Assistant 2026.10 or newer (Python 3.14).
 *   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) 4.0.0b5 or newer, with metrics, health, task and revisioned WebSocket contracts.
-*   `bsm-api-client` 1.7.0b3 or newer (installed automatically by Home Assistant).
+*   `bsm-api-client` 1.7.0b4 or newer (installed automatically by Home Assistant).
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.
 *   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
@@ -244,7 +244,7 @@ Selected servers expose editable target versions and native uptime measurements.
 
 ## Development
 
-Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook use the published `bsm-api-client==1.7.0b3` package, matching the BSM 4.0.0b5 contracts.
+Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook install the reviewed SDK source revision in `requirements-test.txt`, matching the backend `dev` contracts.
 
 ```sh
 python -m pip install -r requirements-test.txt ../bsm-api-client/packages/bsm-api-client
@@ -377,3 +377,5 @@ to the selected server's manager. Diagnostics redact nested and flattened JWT se
 New installations expose API connectivity, WebSocket connectivity, and one application health problem entity. The health entity includes all dependency checks, failed-check names, lifecycle, and check time as attributes. The health card displays these attributes directly. Old individual check entities and separate lifecycle/check-time sensors are removed from the registry; automations should use the consolidated health entity and its attributes.
 
 Application CPU, memory, background tasks and uptime, plus system CPU and memory usage, are enabled by default. Asyncio/thread counts, loop lag, memory totals, disk/network rates, and the metrics sample timestamp are opt-in diagnostics. Numeric sensors remain separate for recorder statistics and graphs. Existing enabled/disabled selections are preserved. Freshness timestamps and diagnostic errors are visible in entity attributes but excluded from recorder history.
+
+The current integration requires `bsm-api-client>=1.7.0b4,<2` for the backend response contracts. Release that SDK beta before installing this integration update. Tests use the reviewed SDK source revision until the beta is published.

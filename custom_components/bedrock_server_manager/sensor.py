@@ -371,6 +371,11 @@ class MinecraftServerSensor(
     def available(self) -> bool:
         resource = self.resource
         if (
+            self.entity_description.key == KEY_ONLINE_PLAYERS_COUNT
+            and (self.coordinator.data or {}).get("players_available") is False
+        ):
+            return False
+        if (
             resource in self.coordinator.unavailable_resources
             or resource in self.coordinator.unsupported_resources
         ):

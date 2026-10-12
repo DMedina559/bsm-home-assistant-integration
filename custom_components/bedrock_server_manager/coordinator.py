@@ -255,6 +255,7 @@ class BsmCoordinator(DataUpdateCoordinator):
                 server_status=payload["status"],
                 online_players=payload.get("players") or [],
                 player_count=payload.get("player_count") or 0,
+                players_available=payload.get("players_available", True),
                 version=payload["version"],
             )
         else:

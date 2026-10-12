@@ -997,3 +997,43 @@ test("health card displays consolidated checks without individual check entities
     page.getByText("Database unavailable", { exact: true }),
   ).toHaveCount(0);
 });
+
+for (const status of ["partial", "skipped"]) {
+  test(`completed tasks display their ${status} outcome`, async ({ page }) => {
+    await mount(page, "bsm-content-card", {
+      entity: "sensor.server",
+      content_source_sensor_entity: "sensor.worlds",
+    });
+    await page.evaluate(() => (window.acceptTask = true));
+    await page.getByLabel("File", { exact: true }).selectOption("new.mcworld");
+    await page.getByRole("button", { name: "Install world" }).click();
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(page.getByText(/Queued:/)).toBeVisible();
+    await page.evaluate(
+      (status) =>
+        window.task({
+          status: "completed",
+          message: "Task finished",
+          result: {
+            status,
+            message: "One item was not restored",
+            details: {
+              properties: { outcome: "skipped", reason: "Missing backup" },
+            },
+          },
+        }),
+      status,
+    );
+    await page.getByText("Completed outcome · task", { exact: true }).click();
+    await expect(
+      page.getByText(
+        status === "partial"
+          ? /Operation partially completed/
+          : "Operation skipped.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Missing backup", { exact: true }),
+    ).toBeVisible();
+  });
+}

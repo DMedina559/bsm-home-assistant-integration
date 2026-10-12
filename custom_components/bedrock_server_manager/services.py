@@ -26,6 +26,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 
 from .action_common import (
+    OperationOutcomeError,
     _api_error_details,
     _base_api_call_handler,
 )
@@ -228,6 +229,17 @@ async def _await_task_completion(api: BedrockServerManagerApi, response):
             while True:
                 snapshot = await api.tasks.async_get_task_status(response.task_id)
                 if snapshot.status == "completed":
+                    result = snapshot.result
+                    if isinstance(result, dict) and result.get("status") in {
+                        "partial",
+                        "skipped",
+                        "error",
+                        "failed",
+                    }:
+                        raise OperationOutcomeError(
+                            f"Task {snapshot.id}: Operation {result['status']}. {result.get('message') or snapshot.message}",
+                            json_data(snapshot),
+                        )
                     return snapshot
                 if snapshot.status in {"failed", "cancelled"}:
                     raise HomeAssistantError(snapshot.message)
@@ -279,6 +291,8 @@ async def _async_handle_delete_server(
                 "status": "success",
                 "message": response.message,
                 "ha_device_removed": device_removed_from_ha,
+                "server_name": server_to_delete,
+                "task": json_data(response),
             }
         else:
             msg = f"Manager API did not confirm deletion {log_context}. Response: {response}"
@@ -309,6 +323,8 @@ async def _async_handle_delete_server(
         if isinstance(err, (ValueError, InvalidInputError)):
             raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
+    except HomeAssistantError:
+        raise
     except Exception as err:
         _LOGGER.exception("Delete server %s: Unexpected error.", log_context)
         raise HomeAssistantError(
@@ -367,6 +383,8 @@ async def _async_handle_reset_world(
         if isinstance(err, (ValueError, InvalidInputError)):
             raise ServiceValidationError(full_error_msg) from err
         raise HomeAssistantError(full_error_msg) from err
+    except HomeAssistantError:
+        raise
     except Exception as err:
         _LOGGER.exception("World reset %s: Unexpected error.", log_context)
         raise HomeAssistantError(
@@ -434,7 +452,7 @@ async def _execute_targeted_service(
     results = await asyncio.gather(*calls, return_exceptions=True)
     outcomes = []
     for (_, name, data), result in zip(contexts, results):
-        if not isinstance(result, Exception):
+        if _applied_work(result):
             refresh_after_action(
                 data.get("servers", {}).get(name, {}).get("coordinator"),
                 SERVER_RESOURCES.get(service_call.service),
@@ -446,7 +464,10 @@ async def _execute_targeted_service(
                 **_outcome(result),
             }
         )
-    if all(isinstance(result, Exception) for result in results):
+    if all(isinstance(result, Exception) for result in results) and not (
+        service_call.return_response
+        and any(_applied_work(result) for result in results)
+    ):
         _raise_action_errors(results)
     return {"results": outcomes}
 
@@ -473,24 +494,48 @@ async def _execute_manager_targeted_service(
     )
     outcomes = []
     for data, result in zip(contexts, results):
-        if not isinstance(result, Exception):
+        if _applied_work(result):
             for key in ("manager_coordinator", "monitor_coordinator"):
                 refresh_after_action(data.get(key))
         outcomes.append(
             {"manager_url": data["manager_identifier"][1], **_outcome(result)}
         )
-    if all(isinstance(result, Exception) for result in results):
+    if all(isinstance(result, Exception) for result in results) and not (
+        service_call.return_response
+        and any(_applied_work(result) for result in results)
+    ):
         _raise_action_errors(results)
     return {"results": outcomes}
 
 
-def _outcome(result: Any) -> dict:
-    """Retain successful target outcomes when another target fails."""
+def _applied_work(result: Any) -> bool:
+    """Partial operations and committed-error responses also require refreshes."""
+    cause = result.__cause__ if isinstance(result, Exception) else None
     return (
-        {"error": {"message": str(result)}, "status": "failed"}
-        if isinstance(result, Exception)
-        else {"result": json_data(result)}
+        not isinstance(result, Exception)
+        or isinstance(result, OperationOutcomeError)
+        or isinstance(cause, APIError)
+        and cause.api_code == "operation_incomplete"
     )
+
+
+def _outcome(result: Any) -> dict:
+    """Retain structured failures and partial results alongside successful targets."""
+    if not isinstance(result, Exception):
+        return {"result": json_data(result)}
+    payload: dict[str, Any] = {"error": {"message": str(result)}, "status": "failed"}
+    if isinstance(result, OperationOutcomeError):
+        payload["result"] = result.result
+    cause = result if isinstance(result, APIError) else result.__cause__
+    if isinstance(cause, APIError):
+        payload["error"].update(
+            code=cause.api_code,
+            details=cause.api_details,
+            status_code=cause.status_code,
+        )
+        if cause.operation_result is not None:
+            payload["result"] = cause.operation_result
+    return payload
 
 
 def _raise_action_errors(results: list[Any]) -> None:

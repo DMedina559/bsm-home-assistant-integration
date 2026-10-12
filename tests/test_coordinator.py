@@ -317,3 +317,39 @@ async def test_live_recovery_clears_resource_errors(hass, api):
     server._record_error("process_info", CannotConnectError("offline"))
     server.update_process_info({"epoch": "a", "revision": 1, "process_info": None})
     assert server.resource_metadata("process_info")["bsm_last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_unavailable_players_do_not_make_server_status_unavailable(hass, api):
+    from custom_components.bedrock_server_manager.const import KEY_ONLINE_PLAYERS_COUNT
+    from custom_components.bedrock_server_manager.sensor import (
+        SERVER_SENSOR_DESCRIPTIONS,
+        MinecraftServerSensor,
+    )
+
+    coordinator = MinecraftBedrockCoordinator(hass, server_api(api), "test", 30)
+    api.servers.async_get_server_summary.return_value = ServerSummary(
+        name="test",
+        status="RUNNING",
+        version="1.21",
+        player_count=0,
+        players=[],
+        players_available=False,
+    )
+    coordinator.async_set_updated_data(await coordinator._async_update_data())
+
+    def sensor(key):
+        description = next(d for d in SERVER_SENSOR_DESCRIPTIONS if d.key == key)
+        return MinecraftServerSensor(
+            coordinator,
+            description,
+            "test",
+            ("bedrock_server_manager", "http://host_test"),
+            None,
+            None,
+            None,
+        )
+
+    assert coordinator.data["players_available"] is False
+    assert not sensor(KEY_ONLINE_PLAYERS_COUNT).available
+    assert sensor("status").available

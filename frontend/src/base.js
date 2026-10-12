@@ -259,8 +259,10 @@ export class BsmCard extends LitElement {
   }
   _showTasks() {
     const tasks = [...this._tasks.values()].map((entry) => entry.task);
-    const failed = tasks.find((task) =>
-      ["failed", "cancelled"].includes(task.status),
+    const failed = tasks.find(
+      (task) =>
+        ["failed", "cancelled"].includes(task.status) ||
+        task.result?.status === "partial",
     );
     this.error = [this._targetErrors, failed ? taskError(failed) : ""]
       .filter(Boolean)
@@ -269,7 +271,10 @@ export class BsmCard extends LitElement {
       (task) => !["completed", "failed", "cancelled"].includes(task.status),
     );
     this.feedback = tasks
-      .map((task) => `${label(task.status)}: ${task.message || task.id}`)
+      .map(
+        (task) =>
+          `${label(task.result?.status === "partial" ? "partial" : task.result?.status === "skipped" ? "skipped" : task.status)}: ${task.result?.message || task.message || task.id}`,
+      )
       .join(" · ");
     if (!this.busy) this._releaseTaskWatchers();
     this.requestUpdate();
@@ -345,7 +350,7 @@ export class BsmCard extends LitElement {
       }
       if (this.config.debug)
         console.debug("BSM action", service, "acknowledged");
-      return true;
+      return failures.length === 0;
     } catch (error) {
       if (generation !== this._generation) return false;
       this.error = error.message || String(error);
@@ -557,6 +562,7 @@ export class BsmCard extends LitElement {
           ${this.feedback}
         </div>
         ${this.taskOutcomes()}
+        ${(this._lastResponse?.results || []).filter(({ result, error }) => result?.status === "partial" || error?.details).map(({ result, error }) => taskOutcome({ result, error }))}
         ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
         ${
           confirmationControls && this.confirmation

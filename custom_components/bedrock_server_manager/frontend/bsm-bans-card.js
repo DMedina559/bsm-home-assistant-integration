@@ -1,4 +1,4 @@
-import{g as s,j as i,k as r}from"./shared-7UTSRN4G.js";var a=class extends r{static key="server_bans_count";static title="Server bans";static properties={player:{state:!0},xuid:{state:!0},reason:{state:!0}};constructor(){super(),this.player="",this.xuid="",this.reason=""}selectedChanged(){this.player="",this.xuid="",this.reason=""}render(){return this.frame(s`<div class="scroll">
+import{g as s,j as i,k as r}from"./shared-T5QDO26S.js";var a=class extends r{static key="server_bans_count";static title="Server bans";static properties={player:{state:!0},xuid:{state:!0},reason:{state:!0}};constructor(){super(),this.player="",this.xuid="",this.reason=""}selectedChanged(){this.player="",this.xuid="",this.reason=""}render(){return this.frame(s`<div class="scroll">
           <table>
             <thead>
               <tr>

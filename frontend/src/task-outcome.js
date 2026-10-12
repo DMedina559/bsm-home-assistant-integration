@@ -20,7 +20,8 @@ export function outcomeValue(value) {
   return html`<span style="overflow-wrap:anywhere">${String(value)}</span>`;
 }
 export function taskOutcome(task) {
-  return html`${task.error ? html`<div class="error" role="alert">${outcomeValue(task.error)}</div>` : nothing}${
+  const status = task.result?.status;
+  return html`${status === "partial" ? html`<p class="notice" role="status">Operation partially completed. Review the results before retrying.</p>` : status === "skipped" ? html`<p class="notice" role="status">Operation skipped.</p>` : nothing}${task.error ? html`<div class="error" role="alert">${outcomeValue(task.error)}</div>` : nothing}${
       task.result != null
         ? html`<h4>Outcome</h4>
             ${outcomeValue(task.result)}`

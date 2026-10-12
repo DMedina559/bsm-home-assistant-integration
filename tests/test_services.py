@@ -235,3 +235,261 @@ async def test_failed_actions_are_reported_to_ha(hass, api):
     ):
         with pytest.raises(HomeAssistantError, match="Unavailable"):
             await _execute_manager_targeted_service(call, hass, failed)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["partial", "skipped"])
+async def test_completed_destructive_task_does_not_confirm_incomplete_work(api, status):
+    from custom_components.bedrock_server_manager.action_common import (
+        OperationOutcomeError,
+    )
+
+    accepted = TaskAcceptedResponse(message="Queued", task_id="abc")
+    api.tasks.async_get_task_status.return_value = TaskSnapshot(
+        id="abc",
+        status="completed",
+        message="Task finished",
+        result={
+            "status": status,
+            "message": "Cleanup incomplete",
+            "server_name": "test",
+        },
+    )
+    with pytest.raises(OperationOutcomeError, match=f"Operation {status}") as error:
+        await _await_task_completion(api, accepted)
+    assert error.value.result["result"]["status"] == status
+
+
+@pytest.mark.asyncio
+async def test_partial_scan_preserves_results_and_requires_refresh(api):
+    from bsm_api_client.models import AddPlayersResponse
+
+    from custom_components.bedrock_server_manager.action_common import (
+        OperationOutcomeError,
+    )
+    from custom_components.bedrock_server_manager.manager_actions import (
+        _async_handle_scan_players,
+    )
+    from custom_components.bedrock_server_manager.services import (
+        _applied_work,
+        _outcome,
+    )
+
+    api.players.async_scan_players = AsyncMock(
+        return_value=AddPlayersResponse(
+            status="partial",
+            message="One log unavailable",
+            details={
+                "total_entries_in_logs": 1,
+                "unique_players_submitted_for_saving": 1,
+                "actually_saved_or_updated_in_db": 1,
+                "scan_errors": [
+                    {
+                        "server": "test",
+                        "error": {
+                            "code": "file_error",
+                            "message": "Log unavailable",
+                            "details": {},
+                        },
+                    }
+                ],
+            },
+        )
+    )
+    with pytest.raises(OperationOutcomeError) as error:
+        await _async_handle_scan_players(api, "http://host")
+    assert _applied_work(error.value)
+    assert (
+        _outcome(error.value)["result"]["details"]["scan_errors"][0]["error"]["code"]
+        == "file_error"
+    )
+
+
+@pytest.mark.asyncio
+async def test_committed_api_error_preserves_details_and_refreshes():
+    from bsm_api_client import APIServerSideError
+
+    from custom_components.bedrock_server_manager.action_common import (
+        _base_api_call_handler,
+    )
+    from custom_components.bedrock_server_manager.services import (
+        _applied_work,
+        _outcome,
+    )
+
+    async def call():
+        raise APIServerSideError(
+            "Operation incomplete",
+            status_code=500,
+            response_data={
+                "error": {
+                    "code": "operation_incomplete",
+                    "message": "Operation incomplete",
+                    "details": {
+                        "result": {
+                            "committed": True,
+                            "resource": "account",
+                            "action": "update_account",
+                        }
+                    },
+                }
+            },
+        )
+
+    with pytest.raises(HomeAssistantError, match="change was saved") as error:
+        await _base_api_call_handler(call(), "Update account")
+    assert _applied_work(error.value)
+    outcome = _outcome(error.value)
+    assert outcome["error"]["code"] == "operation_incomplete"
+    assert outcome["result"]["committed"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action,path,body,response",
+    [
+        (
+            "command",
+            "/api/server/test/send_command",
+            {"command": "say hello"},
+            {"status": "success", "message": "Sent", "server_name": "test"},
+        ),
+        (
+            "properties",
+            "/api/server/test/properties/set",
+            {"properties": {"server-name": "Example"}},
+            {"status": "success", "message": "Saved", "server_name": "test"},
+        ),
+        (
+            "add",
+            "/api/server/test/allowlist/add",
+            {"players": ["Alex"], "ignoresPlayerLimit": False},
+            {"status": "success", "message": "Added", "added_count": 1},
+        ),
+        (
+            "remove",
+            "/api/server/test/allowlist/remove",
+            {"players": ["Alex"]},
+            {
+                "status": "success",
+                "message": "Removed",
+                "details": {"removed": ["Alex"], "not_found": []},
+            },
+        ),
+    ],
+)
+async def test_server_actions_preserve_generated_http_contract(
+    action, path, body, response
+):
+    import json
+
+    import httpx
+    from bsm_api_client import BedrockServerManagerApi
+
+    from custom_components.bedrock_server_manager.coordinator import json_data
+    from custom_components.bedrock_server_manager.server_actions import (
+        _async_handle_add_to_allowlist,
+        _async_handle_remove_from_allowlist,
+        _async_handle_send_command,
+    )
+
+    async def respond(request):
+        assert request.url.path == path
+        assert json.loads(request.content) == body
+        return httpx.Response(200, json=response)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        async with BedrockServerManagerApi(
+            "http://host", jwt_token="token", http_client=transport
+        ) as client:
+            if action == "command":
+                result = await _async_handle_send_command(client, "test", "say hello")
+            elif action == "properties":
+                result = await _async_handle_update_properties(
+                    client, "test", {"server-name": "Example"}
+                )
+            elif action == "add":
+                result = await _async_handle_add_to_allowlist(
+                    client, "test", ["Alex"], False
+                )
+            else:
+                result = await _async_handle_remove_from_allowlist(
+                    client, "test", ["Alex"]
+                )
+    assert json_data(result) == response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_response", [False, True])
+async def test_partial_actions_refresh_and_return_details_only_when_requested(
+    hass, return_response
+):
+    from custom_components.bedrock_server_manager.action_common import (
+        OperationOutcomeError,
+    )
+    from custom_components.bedrock_server_manager.services import (
+        _execute_manager_targeted_service,
+    )
+
+    coordinator = Mock()
+    hass.data[DOMAIN] = {
+        "entry": {
+            "api": Mock(),
+            "manager_identifier": (DOMAIN, "http://host"),
+            "manager_coordinator": coordinator,
+        }
+    }
+    call = ServiceCall(
+        hass, DOMAIN, "scan_players", {}, return_response=return_response
+    )
+    handler = AsyncMock(
+        side_effect=OperationOutcomeError(
+            "Operation partially completed",
+            {
+                "status": "partial",
+                "message": "One log unavailable",
+                "details": {"saved": 1},
+            },
+        )
+    )
+    with patch(
+        "custom_components.bedrock_server_manager.services.resolve_manager_targets",
+        AsyncMock(return_value=["entry"]),
+    ), patch(
+        "custom_components.bedrock_server_manager.services.refresh_after_action"
+    ) as refresh:
+        if return_response:
+            response = await _execute_manager_targeted_service(call, hass, handler)
+            assert response["results"][0]["result"]["details"]["saved"] == 1
+            assert (
+                response["results"][0]["error"]["message"]
+                == "Operation partially completed"
+            )
+        else:
+            with pytest.raises(HomeAssistantError, match="partially completed"):
+                await _execute_manager_targeted_service(call, hass, handler)
+        refresh.assert_any_call(coordinator)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["partial", "skipped"])
+async def test_incomplete_delete_keeps_home_assistant_device(hass, api, status):
+    from custom_components.bedrock_server_manager.services import (
+        _async_handle_delete_server,
+    )
+
+    api.servers.async_delete_server = AsyncMock(
+        return_value=TaskAcceptedResponse(task_id="abc", message="Queued")
+    )
+    api.tasks.async_get_task_status.return_value = TaskSnapshot(
+        id="abc",
+        status="completed",
+        message="Task finished",
+        result={"status": status, "message": "Deletion not complete"},
+    )
+    with patch(
+        "custom_components.bedrock_server_manager.services.dr.async_get"
+    ) as registry:
+        with pytest.raises(HomeAssistantError, match=f"Operation {status}"):
+            await _async_handle_delete_server(hass, api, "test", "http://host")
+        registry.assert_not_called()

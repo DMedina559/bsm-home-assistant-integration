@@ -199,6 +199,7 @@ class BsmWebSocketManager:
             if isinstance(result, dict) and result.get("status") not in {
                 "success",
                 "skipped",
+                "partial",
             }:
                 return
             # Mutation revisions are on the event envelope, not inside its data.
