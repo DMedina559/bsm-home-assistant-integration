@@ -21,7 +21,4 @@ def refresh_after_action(coordinator, resources=None) -> None:
     if runtime is not None and runtime.closing:
         return
     coordinator.invalidate({}, resources)
-    task = coordinator.hass.async_create_task(coordinator.async_request_refresh())
-    if runtime is not None:
-        runtime.tasks.add(task)
-        task.add_done_callback(runtime.tasks.discard)
+    coordinator.schedule_refresh()

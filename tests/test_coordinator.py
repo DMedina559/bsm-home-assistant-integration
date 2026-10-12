@@ -111,6 +111,14 @@ async def test_partial_failure_preserves_last_good_data(hass, api):
     assert (await coordinator._async_update_data())["allowlist"] == coordinator.data[
         "allowlist"
     ]
+    assert (
+        coordinator.diagnostics()["resource_errors"]["allowlist"]["type"]
+        == "CannotConnectError"
+    )
+    assert "offline" not in str(coordinator.diagnostics()["resource_errors"])
+    api.servers.async_get_server_allowlist.side_effect = None
+    await coordinator._async_update_data()
+    assert "allowlist" not in coordinator.resource_errors
 
 
 @pytest.mark.asyncio
@@ -232,7 +240,9 @@ async def test_resource_freshness_distinguishes_current_stale_and_unsupported(
     coordinator.invalidate({}, {"properties"})
     await coordinator.async_refresh()
     metadata = coordinator.resource_metadata("properties")
-    assert metadata == {"bsm_resource_state": "stale", "bsm_updated_at": previous}
+    assert metadata["bsm_resource_state"] == "stale"
+    assert metadata["bsm_updated_at"] == previous
+    assert metadata["bsm_last_error"]["type"] == "CannotConnectError"
     coordinator.unsupported_resources.add("server_bans")
     assert (
         coordinator.resource_metadata("server_bans")["bsm_resource_state"]

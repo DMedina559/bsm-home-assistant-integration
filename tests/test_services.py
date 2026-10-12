@@ -13,6 +13,7 @@ from homeassistant.core import ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.bedrock_server_manager.const import DOMAIN
+from custom_components.bedrock_server_manager.coordinator import BsmCoordinator
 from custom_components.bedrock_server_manager.data_services import settings_action
 from custom_components.bedrock_server_manager.services import (
     _async_handle_restore_latest_all,
@@ -118,6 +119,7 @@ async def test_plugin_settings_use_typed_payloads_and_return_schema(hass, api):
         invalidate=Mock(),
         async_request_refresh=AsyncMock(),
     )
+    coordinator.schedule_refresh = lambda: BsmCoordinator.schedule_refresh(coordinator)
     hass.data[DOMAIN] = {
         "entry": {
             "api": api,
@@ -187,6 +189,7 @@ async def test_global_settings_action_receives_manager_context_and_refreshes(has
     coordinator = SimpleNamespace(
         hass=hass, api=api, invalidate=Mock(), async_request_refresh=AsyncMock()
     )
+    coordinator.schedule_refresh = lambda: BsmCoordinator.schedule_refresh(coordinator)
     hass.data[DOMAIN] = {
         "entry": {
             "api": api,

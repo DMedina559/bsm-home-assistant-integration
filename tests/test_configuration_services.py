@@ -13,6 +13,7 @@ from custom_components.bedrock_server_manager.configuration_services import (
     configuration_action,
 )
 from custom_components.bedrock_server_manager.const import DOMAIN
+from custom_components.bedrock_server_manager.coordinator import BsmCoordinator
 
 
 @pytest.mark.asyncio
@@ -20,6 +21,7 @@ async def test_server_setting_retains_json_types_and_refreshes_target(hass, api)
     coordinator = SimpleNamespace(
         hass=hass, api=api, invalidate=Mock(), async_request_refresh=AsyncMock()
     )
+    coordinator.schedule_refresh = lambda: BsmCoordinator.schedule_refresh(coordinator)
     api.servers.async_set_server_setting = AsyncMock(
         return_value=ServerSettingsResponse(
             status="success", settings={"settings": {"autostart": True}}

@@ -173,6 +173,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
     # Add Manager Coordinator diagnostics
     if manager_coordinator:
         diagnostics_data["manager_data_coordinator"] = {
+            **manager_coordinator.diagnostics(),
             "name": manager_coordinator.name,
             "last_update_success": manager_coordinator.last_update_success,
             "data": async_redact_data(manager_coordinator.data, TO_REDACT_CONFIG),
@@ -188,6 +189,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
     monitor = entry_specific_data.get("monitor_coordinator")
     if monitor:
         diagnostics_data["application_monitor"] = {
+            **monitor.diagnostics(),
             "http_connected": monitor.http_connected,
             "websocket_connected": monitor.websocket_connected,
             "data": monitor.data,
@@ -205,6 +207,7 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
         )
         if coordinator:
             diagnostics_data["monitored_server_coordinators"][server_name] = {
+                **coordinator.diagnostics(),
                 "coordinator_name": coordinator.name,
                 "last_update_success": coordinator.last_update_success,
                 "data": async_redact_data(coordinator.data, TO_REDACT_CONFIG),

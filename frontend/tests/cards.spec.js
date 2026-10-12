@@ -906,3 +906,38 @@ test("addon metadata remains live during an unsaved order edit", async ({
     page.getByRole("button", { name: "Save addon order" }),
   ).toBeDisabled();
 });
+
+test("HTTP recovery restores property controls while preserving unsaved edits", async ({
+  page,
+}) => {
+  await mount(page, "bsm-properties-card", { entity: "sensor.props" });
+  await page
+    .getByLabel("Server name", { exact: true })
+    .fill("Draft after outage");
+  await page.evaluate(() =>
+    window.push(
+      "sensor.props",
+      { bsm_resource_state: "unavailable" },
+      "unavailable",
+    ),
+  );
+  await expect(
+    page.getByRole("button", { name: "Save properties" }),
+  ).toBeDisabled();
+  await page.evaluate(() => window.readyConnection());
+  await expect(
+    page.getByRole("button", { name: "Save properties" }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("Server name", { exact: true })).toHaveValue(
+    "Draft after outage",
+  );
+  await page.evaluate(() =>
+    window.push("sensor.props", { bsm_resource_state: "current" }, "Alpha"),
+  );
+  await expect(
+    page.getByRole("button", { name: "Save properties" }),
+  ).toBeEnabled();
+  await expect(page.getByLabel("Server name", { exact: true })).toHaveValue(
+    "Draft after outage",
+  );
+});

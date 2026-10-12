@@ -57,6 +57,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         self.unavailable_resources: set[str] = set()
         self.unsupported_resources: set[str] = set()
         self.forbidden_resources: set[str] = set()
+        self.resource_errors: dict[str, dict[str, Any]] = {}
         self.resource_updated_at: dict[str, float] = {}
         self._requested_resources: set[str] | None = None
         self._full_refresh_pending = False
@@ -88,6 +89,39 @@ class BsmCoordinator(DataUpdateCoordinator):
         self.data = data
         self.last_update_success = True
         self.async_update_listeners()
+
+    def schedule_refresh(self) -> None:
+        """Schedule through the entry owner when available, including mutation bursts."""
+        runtime = getattr(self.api, "runtime", None)
+        if runtime is not None:
+            runtime.schedule_refresh(self)
+        else:
+            self.hass.async_create_task(self.async_request_refresh())
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Describe freshness and safe failure details for every coordinator."""
+        return {
+            "unavailable_resources": sorted(self.unavailable_resources),
+            "unsupported_resources": sorted(self.unsupported_resources),
+            "forbidden_resources": sorted(self.forbidden_resources),
+            "resource_updated_at": dict(self.resource_updated_at),
+            "resource_errors": dict(self.resource_errors),
+        }
+
+    def _record_error(self, key: str, error: Exception) -> None:
+        """Keep error types and HTTP status without retaining credentials or payloads."""
+        causes: list[str] = []
+        cause = error.__cause__
+        while cause is not None and len(causes) < 4:
+            causes.append(type(cause).__name__)
+            cause = cause.__cause__
+        self.resource_errors[key] = {
+            "type": type(error).__name__,
+            "status_code": getattr(error, "status_code", None),
+            "causes": causes,
+            "occurred_at": time(),
+        }
+        _LOGGER.debug("BSM resource %s failed: %s", key, self.resource_errors[key])
 
     def supports(self, operation_id: str) -> bool:
         """Use discovered capabilities when available, otherwise shipped support."""
@@ -121,7 +155,11 @@ class BsmCoordinator(DataUpdateCoordinator):
                 )
             )
         )
-        return {"bsm_resource_state": state, "bsm_updated_at": updated}
+        return {
+            "bsm_resource_state": state,
+            "bsm_updated_at": updated,
+            "bsm_last_error": self.resource_errors.get(resource or ""),
+        }
 
     async def _fetch(
         self,
@@ -136,10 +174,13 @@ class BsmCoordinator(DataUpdateCoordinator):
                 results = await asyncio.gather(*calls.values(), return_exceptions=True)
         except TimeoutError as error:
             self.unavailable_resources.update(calls)
+            for key in calls:
+                self._record_error(key, error)
             raise UpdateFailed("Timed out communicating with BSM") from error
         # Expired credentials trigger reauthentication; forbidden resources do not.
-        for result in results:
+        for key, result in zip(calls, results):
             if isinstance(result, AuthError) and result.status_code != 403:
+                self._record_error(key, result)
                 raise ConfigEntryAuthFailed(str(result)) from result
         data = {**self.defaults, **(self.data or {})}
         if generation != self.state.generation:
@@ -149,7 +190,13 @@ class BsmCoordinator(DataUpdateCoordinator):
         )
         if not successes:
             if failures and not set(failures) <= self.forbidden_resources:
-                raise UpdateFailed("No BSM data available: " + ", ".join(failures))
+                raise UpdateFailed(
+                    "No BSM data available: "
+                    + ", ".join(
+                        f"{key} ({self.resource_errors.get(key, {}).get('type', 'unknown')}, HTTP {self.resource_errors.get(key, {}).get('status_code')})"
+                        for key in failures
+                    )
+                )
             return data
         data.update(status="success", message="Data updated")
         if failures:
@@ -174,6 +221,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         failures = []
         for key, result in zip(calls, results):
             if isinstance(result, Exception):
+                self._record_error(key, result)
                 if isinstance(result, AuthError) and result.status_code == 403:
                     self.forbidden_resources.add(key)
                     self.unavailable_resources.add(key)
@@ -213,6 +261,7 @@ class BsmCoordinator(DataUpdateCoordinator):
             value = payload.get(fields[key]) if fields[key] else payload
             data[key] = value if value is not None else self.defaults.get(key)
         self.forbidden_resources.discard(key)
+        self.resource_errors.pop(key, None)
         self.unavailable_resources.discard(key)
         self.resource_updated_at[key] = time()
         return True

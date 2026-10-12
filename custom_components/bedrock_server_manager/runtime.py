@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,38 @@ class EntryRuntime:
 
     closing: bool = False
     tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+
+    refresh_tasks: dict[int, asyncio.Task[Any]] = field(default_factory=dict)
+    pending_refreshes: set[int] = field(default_factory=set)
+
+    def schedule_refresh(self, coordinator: Any) -> None:
+        """Coalesce refresh bursts, retaining invalidations received during a fetch."""
+        if self.closing:
+            return
+        key = id(coordinator)
+        self.pending_refreshes.add(key)
+        if key in self.refresh_tasks:
+            return
+
+        async def refresh() -> None:
+            try:
+                while key in self.pending_refreshes and not self.closing:
+                    self.pending_refreshes.discard(key)
+                    await coordinator.async_request_refresh()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                logging.getLogger(__name__).warning(
+                    "BSM refresh failed (%s)", type(error).__name__
+                )
+            finally:
+                self.refresh_tasks.pop(key, None)
+                self.pending_refreshes.discard(key)
+
+        task = coordinator.hass.async_create_task(refresh())
+        self.refresh_tasks[key] = task
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
 
     def own_task(self) -> None:
         """Retain the whole HA action, including response assembly and refreshes."""
@@ -33,6 +66,8 @@ class EntryRuntime:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self.tasks.clear()
+        self.refresh_tasks.clear()
+        self.pending_refreshes.clear()
 
     def transport(self, api: Any) -> Any:
         """Guard native entity calls and preserve the released SDK interface."""

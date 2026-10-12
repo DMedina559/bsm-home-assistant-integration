@@ -8,6 +8,7 @@ from typing import Any
 from bsm_api_client import BedrockServerManagerApi, WebSocketClient
 from bsm_api_client.models import MetricsSample, ServerProcessInfoResponse, TaskSnapshot
 from homeassistant.core import HomeAssistant
+from pydantic import ValidationError
 
 from .const import DOMAIN
 from .state import ResourceState
@@ -155,6 +156,15 @@ class BsmWebSocketManager:
             delay = min(delay * 2, 60)
 
     def _handle_message(self, message: dict[str, Any]) -> None:
+        """Skip incompatible snapshots without interrupting the receive loop."""
+        try:
+            self._dispatch_message(message)
+        except ValidationError:
+            _LOGGER.debug(
+                "Skipping invalid BSM WebSocket payload (type=%s)", message.get("type")
+            )
+
+    def _dispatch_message(self, message: dict[str, Any]) -> None:
         """Route process snapshots, mutation invalidations, and task outcomes."""
         topic, kind, data = (
             message.get("topic"),

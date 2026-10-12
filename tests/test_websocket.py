@@ -208,3 +208,26 @@ async def test_future_mutation_events_refresh_with_envelope_revision(hass, api):
     topic, payload = ws.coordinator_refresh_callback.call_args.args
     assert topic == "event:after_plugin_resource_change"
     assert payload["revision"] == 9
+
+
+@pytest.mark.asyncio
+async def test_invalid_snapshot_does_not_prevent_following_events(hass, api):
+    ws = manager(hass, api)
+    ws._handle_message(
+        {"type": "task_update", "topic": "task:bad", "data": {"status": []}}
+    )
+    ws._handle_message(
+        {
+            "type": "resource_update",
+            "topic": "application-metrics",
+            "data": {"cpu": "invalid"},
+        }
+    )
+    ws._handle_message(
+        {
+            "type": "event",
+            "topic": "event:after_properties_change",
+            "data": {"server_name": "selected"},
+        }
+    )
+    ws.coordinator_refresh_callback.assert_called_once()

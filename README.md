@@ -25,7 +25,7 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 *   Home Assistant 2026.10 or newer (Python 3.14).
 *   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) 4.0.0b5 or newer, with metrics, health, task and revisioned WebSocket contracts.
-*   `bsm-api-client` 1.7.0b1 or newer (installed automatically by Home Assistant).
+*   `bsm-api-client` 1.7.0b3 or newer (installed automatically by Home Assistant).
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.
 *   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
@@ -244,7 +244,7 @@ Selected servers expose editable target versions and native uptime measurements.
 
 ## Development
 
-Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook use the published `bsm-api-client==1.7.0b1` package, matching the BSM 4.0.0b5 contracts.
+Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook use the published `bsm-api-client==1.7.0b3` package, matching the BSM 4.0.0b5 contracts.
 
 ```sh
 python -m pip install -r requirements-test.txt ../bsm-api-client/packages/bsm-api-client

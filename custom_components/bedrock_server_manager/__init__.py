@@ -282,10 +282,10 @@ async def _async_setup_entry(  # noqa: C901
         all_servers = topic == "reconnect" or topic.startswith("task:")
         if all_servers or event == "after_setting_update":
             if monitor_coordinator.invalidate(data):
-                hass.async_create_task(monitor_coordinator.async_request_refresh())
+                monitor_coordinator.schedule_refresh()
         if all_servers or event in MANAGER_EVENTS or unknown_mutation:
             if manager_coordinator.invalidate(data):
-                hass.async_create_task(manager_coordinator.async_request_refresh())
+                manager_coordinator.schedule_refresh()
         if all_servers or event in SERVER_EVENTS or unknown_mutation:
             result = data.get("result") or {}
             name = data.get("server_name") or (
@@ -302,7 +302,7 @@ async def _async_setup_entry(  # noqa: C901
                         server_event_resources(event) if not all_servers else None
                     )
                     if coordinator.invalidate(data, resources):
-                        hass.async_create_task(coordinator.async_request_refresh())
+                        coordinator.schedule_refresh()
 
     def _ws_process(server_name, payload):
         """Apply process snapshots to their selected server only."""

@@ -19,7 +19,7 @@
     "bsm_api_client"
   ],
   "requirements": [
-    "bsm-api-client>=1.7.0b1,<2"
+    "bsm-api-client>=1.7.0b3,<2"
   ],
   "version": "0.18.0"
 }

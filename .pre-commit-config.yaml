@@ -41,4 +41,4 @@ repos:
           - types-requests
           - types-PyYAML
           - homeassistant==2026.10.1
-          - bsm-api-client==1.7.0b1
+          - bsm-api-client==1.7.0b3
