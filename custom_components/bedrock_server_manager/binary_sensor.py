@@ -7,6 +7,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -18,22 +19,28 @@ from .coordinator import ApplicationMonitorCoordinator
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Add persistent connection entities and known dependency checks."""
+    """Replace individual checks with one health entity and connection indicators."""
     data = hass.data[DOMAIN][entry.entry_id]
+    registry = er.async_get(hass)
+    for domain, keys in (
+        ("binary_sensor", ("lifecycle", "database", "state", "metrics")),
+        ("sensor", ("application_lifecycle", "health_checked_at")),
+    ):
+        for key in keys:
+            unique_id = (
+                f"{DOMAIN}_{data['manager_identifier'][1]}_{key}".lower().replace(
+                    ":", "_"
+                )
+            )
+            entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
+            if entity_id is not None:
+                registry.async_remove(entity_id)
     async_add_entities(
         [
             ApplicationHealthSensor(
                 data["monitor_coordinator"], data["manager_identifier"], key
             )
-            for key in (
-                "connection",
-                "websocket",
-                "health",
-                "lifecycle",
-                "database",
-                "state",
-                "metrics",
-            )
+            for key in ("connection", "websocket", "health")
         ]
     )
 
@@ -43,6 +50,16 @@ class ApplicationHealthSensor(
 ):
     """Distinguish reachable APIs, live WebSockets, and dependency problems."""
 
+    _unrecorded_attributes = frozenset(
+        {
+            "checks",
+            "failed_checks",
+            "checked_at",
+            "message",
+            "bsm_updated_at",
+            "bsm_last_error",
+        }
+    )
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -84,11 +101,7 @@ class ApplicationHealthSensor(
             super().available
             and "health" not in self.coordinator.unavailable_resources
             and "health" not in self.coordinator.unsupported_resources
-            and (
-                bool(health)
-                if self.key == "health"
-                else self.key in health.get("checks", {})
-            )
+            and bool(health)
         )
 
     @property
@@ -98,9 +111,7 @@ class ApplicationHealthSensor(
         if self.key == "websocket":
             return self.coordinator.websocket_connected
         health = (self.coordinator.data or {}).get("health") or {}
-        if self.key == "health":
-            return health.get("health") == "degraded"
-        return not health.get("checks", {}).get(self.key, {}).get("healthy", False)
+        return health.get("health") == "degraded"
 
     @property
     def extra_state_attributes(self) -> dict | None:
@@ -112,12 +123,18 @@ class ApplicationHealthSensor(
                 "health" if self.key not in {"connection", "websocket"} else None
             ),
         }
-        if self.key in {"connection", "websocket", "health"}:
-            return metadata
-        check = (
-            (self.coordinator.data or {})
-            .get("health", {})
-            .get("checks", {})
-            .get(self.key)
-        )
-        return {**metadata, "message": check["message"]} if check else metadata
+        if self.key == "health":
+            health = (self.coordinator.data or {}).get("health") or {}
+            checks = health.get("checks") or {}
+            return {
+                **metadata,
+                "checks": checks,
+                "failed_checks": [
+                    name
+                    for name, check in checks.items()
+                    if not check.get("healthy", False)
+                ],
+                "lifecycle": health.get("lifecycle"),
+                "checked_at": health.get("checked_at"),
+            }
+        return metadata

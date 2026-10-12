@@ -12,11 +12,17 @@ class HealthCard extends BsmCard {
     return form;
   }
   render() {
+    const health = this.stateFor("health");
+    const details = health?.attributes || {};
     return this.frame(
       html`<h3>Connection and health</h3>
         <div class="grid">
-          ${["connection", "websocket", "health", "lifecycle", "database", "state", "metrics", "application_lifecycle", "health_checked_at"].map((key) => this.metric(this.stateFor(key)))}
+          ${["connection", "websocket", "health"].map((key) => this.metric(this.stateFor(key)))}
         </div>
+        <h3>Health checks</h3>
+        ${Object.keys(details.checks || {}).length ? html`<div class="grid">${Object.entries(details.checks).map(([name, check]) => html`<div class="tile"><strong>${name}</strong><span>${health.state === "unavailable" ? "Unavailable" : check.healthy ? "Healthy" : "Problem"}</span><small>${check.message || ""}</small></div>`)}</div>` : html`<p class="muted">Health checks are not available yet.</p>`}
+        ${details.lifecycle ? html`<p class="muted">Lifecycle: ${details.lifecycle}</p>` : ""}
+        ${typeof details.checked_at === "number" ? html`<p class="muted">Checked ${new Date(details.checked_at * 1000).toLocaleString()}</p>` : ""}
         <h3>Application</h3>
         <div class="grid">
           ${["app_cpu_percent", "app_ram_mb", "background_task_count", "uptime_seconds", "asyncio_task_count", "thread_count", "loop_lag_ms"].map((key) => this.metric(this.stateFor(key)))}

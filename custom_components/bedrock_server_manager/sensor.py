@@ -249,6 +249,7 @@ class MinecraftServerSensor(
             "uptime",
             "bsm_settings_revision",
             "bsm_updated_at",
+            "bsm_last_error",
         }
     )
     _attr_device_info: dr.DeviceInfo
@@ -581,6 +582,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             "uptime",
             "bsm_settings_revision",
             "bsm_updated_at",
+            "bsm_last_error",
         }
     )
     _attr_device_info: dr.DeviceInfo

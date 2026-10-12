@@ -43,7 +43,7 @@ class EntryRuntime:
                 self.refresh_tasks.pop(key, None)
                 self.pending_refreshes.discard(key)
 
-        task = coordinator.hass.async_create_task(refresh())
+        task = coordinator.hass.async_create_task(refresh(), eager_start=False)
         self.refresh_tasks[key] = task
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)

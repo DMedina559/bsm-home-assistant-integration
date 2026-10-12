@@ -371,3 +371,9 @@ than being submitted again. If Home Assistant denies live event subscriptions, c
 show a notice and retain task polling and entity updates. Manager selectors work even
 when the application version sensor was previously disabled. Content sources are limited
 to the selected server's manager. Diagnostics redact nested and flattened JWT secrets.
+
+### Health and diagnostic entity defaults
+
+New installations expose API connectivity, WebSocket connectivity, and one application health problem entity. The health entity includes all dependency checks, failed-check names, lifecycle, and check time as attributes. The health card displays these attributes directly. Old individual check entities and separate lifecycle/check-time sensors are removed from the registry; automations should use the consolidated health entity and its attributes.
+
+Application CPU, memory, background tasks and uptime, plus system CPU and memory usage, are enabled by default. Asyncio/thread counts, loop lag, memory totals, disk/network rates, and the metrics sample timestamp are opt-in diagnostics. Numeric sensors remain separate for recorder statistics and graphs. Existing enabled/disabled selections are preserved. Freshness timestamps and diagnostic errors are visible in entity attributes but excluded from recorder history.

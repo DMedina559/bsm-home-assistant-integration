@@ -941,3 +941,59 @@ test("HTTP recovery restores property controls while preserving unsaved edits", 
     "Draft after outage",
   );
 });
+
+test("health card displays consolidated checks without individual check entities", async ({
+  page,
+}) => {
+  await mount(page, "bsm-health-card", { entity: "sensor.version" });
+  await page.evaluate(() => {
+    window.hass = {
+      ...window.hass,
+      states: {
+        ...window.hass.states,
+        "binary_sensor.health": {
+          entity_id: "binary_sensor.health",
+          state: "on",
+          attributes: {
+            bsm_role: "manager",
+            bsm_key: "health",
+            bsm_manager_url: "http://bsm",
+            device_class: "problem",
+            friendly_name: "Application health",
+            lifecycle: "ready",
+            checked_at: 1700000000,
+            checks: {
+              database: { healthy: false, message: "Database unavailable" },
+              state: { healthy: true, message: "State loaded" },
+            },
+          },
+        },
+      },
+      entities: {
+        ...window.hass.entities,
+        "binary_sensor.health": { device_id: "manager" },
+      },
+    };
+    window.card.hass = window.hass;
+  });
+  await expect(
+    page.getByText("Database unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("State loaded", { exact: true })).toBeVisible();
+  await expect(page.getByText("Lifecycle: ready")).toBeVisible();
+  await page.evaluate(() =>
+    window.push(
+      "binary_sensor.health",
+      {
+        checks: { database: { healthy: true, message: "Database recovered" } },
+      },
+      "off",
+    ),
+  );
+  await expect(
+    page.getByText("Database recovered", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Database unavailable", { exact: true }),
+  ).toHaveCount(0);
+});

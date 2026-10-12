@@ -63,7 +63,9 @@ METRIC_DESCRIPTIONS = (
     metric("uptime_seconds", "Application uptime", "s", SensorDeviceClass.DURATION),
     metric("sys_cpu_percent", "System CPU", "%"),
     metric("sys_ram_percent", "System memory usage", "%"),
-    metric("sys_ram_mb", "System memory used", "MiB", SensorDeviceClass.DATA_SIZE),
+    metric(
+        "sys_ram_mb", "System memory used", "MiB", SensorDeviceClass.DATA_SIZE, False
+    ),
     metric(
         "sys_ram_total_mb",
         "System memory total",
@@ -71,36 +73,38 @@ METRIC_DESCRIPTIONS = (
         SensorDeviceClass.DATA_SIZE,
         False,
     ),
-    metric("disk_read_kib_s", "System disk read", "KiB/s", SensorDeviceClass.DATA_RATE),
     metric(
-        "disk_write_kib_s", "System disk write", "KiB/s", SensorDeviceClass.DATA_RATE
+        "disk_read_kib_s",
+        "System disk read",
+        "KiB/s",
+        SensorDeviceClass.DATA_RATE,
+        False,
     ),
     metric(
-        "net_rx_kib_s", "System network receive", "KiB/s", SensorDeviceClass.DATA_RATE
+        "disk_write_kib_s",
+        "System disk write",
+        "KiB/s",
+        SensorDeviceClass.DATA_RATE,
+        False,
     ),
-    metric("net_tx_kib_s", "System network send", "KiB/s", SensorDeviceClass.DATA_RATE),
+    metric(
+        "net_rx_kib_s",
+        "System network receive",
+        "KiB/s",
+        SensorDeviceClass.DATA_RATE,
+        False,
+    ),
+    metric(
+        "net_tx_kib_s",
+        "System network send",
+        "KiB/s",
+        SensorDeviceClass.DATA_RATE,
+        False,
+    ),
     MetricDescription(
         key="metrics_sampled_at",
         field="timestamp",
         name="Metrics sampled at",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-    ),
-    MetricDescription(
-        key="application_lifecycle",
-        field="lifecycle",
-        resource="health",
-        name="Application lifecycle",
-        device_class=SensorDeviceClass.ENUM,
-        options=["starting", "ready", "stopping", "stopped", "failed"],
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    MetricDescription(
-        key="health_checked_at",
-        field="checked_at",
-        resource="health",
-        name="Health checked at",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -113,6 +117,7 @@ class ApplicationMetricSensor(
 ):
     """Expose one metric, leaving historic samples to Home Assistant's recorder."""
 
+    _unrecorded_attributes = frozenset({"bsm_updated_at", "bsm_last_error"})
     entity_description: MetricDescription
     _attr_has_entity_name = True
 

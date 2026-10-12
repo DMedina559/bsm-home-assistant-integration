@@ -39,3 +39,15 @@ async def test_refresh_bursts_keep_an_inflight_followup_and_cancel_on_unload(has
     assert not runtime.refresh_tasks
     runtime.schedule_refresh(coordinator)
     assert not runtime.tasks
+
+
+@pytest.mark.asyncio
+async def test_immediate_refreshes_do_not_leave_a_completed_scheduler_entry(hass):
+    runtime = EntryRuntime()
+    coordinator = SimpleNamespace(hass=hass, async_request_refresh=AsyncMock())
+    runtime.schedule_refresh(coordinator)
+    await asyncio.gather(*runtime.tasks)
+    runtime.schedule_refresh(coordinator)
+    await asyncio.gather(*runtime.tasks)
+    assert coordinator.async_request_refresh.await_count == 2
+    assert not runtime.refresh_tasks

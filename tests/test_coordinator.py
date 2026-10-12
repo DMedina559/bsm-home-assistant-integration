@@ -300,3 +300,20 @@ async def test_live_process_updates_preserve_the_server_http_poll_deadline(hass,
     finally:
         remove()
         await coordinator.async_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_live_recovery_clears_resource_errors(hass, api):
+    from custom_components.bedrock_server_manager.coordinator import (
+        ApplicationMonitorCoordinator,
+    )
+
+    monitor = ApplicationMonitorCoordinator(hass, api)
+    monitor._record_error("metrics", CannotConnectError("offline"))
+    monitor.unavailable_resources.add("metrics")
+    monitor.update_metrics({"epoch": "a", "revision": 1, "app_cpu_percent": 1})
+    assert monitor.resource_metadata("metrics")["bsm_last_error"] is None
+    server = MinecraftBedrockCoordinator(hass, server_api(api), "test", 30)
+    server._record_error("process_info", CannotConnectError("offline"))
+    server.update_process_info({"epoch": "a", "revision": 1, "process_info": None})
+    assert server.resource_metadata("process_info")["bsm_last_error"] is None

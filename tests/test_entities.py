@@ -78,16 +78,19 @@ async def test_health_problems_are_separate_from_connection_and_live_state(hass,
     )
     identifier = ("bedrock_server_manager", "http://host")
     assert ApplicationHealthSensor(coordinator, identifier, "health").is_on
-    database = ApplicationHealthSensor(coordinator, identifier, "database")
-    assert database.available and database.is_on
-    assert database.extra_state_attributes["message"] == "Database unavailable"
-    assert not ApplicationHealthSensor(coordinator, identifier, "state").is_on
+    health = ApplicationHealthSensor(coordinator, identifier, "health")
+    assert health.available and health.is_on
+    assert health.extra_state_attributes["failed_checks"] == ["database"]
+    assert (
+        health.extra_state_attributes["checks"]["database"]["message"]
+        == "Database unavailable"
+    )
     coordinator.set_websocket_connected(True)
     coordinator.http_connected = False
     assert ApplicationHealthSensor(coordinator, identifier, "websocket").is_on
     assert not ApplicationHealthSensor(coordinator, identifier, "connection").is_on
     coordinator.unavailable_resources.add("health")
-    assert not database.available
+    assert not health.available
 
 
 @pytest.mark.asyncio
@@ -213,3 +216,61 @@ async def test_server_identity_survives_unavailable_data(hass, api):
     assert entity.native_value is None
     assert entity.extra_state_attributes["bsm_server_name"] == "selected"
     assert entity.extra_state_attributes["bsm_manager_url"] == "http://host"
+
+
+@pytest.mark.asyncio
+async def test_consolidated_health_removes_old_registry_entities(hass, api):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.bedrock_server_manager.binary_sensor import async_setup_entry
+    from custom_components.bedrock_server_manager.const import DOMAIN
+
+    coordinator = ApplicationMonitorCoordinator(hass, api)
+    identifier = (DOMAIN, "http://host")
+    hass.data[DOMAIN] = {
+        "entry": {"monitor_coordinator": coordinator, "manager_identifier": identifier}
+    }
+    await ar.async_load(hass, load_empty=True)
+    dr.async_setup(hass)
+    await dr.async_load(hass, load_empty=True)
+    await er.async_load(hass, load_empty=True)
+    registry = er.async_get(hass)
+    old_ids = []
+    for domain, keys in (
+        ("binary_sensor", ("lifecycle", "database", "state", "metrics")),
+        ("sensor", ("application_lifecycle", "health_checked_at")),
+    ):
+        for key in keys:
+            old_ids.append(
+                registry.async_get_or_create(
+                    domain,
+                    DOMAIN,
+                    f"{DOMAIN}_{identifier[1]}_{key}".lower().replace(":", "_"),
+                ).entity_id
+            )
+    add = Mock()
+    await async_setup_entry(hass, SimpleNamespace(entry_id="entry"), add)
+    assert {entity.key for entity in add.call_args.args[0]} == {
+        "connection",
+        "websocket",
+        "health",
+    }
+    assert all(registry.async_get(entity_id) is None for entity_id in old_ids)
+    enabled = {
+        description.key
+        for description in METRIC_DESCRIPTIONS
+        if description.entity_registry_enabled_default
+    }
+    assert enabled == {
+        "app_cpu_percent",
+        "app_ram_mb",
+        "background_task_count",
+        "uptime_seconds",
+        "sys_cpu_percent",
+        "sys_ram_percent",
+    }

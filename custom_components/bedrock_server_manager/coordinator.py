@@ -307,6 +307,7 @@ class MinecraftBedrockCoordinator(BsmCoordinator):
         """Apply a revisioned process snapshot without inventing process values."""
         if not self.state.accept("process_info", payload):
             return
+        self.resource_errors.pop("process_info", None)
         self.unavailable_resources.discard("process_info")
         self.forbidden_resources.discard("process_info")
         self.resource_updated_at["process_info"] = time()
@@ -474,6 +475,8 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
         if not self.state.accept("metrics", payload):
             return
         self._push_generation["metrics"] = self._push_generation.get("metrics", 0) + 1
+        self.resource_errors.pop("metrics", None)
+        self.forbidden_resources.discard("metrics")
         self.unavailable_resources.discard("metrics")
         self.resource_updated_at["metrics"] = time()
         self._publish_push(
