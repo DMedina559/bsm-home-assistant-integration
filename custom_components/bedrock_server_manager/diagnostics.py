@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, cast
 
@@ -89,6 +90,25 @@ def _redact_diagnostics(data: Dict[str, Any], entry: ConfigEntry) -> Dict[str, A
     return cast(Dict[str, Any], scrub(redacted))
 
 
+async def _async_runtime_diagnostics(api: BedrockServerManagerApi) -> dict[str, Any]:
+    """Read bounded runtime metadata on demand without blocking on unavailable routes."""
+
+    async def fetch(name, call):
+        try:
+            async with asyncio.timeout(5):
+                value = await call()
+                return name, value.model_dump(mode="json")
+        except Exception as error:
+            return name, {"available": False, "error_type": type(error).__name__}
+
+    return dict(
+        await asyncio.gather(
+            fetch("web", lambda: api.application.async_get_web_runtime()),
+            fetch("events", lambda: api.events.async_get_event_activity(limit=10)),
+        )
+    )
+
+
 async def async_get_config_entry_diagnostics(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Dict[str, Any]:
@@ -169,6 +189,10 @@ async def async_get_config_entry_diagnostics(  # noqa: C901
             and entry_specific_data["ws_manager"]._is_connected
         ),
     }
+
+    diagnostics_data["runtime_diagnostics"] = await _async_runtime_diagnostics(
+        api_client
+    )
 
     # Add Manager Coordinator diagnostics
     if manager_coordinator:

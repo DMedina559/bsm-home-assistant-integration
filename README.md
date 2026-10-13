@@ -56,9 +56,9 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 Once installed and Home Assistant is restarted, configure the integration via the UI:
 
-> [!tip] 
+> [!tip]
 > Easily add the integration through the Home Assistant UI:
-> 
+>
 > [![Open your Home Assistant instance and show an integration.](https://my.home-assistant.io/badges/integration.svg)](https://my.home-assistant.io/redirect/integration/?domain=bedrock_server_manager)
 
 1.  Go to **Settings -> Devices & Services**.
@@ -379,3 +379,19 @@ New installations expose API connectivity, WebSocket connectivity, and one appli
 Application CPU, memory, background tasks and uptime, plus system CPU and memory usage, are enabled by default. Asyncio/thread counts, loop lag, memory totals, disk/network rates, and the metrics sample timestamp are opt-in diagnostics. Numeric sensors remain separate for recorder statistics and graphs. Existing enabled/disabled selections are preserved. Freshness timestamps and diagnostic errors are visible in entity attributes but excluded from recorder history.
 
 The current integration requires `bsm-api-client>=1.7.0b4,<2` for the backend response contracts. Release that SDK beta before installing this integration update. Tests use the reviewed SDK source revision until the beta is published.
+
+
+### Current backend event and runtime contracts
+
+The integration targets the merged backend `dev` contract, including event
+catalog/activity and graceful web-runtime control. Diagnostic downloads request
+bounded, metadata-only event activity and web-runtime status on demand. These
+administrator-only reads are reported unavailable for accounts without access;
+normal coordinators keep using their existing health/state contracts. No shutdown
+request is issued by diagnostics or polling.
+
+Core-event automations retain the backend `event_id` and `correlation_id` fields.
+Plugin event actions must target declared, public custom events. The SDK's
+regenerated operation catalog also makes the new operations available through
+existing operation-ID discovery/call services. The SDK source pin used by CI must
+match the reviewed client update before the next SDK beta is published.

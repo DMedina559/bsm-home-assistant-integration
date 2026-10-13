@@ -203,3 +203,47 @@ async def test_action_response_survives_entry_removal_after_api_acceptance(hass,
         response = await _execute_targeted_service(call, hass, action)
     assert response["results"][0]["manager_url"] == "http://host"
     assert response["results"][0]["result"]["task_id"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_runtime_diagnostics_are_bounded_and_tolerate_non_admin_accounts():
+    from bsm_api_client.models import EventDiagnostics, RuntimeStatus
+
+    from custom_components.bedrock_server_manager.diagnostics import (
+        _async_runtime_diagnostics,
+    )
+
+    api = SimpleNamespace(
+        application=SimpleNamespace(
+            async_get_web_runtime=AsyncMock(
+                return_value=RuntimeStatus(
+                    instance_id="instance",
+                    pid=123,
+                    phase="ready",
+                    shutdown_requested=False,
+                )
+            )
+        ),
+        events=SimpleNamespace(
+            async_get_event_activity=AsyncMock(
+                return_value=EventDiagnostics(
+                    accepting=True,
+                    emitted=0,
+                    suppressed=0,
+                    failed_listeners=0,
+                    subscriptions=0,
+                    active=[],
+                    recent=[],
+                )
+            )
+        ),
+    )
+    result = await _async_runtime_diagnostics(api)
+    assert result["web"]["phase"] == "ready"
+    api.events.async_get_event_activity.assert_awaited_once_with(limit=10)
+    api.application.async_get_web_runtime.side_effect = AuthError(
+        "Administrator required", status_code=403
+    )
+    result = await _async_runtime_diagnostics(api)
+    assert result["web"] == {"available": False, "error_type": "AuthError"}
+    assert result["events"]["recent"] == []

@@ -249,3 +249,33 @@ async def test_partial_mutations_refresh_applied_work(hass, api):
         }
     )
     ws.coordinator_refresh_callback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_event_correlation_metadata_reaches_ha_automations(hass, api):
+    ws = manager(hass, api)
+    received = []
+
+    @callback
+    def capture(event):
+        received.append(event.data)
+
+    remove = hass.bus.async_listen("bedrock_server_manager_event", capture)
+    try:
+        ws._handle_message(
+            {
+                "type": "event",
+                "topic": "event:after_server_start",
+                "event_id": "event-1",
+                "correlation_id": "operation-1",
+                "epoch": "a",
+                "revision": 1,
+                "data": {"server_name": "selected", "result": {"status": "success"}},
+            }
+        )
+        await hass.async_block_till_done()
+    finally:
+        remove()
+    assert received[0]["event_id"] == "event-1"
+    assert received[0]["correlation_id"] == "operation-1"
+    ws.coordinator_refresh_callback.assert_called_once()
