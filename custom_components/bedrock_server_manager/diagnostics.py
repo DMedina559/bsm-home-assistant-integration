@@ -97,12 +97,20 @@ async def _async_runtime_diagnostics(api: BedrockServerManagerApi) -> dict[str, 
         try:
             async with asyncio.timeout(5):
                 value = await call()
-                return name, value.model_dump(mode="json")
+                return name, (
+                    value.model_dump(mode="json")
+                    if hasattr(value, "model_dump")
+                    else value
+                )
         except Exception as error:
             return name, {"available": False, "error_type": type(error).__name__}
 
     return dict(
         await asyncio.gather(
+            fetch(
+                "backend",
+                lambda: api.discovery.call("get_diagnostic_report"),
+            ),
             fetch("web", lambda: api.application.async_get_web_runtime()),
             fetch("events", lambda: api.events.async_get_event_activity(limit=10)),
         )

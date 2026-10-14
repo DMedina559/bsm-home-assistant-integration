@@ -135,6 +135,7 @@ class ApplicationHealthSensor(
                     if not check.get("healthy", False)
                 ],
                 "lifecycle": health.get("lifecycle"),
+                "ready": health.get("ready"),
                 "checked_at": health.get("checked_at"),
             }
         return metadata

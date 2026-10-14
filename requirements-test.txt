@@ -1,4 +1,4 @@
-bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@397db5fb6b325bb24915f48a0cad2043f21e1845#subdirectory=packages/bsm-api-client
+bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@0e6a335d556320c5f582e88041e77629e0b6fe5e#subdirectory=packages/bsm-api-client
 homeassistant==2026.10.1
 pytest>=9,<10
 pytest-asyncio>=1.4,<2

@@ -68,6 +68,7 @@ async def test_health_problems_are_separate_from_connection_and_live_state(hass,
     coordinator.async_set_updated_data(
         {
             "health": {
+                "ready": False,
                 "health": "degraded",
                 "checks": {
                     "database": {"healthy": False, "message": "Database unavailable"},
@@ -80,6 +81,7 @@ async def test_health_problems_are_separate_from_connection_and_live_state(hass,
     assert ApplicationHealthSensor(coordinator, identifier, "health").is_on
     health = ApplicationHealthSensor(coordinator, identifier, "health")
     assert health.available and health.is_on
+    assert health.extra_state_attributes["ready"] is False
     assert health.extra_state_attributes["failed_checks"] == ["database"]
     assert (
         health.extra_state_attributes["checks"]["database"]["message"]
@@ -107,7 +109,7 @@ async def test_monitor_fetches_health_and_only_latest_metrics(hass, api):
     )
     api.application.async_get_application_health = AsyncMock(
         return_value=GetApplicationHealthResponse(
-            checked_at=1, checks={}, health="healthy", lifecycle="ready"
+            checked_at=1, checks={}, health="healthy", lifecycle="ready", ready=True
         )
     )
     coordinator = ApplicationMonitorCoordinator(hass, api)

@@ -69,7 +69,11 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
     )
     api.application.async_get_application_health = AsyncMock(
         return_value=GetApplicationHealthResponse(
-            checked_at=1700000000, checks={}, health="healthy", lifecycle="ready"
+            checked_at=1700000000,
+            checks={},
+            health="healthy",
+            lifecycle="ready",
+            ready=True,
         )
     )
     api.application.async_get_application_metrics = AsyncMock(

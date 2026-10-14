@@ -214,6 +214,14 @@ async def test_runtime_diagnostics_are_bounded_and_tolerate_non_admin_accounts()
     )
 
     api = SimpleNamespace(
+        discovery=SimpleNamespace(
+            call=AsyncMock(
+                return_value={
+                    "report_id": "report",
+                    "snapshot": {"summary": {"ready": True}},
+                }
+            )
+        ),
         application=SimpleNamespace(
             async_get_web_runtime=AsyncMock(
                 return_value=RuntimeStatus(
@@ -240,10 +248,16 @@ async def test_runtime_diagnostics_are_bounded_and_tolerate_non_admin_accounts()
     )
     result = await _async_runtime_diagnostics(api)
     assert result["web"]["phase"] == "ready"
+    assert result["backend"]["snapshot"]["summary"]["ready"] is True
+    api.discovery.call.assert_awaited_once_with("get_diagnostic_report")
     api.events.async_get_event_activity.assert_awaited_once_with(limit=10)
     api.application.async_get_web_runtime.side_effect = AuthError(
         "Administrator required", status_code=403
     )
+    api.discovery.call.side_effect = AuthError(
+        "Administrator required", status_code=403
+    )
     result = await _async_runtime_diagnostics(api)
+    assert result["backend"] == {"available": False, "error_type": "AuthError"}
     assert result["web"] == {"available": False, "error_type": "AuthError"}
     assert result["events"]["recent"] == []
