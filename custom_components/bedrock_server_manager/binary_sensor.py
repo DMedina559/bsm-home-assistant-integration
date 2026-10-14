@@ -41,7 +41,7 @@ async def async_setup_entry(
             ApplicationHealthSensor(
                 data["monitor_coordinator"], data["manager_identifier"], key
             )
-            for key in ("connection", "websocket", "health")
+            for key in ("connection", "websocket", "health", "ready")
         ]
     )
 
@@ -72,10 +72,11 @@ class ApplicationHealthSensor(
             "connection": "API connection",
             "websocket": "WebSocket connection",
             "health": "Application health problem",
+            "ready": "Application ready",
         }.get(key, f"{key.capitalize()} health problem")
         self._attr_device_class = (
             BinarySensorDeviceClass.CONNECTIVITY
-            if key in {"connection", "websocket"}
+            if key in {"connection", "websocket", "ready"}
             else BinarySensorDeviceClass.PROBLEM
         )
         self._attr_entity_registry_enabled_default = key in {
@@ -89,6 +90,13 @@ class ApplicationHealthSensor(
         if self.key in {"connection", "websocket"}:
             return True
         health = (self.coordinator.data or {}).get("health") or {}
+        if self.key == "ready":
+            return (
+                super().available
+                and "health" not in self.coordinator.unavailable_resources
+                and "health" not in self.coordinator.unsupported_resources
+                and isinstance(health.get("ready"), bool)
+            )
         return (
             super().available
             and "health" not in self.coordinator.unavailable_resources
@@ -103,6 +111,10 @@ class ApplicationHealthSensor(
         if self.key == "websocket":
             return self.coordinator.websocket_connected
         health = (self.coordinator.data or {}).get("health") or {}
+        if self.key == "ready":
+            return (
+                health.get("ready") if isinstance(health.get("ready"), bool) else None
+            )
         value = health.get("health")
         return value == "degraded" if value in {"healthy", "degraded"} else None
 

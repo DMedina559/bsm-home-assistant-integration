@@ -36,6 +36,7 @@ class RestoreCard extends BsmCard {
           >
             Restore selected backup</button
           >${this.button("Restore latest backups", "restore_latest_all", {}, { message: "Request accepted.", confirm: "Restore the latest world and configuration backups, replacing current data?" })}
+          ${this.button("Prune old backups", "prune_backups", {}, { message: "Backup pruning accepted.", confirm: "Prune backups using the server retention settings? Removed backups cannot be recovered." })}
         </div>`,
     );
   }

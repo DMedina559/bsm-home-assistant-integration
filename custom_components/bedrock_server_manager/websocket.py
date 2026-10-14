@@ -74,12 +74,16 @@ class BsmWebSocketManager:
         manager_url: str,
         update_application_metrics_callback: Callable,
         connection_callback: Callable,
+        event_names: list[str] | None = None,
+        forward_events: bool = True,
     ) -> None:
         self.hass = hass
         self.api_client = api_client
         self.coordinator_refresh_callback = coordinator_refresh_callback
         self.update_server_process_info_callback = update_server_process_info_callback
         self.manager_url = manager_url
+        self.event_names = frozenset(event_names) if event_names else None
+        self.forward_events = forward_events
         self.update_application_metrics_callback = update_application_metrics_callback
         self.connection_callback = connection_callback
         self.server_names = frozenset(server_names)
@@ -188,10 +192,7 @@ class BsmWebSocketManager:
                 )
         elif kind == "event" and topic.startswith("event:"):
             event = topic.split(":", 1)[1]
-            self.hass.bus.async_fire(
-                f"{DOMAIN}_event",
-                {**message, "manager_url": self.manager_url, "event": event},
-            )
+            self._forward_event(message, event)
             # Before events describe intent, not committed state.
             if not event.startswith("after_"):
                 return
@@ -212,9 +213,20 @@ class BsmWebSocketManager:
         elif kind == "task_update" and topic.startswith("task:"):
             self._handle_task(topic, data)
         elif kind in {"ws_event", "broadcast"}:
-            self.hass.bus.async_fire(
-                f"{DOMAIN}_event", {**message, "manager_url": self.manager_url}
-            )
+            self._forward_event(message)
+
+    def _forward_event(self, message: dict[str, Any], event: str | None = None) -> None:
+        """Filter automation events without changing state reconciliation."""
+        if (
+            not self.forward_events
+            or self.event_names is not None
+            and event not in self.event_names
+        ):
+            return
+        payload = {**message, "manager_url": self.manager_url}
+        if event is not None:
+            payload["event"] = event
+        self.hass.bus.async_fire(f"{DOMAIN}_event", payload)
 
     def _handle_task(self, topic: str, data: dict[str, Any]) -> None:
         """Expose task snapshots, refreshing only once per terminal outcome."""

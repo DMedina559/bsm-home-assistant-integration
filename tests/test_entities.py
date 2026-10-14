@@ -261,6 +261,7 @@ async def test_consolidated_health_removes_old_registry_entities(hass, api):
         "connection",
         "websocket",
         "health",
+        "ready",
     }
     assert all(registry.async_get(entity_id) is None for entity_id in old_ids)
     enabled = {

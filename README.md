@@ -409,3 +409,11 @@ Identity and freshness attributes are flat. Structured settings, properties,
 plugins and collection details retain native dictionaries/lists; they are not
 JSON strings. See [entity attributes](docs/entity_attributes.md) for shapes,
 limits, Recorder exclusions and migration from flattened server settings.
+
+### Operational actions and diagnostic cards
+
+See [Operations and diagnostics](docs/operations_and_diagnostics.md) for the new
+on-demand diagnostics, logs, audit and runtime cards; declared event contracts;
+backup pruning; individual plugin reload; response compatibility; and permissions.
+All features use existing backend contracts. Optional diagnostic entities are
+disabled by default, and full diagnostic snapshots are kept out of Recorder.

@@ -1,6 +1,10 @@
 const root = "/custom_components/bedrock_server_manager/frontend/";
 await Promise.all(
   [
+    "diagnostics",
+    "logs",
+    "audit",
+    "runtime",
     "command",
     "properties",
     "allowlist",

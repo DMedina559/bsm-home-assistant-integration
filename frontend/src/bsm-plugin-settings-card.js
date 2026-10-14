@@ -1,4 +1,5 @@
 import { BsmCard, html, register } from "./base.js";
+import { responseValue } from "./inspector.js";
 import { schemaValue, label } from "./model.js";
 function resolve(schema, root) {
   if (schema?.$ref?.startsWith("#/"))
@@ -65,7 +66,9 @@ class PluginSettingsCard extends BsmCard {
         plugin_name: plugin,
       });
       if (generation !== this._generation || request !== this._request) return;
-      const manager = response.managers?.[0];
+      const manager = response.results
+        ? responseValue(response)
+        : response.managers?.[0];
       if (!manager) throw Error("No plugin settings were returned.");
       this.schema = manager.settings_schema || {
         type: "object",
@@ -100,14 +103,18 @@ class PluginSettingsCard extends BsmCard {
   }
   syncState() {
     const state = this.state;
+    const revision = state?.attributes.bsm_settings_revision;
     if (
       this.plugin &&
       this.available &&
-      state !== this._lastState &&
+      (revision == null
+        ? state !== this._lastState
+        : revision !== this._lastRevision) &&
       !this.busy &&
       !this.loading
     )
       this.load(this.plugin, true);
+    this._lastRevision = revision;
     this._lastState = state;
   }
   edit(key, value, schema) {
@@ -216,8 +223,16 @@ class PluginSettingsCard extends BsmCard {
         { plugin_name: this.plugin, settings: this.draft.value },
         "Plugin settings saved.",
       )
-    )
-      await this.load(this.plugin);
+    ) {
+      if (
+        this._lastResponse?.results?.[0]?.warnings?.some(
+          (item) => item.code === "refresh_failed",
+        )
+      ) {
+        this.draft.reset(this.draft.value);
+        this.requestUpdate();
+      } else await this.load(this.plugin);
+    }
   }
   render() {
     const plugins = Object.entries(

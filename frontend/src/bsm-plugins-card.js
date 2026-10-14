@@ -18,6 +18,7 @@ class PluginsCard extends BsmCard {
             </div>
             <p class="muted">${plugin.description || ""}</p>
             ${this.button(plugin.enabled ? "Disable" : "Enable", "set_plugin_enabled", { plugin_name: name, plugin_enabled: !plugin.enabled }, { message: "Plugin state updated." })}
+            ${this.button("Reload this plugin", "reload_plugin", { plugin_name: name }, { message: "Plugin reloaded.", confirm: "Reload this plugin? Its current listeners and tasks will be drained." })}
           </section>`,
       )}${this.available && !Object.keys(plugins).length ? html`<p class="muted">No plugins are loaded.</p>` : ""}${this.button("Reload plugins", "reload_plugins", {}, { message: "Plugins reloaded." })}`,
     );

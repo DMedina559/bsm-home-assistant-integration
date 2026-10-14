@@ -11,8 +11,8 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
-from .coordinator import json_data
 from .reconcile import SERVER_RESOURCES, refresh_after_action
+from .responses import action_error, action_response, target_result
 from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets, resolve_server_targets
 
@@ -61,16 +61,12 @@ async def configuration_action(  # noqa: C901
                     "manager_url": data["manager_identifier"][1],
                     "server_name": server,
                     "status": "failed",
-                    "error": {"message": str(error)},
+                    "error": action_error(error),
                 }
             )
             continue
         results.append(
-            {
-                "manager_url": data["manager_identifier"][1],
-                "server_name": server,
-                "result": json_data(response),
-            }
+            target_result(data["manager_identifier"][1], response, server_name=server)
         )
         mutation = call.service != "call_operation" or api.discovery.operations[
             call.data["operation_id"]
@@ -96,13 +92,13 @@ async def configuration_action(  # noqa: C901
                         coordinator,
                         SERVER_RESOURCES.get(call.service) if server else None,
                     )
-    if errors and len(errors) == len(results):
+    if errors and len(errors) == len(results) and not call.return_response:
         if isinstance(errors[0], HomeAssistantError):
             raise errors[0]
         raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
             0
         ]
-    return {"results": results}
+    return action_response(results)
 
 
 async def _execute(

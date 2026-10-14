@@ -1049,3 +1049,249 @@ test("bounded entity attributes show a partial-data notice", async ({
   );
   await expect(page.getByText(/Entity details are limited/)).toBeVisible();
 });
+
+test("diagnostics snapshots compare and report source availability", async ({
+  page,
+}) => {
+  await mount(page, "bsm-diagnostics-card", { entity: "sensor.version" });
+  await page.evaluate(() => {
+    window.snapshotCount = 0;
+    window.hass.callWS = async (request) => {
+      window.requests.push(request);
+      const result =
+        request.service === "compare_diagnostic_snapshots"
+          ? {
+              same_instance: true,
+              changes: [
+                {
+                  subsystem: "events",
+                  field: "workers",
+                  before: 1,
+                  after: 2,
+                  delta: 1,
+                },
+              ],
+            }
+          : {
+              snapshot_id: String(++window.snapshotCount),
+              instance_id: "instance",
+              summary: { status: "ok", ready: true, findings: [] },
+              sections: [
+                {
+                  name: "events",
+                  owner: "application",
+                  status: "ok",
+                  age_seconds: 1,
+                  data: { pending_workers: 1 },
+                },
+              ],
+            };
+      return { response: { results: [{ manager_url: "http://bsm", result }] } };
+    };
+  });
+  await page.getByRole("button", { name: "Collect snapshot" }).click();
+  await expect(page.getByText("No findings reported.")).toBeVisible();
+  await page.getByRole("button", { name: "Capture baseline" }).click();
+  await page.getByRole("button", { name: "Collect snapshot" }).click();
+  await page.getByRole("button", { name: "Compare snapshots" }).click();
+  await expect(page.getByRole("heading", { name: "Comparison" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        window.requests.find(
+          (r) => r.service === "compare_diagnostic_snapshots",
+        ).service_data.before.snapshot_id,
+    ),
+  ).toBe("1");
+  await page.evaluate(
+    () =>
+      (window.hass.callWS = async () => ({
+        response: {
+          results: [
+            { error: { message: "Administrator required", status_code: 403 } },
+          ],
+        },
+      })),
+  );
+  await page.getByRole("button", { name: "Collect snapshot" }).click();
+  await expect(page.getByText(/Data: forbidden/)).toBeVisible();
+  await expect(page.getByText("No findings reported.")).toBeVisible();
+});
+
+test("log rotation reloads the current file without replaying mutations", async ({
+  page,
+}) => {
+  await mount(page, "bsm-logs-card", { entity: "sensor.server" });
+  await page.evaluate(() => {
+    window.logReads = 0;
+    window.hass.callWS = async (request) => {
+      window.requests.push(request);
+      window.logReads++;
+      return {
+        response: {
+          results: [
+            window.logReads === 2
+              ? { error: { message: "Log rotated", status_code: 409 } }
+              : {
+                  result: {
+                    data: window.logReads === 1 ? "old file" : "new file",
+                    start: 100,
+                    file_id: String(window.logReads),
+                    has_more: true,
+                  },
+                },
+          ],
+        },
+      };
+    };
+  });
+  await page.getByRole("button", { name: "Load latest" }).click();
+  await expect(page.locator("pre")).toHaveText("old file");
+  await page.getByRole("button", { name: "Load older" }).click();
+  await expect(page.locator("pre")).toHaveText("new file");
+  expect(
+    await page.evaluate(() => window.requests.map((r) => r.service_data)),
+  ).toEqual([{}, { before: 100, file_id: "1" }, {}]);
+});
+
+test("runtime shutdown needs confirmation and explains the expected disconnect", async ({
+  page,
+}) => {
+  await mount(page, "bsm-runtime-card", { entity: "sensor.version" });
+  await page.getByRole("button", { name: "Shut down web runtime" }).click();
+  expect(
+    await page.evaluate(
+      () =>
+        window.requests.filter((r) => r.service === "shutdown_web_runtime")
+          .length,
+    ),
+  ).toBe(0);
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Shutdown accepted. API and WebSocket disconnection is expected.",
+    ),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        window.requests.find((r) => r.service === "shutdown_web_runtime")
+          .service_data,
+    ),
+  ).toEqual({ confirm: true });
+});
+
+test("diagnostics ignore a response after the selected target changes", async ({
+  page,
+}) => {
+  await mount(page, "bsm-diagnostics-card", { entity: "sensor.version" });
+  await page.evaluate(() => (window.delayResponse = true));
+  await page.getByRole("button", { name: "Collect snapshot" }).click();
+  await page.evaluate(() => {
+    window.card.select("sensor.other_version");
+    window.resolveResponse({
+      response: {
+        results: [
+          {
+            result: {
+              snapshot_id: "late",
+              summary: { ready: true, status: "ok", findings: [] },
+              sections: [],
+            },
+          },
+        ],
+      },
+    });
+  });
+  await expect(page.getByText("No findings reported.")).toHaveCount(0);
+  expect(await page.evaluate(() => window.card.snapshot)).toBeNull();
+});
+
+test("declared event payload requirements stop invalid requests", async ({
+  page,
+}) => {
+  await mount(page, "bsm-event-trigger-card", { entity: "sensor.version" });
+  await page.evaluate(
+    () =>
+      (window.hass.callWS = async (request) => {
+        window.requests.push(request);
+        return {
+          response: {
+            results: [
+              {
+                result: {
+                  events: [
+                    {
+                      name: "example",
+                      phase: "custom",
+                      public: true,
+                      owner: "plugin",
+                      description: "Example event",
+                      payload_schema: { required: ["message"] },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        };
+      }),
+  );
+  await page.getByRole("button", { name: "Load event catalog" }).click();
+  await page.getByLabel("Declared custom event").selectOption("example");
+  await page.getByRole("button", { name: "Trigger event" }).click();
+  await expect(page.getByRole("alert")).toContainText("requires 'message'");
+  expect(
+    await page.evaluate(() =>
+      window.requests.some((r) => r.service === "trigger_plugin_event"),
+    ),
+  ).toBe(false);
+});
+
+test("saved plugin settings show refresh warnings without sending the write again", async ({
+  page,
+}) => {
+  await mount(page, "bsm-plugin-settings-card", { entity: "sensor.manager" });
+  await page.getByRole("tab", { name: "Backup" }).click();
+  await page.getByLabel("Interval", { exact: true }).fill("5");
+  await page.evaluate(() => {
+    const original = window.hass.callWS;
+    window.hass.callWS = async (request) => {
+      if (request.service !== "update_plugin_settings")
+        return original(request);
+      window.requests.push(request);
+      return {
+        response: {
+          results: [
+            {
+              manager_url: "http://bsm",
+              status: "success",
+              result: { status: "success" },
+              warnings: [
+                {
+                  code: "refresh_failed",
+                  message:
+                    "Settings were saved; refreshing them failed. Refresh before retrying.",
+                },
+              ],
+            },
+          ],
+        },
+      };
+    };
+  });
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(
+    page.getByText(/Settings were saved; refreshing them failed/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save settings" }),
+  ).toBeDisabled();
+  expect(
+    await page.evaluate(
+      () =>
+        window.requests.filter((r) => r.service === "update_plugin_settings")
+          .length,
+    ),
+  ).toBe(1);
+});

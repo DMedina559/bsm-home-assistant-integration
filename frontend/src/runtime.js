@@ -147,7 +147,7 @@ class CardRuntime {
   async request(hass, service, data, target) {
     const read =
       service.startsWith("get_") ||
-      service === "list_tasks" ||
+      service.startsWith("list_") ||
       service === "discover_operations";
     const managerReads = new Set([
       "get_application_settings",
@@ -155,6 +155,16 @@ class CardRuntime {
       "get_task",
       "list_tasks",
       "discover_operations",
+      "get_application_diagnostics",
+      "get_subsystem_diagnostics",
+      "get_diagnostic_history",
+      "get_diagnostic_runs",
+      "get_diagnostic_trace",
+      "get_diagnostic_report",
+      "get_event_activity",
+      "list_application_events",
+      "get_web_runtime",
+      "list_audit_logs",
     ]);
     const manager =
       typeof target.entity_id === "string"

@@ -742,3 +742,300 @@ export_world:
     entity:
       integration: bedrock_server_manager
   fields: {}
+
+get_application_diagnostics:
+  name: Get Application Diagnostics
+  description: Collect a bounded backend diagnostic snapshot on demand.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+get_subsystem_diagnostics:
+  name: Get Subsystem Diagnostics
+  description: Collect one subsystem with findings and freshness metadata.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    subsystem:
+      name: Subsystem
+      required: true
+      selector:
+        text: {}
+get_diagnostic_history:
+  name: Get Diagnostic History
+  description: Read retained diagnostic records with optional filters and cursor.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    limit:
+      name: Limit
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+    subsystem:
+      name: Subsystem
+      required: false
+      selector:
+        text: {}
+    instance_id:
+      name: Instance Id
+      required: false
+      selector:
+        text: {}
+    correlation_id:
+      name: Correlation Id
+      required: false
+      selector:
+        text: {}
+    cursor:
+      name: Cursor
+      required: false
+      selector:
+        text: {}
+    owner:
+      name: Owner
+      required: false
+      selector:
+        text: {}
+    code:
+      name: Code
+      required: false
+      selector:
+        text: {}
+    outcome:
+      name: Outcome
+      required: false
+      selector:
+        text: {}
+    operation_id:
+      name: Operation Id
+      required: false
+      selector:
+        text: {}
+get_diagnostic_runs:
+  name: Get Diagnostic Runs
+  description: Read retained backend runs across restarts.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    limit:
+      name: Limit
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+get_diagnostic_trace:
+  name: Get Diagnostic Trace
+  description: Correlate event, task and retained diagnostic metadata.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    correlation_id:
+      name: Correlation Id
+      required: true
+      selector:
+        text: {}
+    limit:
+      name: Limit
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+    cursor:
+      name: Cursor
+      required: false
+      selector:
+        text: {}
+get_diagnostic_report:
+  name: Get Diagnostic Report
+  description: Return the backend support report. Review before sharing.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+compare_diagnostic_snapshots:
+  name: Compare Diagnostic Snapshots
+  description: Compare two supplied snapshots without changing the backend.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    before:
+      name: Before
+      required: true
+      selector:
+        object: {}
+    after:
+      name: After
+      required: true
+      selector:
+        object: {}
+list_application_events:
+  name: List Application Events
+  description: List declared event names, descriptions and payload contracts.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+get_event_activity:
+  name: Get Event Activity
+  description: Read bounded event delivery activity and capacity metadata.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    limit:
+      name: Limit
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+    name:
+      name: Name
+      required: false
+      selector:
+        text: {}
+    owner:
+      name: Owner
+      required: false
+      selector:
+        text: {}
+    correlation_id:
+      name: Correlation Id
+      required: false
+      selector:
+        text: {}
+    status:
+      name: Status
+      required: false
+      selector:
+        text: {}
+get_web_runtime:
+  name: Get Web Runtime
+  description: Read administrator web-runtime state.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+shutdown_web_runtime:
+  name: Shutdown Web Runtime
+  description: 'Request graceful web-runtime shutdown. Administrator access and confirm:
+    true are required. Restart from the host or service manager.'
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    confirm:
+      name: Confirm
+      required: true
+      selector:
+        boolean: {}
+get_log_history:
+  name: Get Log History
+  description: Read a bounded log page for the authorized server target. A changed
+    file returns HTTP 409; reload without before and file_id.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    before:
+      name: Before
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 9007199254740991
+          mode: box
+    file_id:
+      name: File Id
+      required: false
+      selector:
+        text: {}
+get_application_log_history:
+  name: Get Application Log History
+  description: Read bounded application log history. Administrator access required.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    before:
+      name: Before
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 9007199254740991
+          mode: box
+    file_id:
+      name: File Id
+      required: false
+      selector:
+        text: {}
+list_audit_logs:
+  name: List Audit Logs
+  description: Fetch backend audit history on demand, then filter exact action matches
+    and return the latest limited selection. The backend currently fetches all records.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    limit:
+      name: Limit
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+          mode: box
+    action:
+      name: Action
+      required: false
+      selector:
+        text: {}
+get_raw_properties:
+  name: Get Raw Properties
+  description: Read server.properties comments and values without editing the document.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+validate_server:
+  name: Validate Server
+  description: Validate the selected server using the existing backend contract.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+prune_backups:
+  name: Prune Backups
+  description: Prune old backups using server retention settings. Returns an accepted
+    task.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields: {}
+reload_plugin:
+  name: Reload Plugin
+  description: Reload one plugin and drain its previous generation.
+  target:
+    entity:
+      integration: bedrock_server_manager
+  fields:
+    plugin_name:
+      name: Plugin Name
+      required: true
+      selector:
+        text: {}

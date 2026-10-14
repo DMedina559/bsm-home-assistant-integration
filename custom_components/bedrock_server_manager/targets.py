@@ -19,6 +19,13 @@ from .const import DOMAIN
 from .utils import device_config_entry_ids, registry_devices
 
 _LOGGER = logging.getLogger(__name__)
+SERVER_READ_ACTIONS = {
+    "get_server_settings",
+    "get_log_history",
+    "get_raw_properties",
+    "validate_server",
+}
+MANAGER_READ_ACTIONS = {"list_tasks", "get_task"}
 
 
 async def _caller(service: ServiceCall, hass: HomeAssistant, admin: bool = False):
@@ -41,7 +48,7 @@ async def resolve_server_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> list[tuple[str, str]]:
     user = await _caller(service, hass)
-    policy = POLICY_READ if service.service == "get_server_settings" else POLICY_CONTROL
+    policy = POLICY_READ if service.service in SERVER_READ_ACTIONS else POLICY_CONTROL
     servers_to_target: set[tuple[str, str]] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -170,7 +177,9 @@ async def resolve_server_targets(  # noqa: C901
 async def resolve_manager_targets(  # noqa: C901
     service: ServiceCall, hass: HomeAssistant
 ) -> List[str]:
-    await _caller(service, hass, admin=True)
+    user = await _caller(
+        service, hass, admin=service.service not in MANAGER_READ_ACTIONS
+    )
     config_entry_ids_to_target: Set[str] = set()
     entity_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -239,5 +248,19 @@ async def resolve_manager_targets(  # noqa: C901
         list(config_entry_ids_to_target),
     )
     for entry_id in config_entry_ids_to_target:
+        if user is not None:
+            manager_device_id = hass.data[DOMAIN][entry_id].get("manager_device_id")
+            anchors = [
+                entity
+                for entity in er.async_entries_for_config_entry(entity_reg, entry_id)
+                if entity.platform == DOMAIN
+                and entity.device_id == manager_device_id
+                and entity.unique_id.endswith("_bsm_version")
+            ]
+            if not anchors or not all(
+                user.permissions.check_entity(entity.entity_id, POLICY_READ)
+                for entity in anchors
+            ):
+                raise Unauthorized(context=service.context)
         _own(hass, entry_id)
     return sorted(config_entry_ids_to_target)

@@ -111,6 +111,7 @@ from .manager_actions import (
     _async_handle_trigger_plugin_event,
 )
 from .reconcile import SERVER_RESOURCES, refresh_after_action
+from .responses import action_error, action_response
 from .server_actions import (
     _async_handle_add_server_ban,
     _async_handle_add_to_allowlist,
@@ -469,7 +470,7 @@ async def _execute_targeted_service(
         and any(_applied_work(result) for result in results)
     ):
         _raise_action_errors(results)
-    return {"results": outcomes}
+    return action_response(outcomes)
 
 
 async def _execute_manager_targeted_service(
@@ -496,7 +497,14 @@ async def _execute_manager_targeted_service(
     for data, result in zip(contexts, results):
         if _applied_work(result):
             for key in ("manager_coordinator", "monitor_coordinator"):
-                refresh_after_action(data.get(key))
+                if (
+                    service_call.service
+                    in {"set_global_setting", "reload_global_settings"}
+                    and key == "manager_coordinator"
+                ):
+                    refresh_after_action(data.get(key), {"application_settings"})
+                else:
+                    refresh_after_action(data.get(key))
         outcomes.append(
             {"manager_url": data["manager_identifier"][1], **_outcome(result)}
         )
@@ -505,7 +513,7 @@ async def _execute_manager_targeted_service(
         and any(_applied_work(result) for result in results)
     ):
         _raise_action_errors(results)
-    return {"results": outcomes}
+    return action_response(outcomes)
 
 
 def _applied_work(result: Any) -> bool:
@@ -522,17 +530,19 @@ def _applied_work(result: Any) -> bool:
 def _outcome(result: Any) -> dict:
     """Retain structured failures and partial results alongside successful targets."""
     if not isinstance(result, Exception):
-        return {"result": json_data(result)}
-    payload: dict[str, Any] = {"error": {"message": str(result)}, "status": "failed"}
+        value = json_data(result)
+        status = value.get("status") if isinstance(value, dict) else None
+        return {
+            "status": status if status in {"partial", "skipped"} else "success",
+            "result": value,
+            "warnings": [],
+        }
+    payload: dict[str, Any] = {"error": action_error(result), "status": "failed"}
     if isinstance(result, OperationOutcomeError):
         payload["result"] = result.result
     cause = result if isinstance(result, APIError) else result.__cause__
     if isinstance(cause, APIError):
-        payload["error"].update(
-            code=cause.api_code,
-            details=cause.api_details,
-            status_code=cause.status_code,
-        )
+        payload["error"] = action_error(cause)
         if cause.operation_result is not None:
             payload["result"] = cause.operation_result
     return payload

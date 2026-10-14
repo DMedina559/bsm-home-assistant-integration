@@ -72,9 +72,8 @@ async def _async_handle_set_global_setting(
                 parsed_value = json.loads(stripped_value)
             except json.JSONDecodeError:
                 _LOGGER.warning(
-                    "Value for setting '%s' looked like JSON but failed to parse: %s. Sending as string.",
+                    "Value for setting '%s' looked like JSON but failed to parse. Sending as string.",
                     key,
-                    value,
                 )
     payload = SettingItemResponse(key=key, value=parsed_value)
     return await _base_api_call_handler(

@@ -308,6 +308,9 @@ export class BsmCard extends LitElement {
       const response = await this.responseService(service, data, target);
       if (generation !== this._generation) return false;
       this._lastResponse = response;
+      const warnings = (response.results || []).flatMap(
+        (item) => item.warnings || [],
+      );
       const failures = (response.results || []).filter(
         (result) => result.error,
       );
@@ -347,6 +350,8 @@ export class BsmCard extends LitElement {
             )
             .filter(Boolean)
             .join(" · ") || message;
+        if (warnings.length)
+          this.feedback += ` · ${warnings.map((item) => item.message).join(" · ")}`;
       }
       if (this.config.debug)
         console.debug("BSM action", service, "acknowledged");
@@ -405,6 +410,10 @@ export class BsmCard extends LitElement {
       return html`<small class="muted"
         >Retained data may be
         stale${state.attributes.bsm_updated_at ? ` · last received ${new Date(state.attributes.bsm_updated_at * 1000).toLocaleString()}` : ""}.</small
+      >`;
+    if (status === "unavailable")
+      return html`<small class="muted"
+        >No current data is available for this resource.</small
       >`;
     return nothing;
   }

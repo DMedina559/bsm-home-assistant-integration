@@ -49,6 +49,33 @@ def metric(
 
 
 METRIC_DESCRIPTIONS = (
+    MetricDescription(
+        key="issue_count",
+        field="issue_count",
+        name="Reported diagnostic findings",
+        resource="diagnostics",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    MetricDescription(
+        key="event_pending_workers",
+        field="event_pending_workers",
+        name="Pending event workers",
+        resource="diagnostics",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    MetricDescription(
+        key="delivery_failures",
+        field="delivery_failures",
+        name="WebSocket delivery failures",
+        resource="diagnostics",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
     metric("app_cpu_percent", "Application CPU", "%"),
     metric("app_ram_mb", "Application memory", "MiB", SensorDeviceClass.DATA_SIZE),
     metric("asyncio_task_count", "Application asyncio tasks", enabled=False),
@@ -141,6 +168,21 @@ class ApplicationMetricSensor(
             )
         )
         self._attr_device_info = DeviceInfo(identifiers={manager_identifier})
+
+    async def async_added_to_hass(self) -> None:
+        """Collect compact diagnostics only while an enabled entity consumes them."""
+        await super().async_added_to_hass()
+        if self.entity_description.resource == "diagnostics":
+            self.coordinator.diagnostic_consumers += 1
+            self.async_on_remove(self._release_diagnostics)
+            self.coordinator.schedule_refresh()
+
+    def _release_diagnostics(self) -> None:
+        """Stop additional polling when the last diagnostic entity is removed."""
+        self.coordinator.diagnostic_consumers -= 1
+        if not self.coordinator.diagnostic_consumers:
+            if self.coordinator.data:
+                self.coordinator.data.pop("diagnostics", None)
 
     @property
     def extra_state_attributes(self) -> dict:

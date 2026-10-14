@@ -132,6 +132,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 "update_server_interval",
                 "update_manager_interval",
                 "update_monitor_interval",
+                "update_event_filters",
             ],
             description_placeholders={"base_url": manager_display_name},
         )
@@ -556,6 +557,42 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                             "monitor_scan_interval", 30
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600))
+                }
+            ),
+        )
+
+    async def async_step_update_event_filters(
+        self, user_input=None
+    ) -> config_entries.ConfigFlowResult:
+        """Filter HA event forwarding without filtering state reconciliation."""
+        if user_input is not None:
+            names = [
+                name.strip()
+                for name in user_input.get("event_names", "").split(",")
+                if name.strip()
+            ]
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    "forward_events": user_input["forward_events"],
+                    "event_names": list(dict.fromkeys(names)),
+                },
+            )
+        return self.async_show_form(
+            step_id="update_event_filters",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "forward_events",
+                        default=self.config_entry.options.get("forward_events", True),
+                    ): bool,
+                    vol.Optional(
+                        "event_names",
+                        default=", ".join(
+                            self.config_entry.options.get("event_names", [])
+                        ),
+                    ): str,
                 }
             ),
         )

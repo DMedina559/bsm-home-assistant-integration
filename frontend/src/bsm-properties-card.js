@@ -1,4 +1,5 @@
 import { BsmCard, html, register } from "./base.js";
+import { responseValue } from "./inspector.js";
 import { label } from "./model.js";
 const enums = {
   gamemode: ["survival", "creative", "adventure", "spectator"],
@@ -8,6 +9,18 @@ const enums = {
 class PropertiesCard extends BsmCard {
   static title = "Server properties";
   static key = "level_name";
+  static properties = { raw: { state: true } };
+  async loadRaw() {
+    const generation = this._generation;
+    try {
+      const result = responseValue(
+        await this.responseService("get_raw_properties", {}),
+      );
+      if (generation === this._generation) this.raw = result.raw_content;
+    } catch (error) {
+      if (generation === this._generation) this.error = error.message;
+    }
+  }
   syncState() {
     if (this.available) {
       this.draft.update(this.state.attributes.server_properties || {});
@@ -15,6 +28,7 @@ class PropertiesCard extends BsmCard {
     }
   }
   selectedChanged() {
+    this.raw = null;
     this.syncState();
   }
   edit(key, value) {
@@ -46,7 +60,24 @@ class PropertiesCard extends BsmCard {
           @click=${this.save}
         >
           Save properties
-        </button>`,
+        </button>
+        <div class="actions">
+          ${this.button("Validate server", "validate_server", {}, { message: "Server validation completed." })}<button
+            ?disabled=${!this.available || this.busy}
+            @click=${this.loadRaw}
+          >
+            View raw properties
+          </button>
+        </div>
+        ${
+          this.raw != null
+            ? html`<details open>
+                <summary>Raw server.properties (read only)</summary>
+                <pre style="white-space:pre-wrap;overflow-wrap:anywhere">
+${this.raw}</pre>
+              </details>`
+            : ""
+        }`,
     );
   }
 }

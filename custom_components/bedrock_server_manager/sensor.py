@@ -442,7 +442,9 @@ class MinecraftServerSensor(
         process_info = data.get("process_info")
 
         if key == "status":
-            attrs["bsm_settings_revision"] = self.coordinator.state.generation
+            attrs["bsm_settings_revision"] = self.coordinator.resource_revisions.get(
+                "server_settings", 0
+            )
             if self._installed_version_static:  # This should now be safe
                 attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
 
@@ -608,7 +610,9 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         )
         if not self.available:
             return bounded_attributes(attrs)
-        attrs["bsm_settings_revision"] = self.coordinator.state.generation
+        attrs["bsm_settings_revision"] = self.coordinator.resource_revisions.get(
+            "application_settings", 0
+        )
         if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
         if key == KEY_AVAILABLE_WORLDS_COUNT:
@@ -621,7 +625,9 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
                 info.get("os_type") if isinstance(info, dict) else None
             )
         if key == KEY_PLUGIN_STATUSES:
-            attrs["bsm_settings_revision"] = self.coordinator.state.generation
+            attrs["bsm_settings_revision"] = self.coordinator.resource_revisions.get(
+                "plugin_settings", 0
+            ) + self.coordinator.resource_revisions.get("plugins_status", 0)
             plugins_raw_data = data.get("plugins_status", {})
             if isinstance(plugins_raw_data, dict):
                 attrs[ATTR_PLUGINS_DATA] = plugins_raw_data

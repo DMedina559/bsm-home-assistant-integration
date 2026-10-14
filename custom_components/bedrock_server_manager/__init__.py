@@ -280,11 +280,20 @@ async def _async_setup_entry(  # noqa: C901
             SERVER_EVENTS | MANAGER_EVENTS
         )
         all_servers = topic == "reconnect" or topic.startswith("task:")
+        if topic == "reconnect":
+            manager_coordinator._discovered = False
         if all_servers or event == "after_setting_update":
             if monitor_coordinator.invalidate(data):
                 monitor_coordinator.schedule_refresh()
         if all_servers or event in MANAGER_EVENTS or unknown_mutation:
-            if manager_coordinator.invalidate(data):
+            manager_resources = {
+                "after_setting_update": {"application_settings"},
+                "after_plugin_settings_update": {"plugins_status", "plugin_settings"},
+                "after_set_plugin_status": {"plugins_status"},
+                "after_players_add": {"global_players"},
+                "after_player_db_scan": {"global_players"},
+            }.get(event)
+            if manager_coordinator.invalidate(data, manager_resources):
                 manager_coordinator.schedule_refresh()
         if all_servers or event in SERVER_EVENTS or unknown_mutation:
             result = data.get("result") or {}
@@ -320,6 +329,8 @@ async def _async_setup_entry(  # noqa: C901
         url,
         monitor_coordinator.update_metrics,
         monitor_coordinator.set_websocket_connected,
+        event_names=entry.options.get("event_names"),
+        forward_events=entry.options.get("forward_events", True),
     )
     hass.data[DOMAIN][entry.entry_id]["ws_manager"] = ws_manager
 

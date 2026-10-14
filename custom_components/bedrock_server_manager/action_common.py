@@ -13,6 +13,8 @@ from bsm_api_client import (
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
+from .responses import action_error
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -59,7 +61,7 @@ async def _base_api_call_handler(
     except HomeAssistantError:
         raise
     except (APIError, ValueError) as err:
-        details = _api_error_details(err)
+        details = action_error(err)["message"]
         msg = f"{error_message_prefix}{context_msg}: {details}"
         _LOGGER.error(msg)
         error_type = (

@@ -54,6 +54,7 @@ class BsmCoordinator(DataUpdateCoordinator):
         self.state = ResourceState()
         self.defaults: dict[str, Any] = {}
         self._push_generation: dict[str, int] = {}
+        self.resource_revisions: dict[str, int] = {}
         self.unavailable_resources: set[str] = set()
         self.unsupported_resources: set[str] = set()
         self.forbidden_resources: set[str] = set()
@@ -75,6 +76,10 @@ class BsmCoordinator(DataUpdateCoordinator):
         """Discard in-flight HTTP data when an accepted mutation event arrives."""
         accepted = self.state.invalidate(stamp)
         if accepted:
+            for resource in resources or ():
+                self.resource_revisions[resource] = (
+                    self.resource_revisions.get(resource, 0) + 1
+                )
             if resources is None:
                 self._requested_resources = None
                 self._full_refresh_pending = True
@@ -243,6 +248,33 @@ class BsmCoordinator(DataUpdateCoordinator):
     ) -> bool:
         """Merge an accepted typed response into its independent resource."""
         payload = json_data(result)
+        if key == "diagnostics":
+            sections = {
+                section.get("data", {}).get("kind"): section
+                for section in payload.get("sections", [])
+                if isinstance(section.get("data"), dict)
+            }
+            events = sections.get("events", {})
+            transport = sections.get("transport", {})
+            payload = {
+                "issue_count": (
+                    len(payload.get("summary", {}).get("findings", []))
+                    if payload.get("summary", {}).get("status") in {"ok", "degraded"}
+                    else None
+                ),
+                "event_pending_workers": (
+                    events.get("data", {}).get("activity", {}).get("pending_workers")
+                    if not events.get("stale")
+                    and events.get("status") not in {"unknown", "unavailable"}
+                    else None
+                ),
+                "delivery_failures": (
+                    transport.get("data", {}).get("failed_sends")
+                    if not transport.get("stale")
+                    and transport.get("status") not in {"unknown", "unavailable"}
+                    else None
+                ),
+            }
         stamp = payload
         if key == "metrics" and isinstance(payload.get("latest"), dict):
             latest = payload["latest"]
@@ -250,6 +282,7 @@ class BsmCoordinator(DataUpdateCoordinator):
                 stamp = latest
         if not self.state.accept(key, stamp):
             return False
+        previous = data.get(key)
         if key == "summary":
             data.update(
                 server_status=payload["status"],
@@ -261,6 +294,8 @@ class BsmCoordinator(DataUpdateCoordinator):
         else:
             value = payload.get(fields[key]) if fields[key] else payload
             data[key] = value if value is not None else self.defaults.get(key)
+        if data.get(key) != previous:
+            self.resource_revisions[key] = self.resource_revisions.get(key, 0) + 1
         self.forbidden_resources.discard(key)
         self.resource_errors.pop(key, None)
         self.unavailable_resources.discard(key)
@@ -405,7 +440,7 @@ class ManagerDataCoordinator(BsmCoordinator):
         discovery = getattr(self.api, "discovery", None)
         if discovery is not None and not getattr(self, "_discovered", False):
             try:
-                await discovery.discover()
+                await discovery.discover(force=True)
                 self._discovered = True
             except AuthError as error:
                 if error.status_code != 403:
@@ -418,7 +453,8 @@ class ManagerDataCoordinator(BsmCoordinator):
             self.unsupported_resources.add("application_settings")
         else:
             self.unsupported_resources.discard("application_settings")
-        return await self._fetch(
+        old_version = (self.data or {}).get("info", {}).get("app_version")
+        data = await self._fetch(
             {
                 **(
                     {
@@ -443,6 +479,10 @@ class ManagerDataCoordinator(BsmCoordinator):
                 "plugins_status": "plugins",
             },
         )
+        new_version = data.get("info", {}).get("app_version")
+        if old_version and new_version and old_version != new_version:
+            self._discovered = False
+        return data
 
 
 class ApplicationMonitorCoordinator(BsmCoordinator):
@@ -463,6 +503,7 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
             config_entry,
         )
         self.defaults = {"metrics": {}, "health": {}}
+        self.diagnostic_consumers = 0
         self.websocket_connected = False
         self.http_connected = False
 
@@ -498,7 +539,13 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
                 self.unsupported_resources.discard(resource)
             else:
                 self.unsupported_resources.add(resource)
-        if len(self.unsupported_resources) == 2:
+        if self.diagnostic_consumers and not self.supports(
+            "get_application_diagnostics"
+        ):
+            self.unsupported_resources.add("diagnostics")
+        else:
+            self.unsupported_resources.discard("diagnostics")
+        if {"metrics", "health"} <= self.unsupported_resources:
             self.http_connected = False
             return {**self.defaults, **(self.data or {})}
         try:
@@ -516,8 +563,18 @@ class ApplicationMonitorCoordinator(BsmCoordinator):
                         if self.supports("get_application_health")
                         else {}
                     ),
+                    **(
+                        {
+                            "diagnostics": self.api.discovery.call(
+                                "get_application_diagnostics", authenticated=True
+                            )
+                        }
+                        if self.diagnostic_consumers
+                        and self.supports("get_application_diagnostics")
+                        else {}
+                    ),
                 },
-                {"metrics": "latest", "health": ""},
+                {"metrics": "latest", "health": "", "diagnostics": ""},
             )
         except (UpdateFailed, ConfigEntryAuthFailed):
             self.http_connected = False
