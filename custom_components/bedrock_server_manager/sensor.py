@@ -16,6 +16,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, bounded_attributes, entity_attributes
 from .const import (
     ATTR_ALLOWLIST_BACKUPS_LIST,
     ATTR_ALLOWLISTED_PLAYERS,
@@ -229,29 +230,7 @@ async def async_setup_entry(
 class MinecraftServerSensor(
     CoordinatorEntity[MinecraftBedrockCoordinator], SensorEntity
 ):
-    _unrecorded_attributes = frozenset(
-        {
-            "server_properties",
-            "server_permissions",
-            "server_addons_list",
-            "world_backups_list",
-            "allowlist_backups_list",
-            "properties_backups_list",
-            "permissions_backups_list",
-            "allowed_players",
-            "online_players",
-            "server_bans",
-            "global_players_list",
-            "available_worlds_list",
-            "available_addons_list",
-            "plugins_data",
-            "pid",
-            "uptime",
-            "bsm_settings_revision",
-            "bsm_updated_at",
-            "bsm_last_error",
-        }
-    )
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
 
@@ -267,9 +246,6 @@ class MinecraftServerSensor(
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        if description.key == "status":
-            # Dynamic flattened settings belong to live state, not recorder history.
-            self._unrecorded_attributes = frozenset({"*"})
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._bsm_os_type = bsm_os_type
@@ -397,10 +373,10 @@ class MinecraftServerSensor(
         if key == "uptime_seconds":
             return uptime_seconds((process_info or {}).get("uptime"))
         if key == "status":
-            server_status = data.get("server_status", "UNKNOWN")
-            if server_status:
+            server_status = data.get("server_status")
+            if isinstance(server_status, str) and server_status.upper() != "UNKNOWN":
                 return str(server_status).capitalize()
-            return "Unknown"
+            return None
         if key == ATTR_CPU_PERCENT:
             return (
                 process_info.get("cpu_percent")
@@ -443,11 +419,7 @@ class MinecraftServerSensor(
         if key == KEY_LEVEL_NAME:
             props = data.get("properties", {})
             dyn_lvl_name = props.get("level-name")
-            return (
-                dyn_lvl_name
-                if dyn_lvl_name is not None
-                else (self._world_name_static or "Unknown")
-            )
+            return dyn_lvl_name if dyn_lvl_name is not None else self._world_name_static
 
         _LOGGER.warning(
             "Unhandled sensor key '%s' for native_value in %s", key, self.unique_id
@@ -457,15 +429,15 @@ class MinecraftServerSensor(
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:  # noqa: C901
         data = self.coordinator.data or {}
-        attrs: Dict[str, Any] = {
-            "bsm_role": "server",
-            "bsm_key": self.entity_description.key,
-            "bsm_server_name": self._server_name,
-            "bsm_manager_url": self._manager_host_port_id,
-            **self.coordinator.resource_metadata(self.resource),
-        }
+        attrs = entity_attributes(
+            "server",
+            self.entity_description.key,
+            self._manager_host_port_id,
+            server_name=self._server_name,
+            metadata=self.coordinator.resource_metadata(self.resource),
+        )
         if not self.available:
-            return attrs
+            return bounded_attributes(attrs)
         key = self.entity_description.key
         process_info = data.get("process_info")
 
@@ -474,25 +446,12 @@ class MinecraftServerSensor(
             if self._installed_version_static:  # This should now be safe
                 attrs[ATTR_INSTALLED_VERSION] = self._installed_version_static
 
-            # Add all settings from coordinator to the status sensor
-            server_settings = data.get("server_settings", {})
+            server_settings = data.get("server_settings")
             if isinstance(server_settings, dict):
-                server_info = server_settings.get("server_info", {})
-                inner_settings = server_settings.get("settings", {})
-                custom_settings = server_settings.get("custom", {})
-
-                # Flatten the settings cleanly
-                for k, v in server_info.items():
-                    attrs[f"server_info_{k}"] = v
-                for k, v in inner_settings.items():
-                    attrs[f"settings_{k}"] = v
-                for k, v in custom_settings.items():
-                    attrs[f"custom_{k}"] = v
-
-                # Ensure direct keys that aren't nested aren't skipped
-                for k, v in server_settings.items():
-                    if k not in ["server_info", "settings", "custom"]:
-                        attrs[k] = v
+                attrs["server_settings"] = server_settings
+                attrs["server_settings_freshness"] = self.coordinator.resource_metadata(
+                    "server_settings"
+                )
         elif key in [ATTR_CPU_PERCENT, ATTR_MEMORY_MB]:
             if isinstance(process_info, dict):
                 if process_info.get(ATTR_PID) is not None:
@@ -522,7 +481,7 @@ class MinecraftServerSensor(
             attrs["server_bans"] = data.get("server_bans", [])
         elif key == KEY_LEVEL_NAME:
             attrs[ATTR_SERVER_PROPERTIES] = data.get("properties", {})
-        return attrs if attrs else None
+        return bounded_attributes(attrs)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -567,29 +526,7 @@ class MinecraftServerSensor(
 
 
 class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity):
-    _unrecorded_attributes = frozenset(
-        {
-            "server_properties",
-            "server_permissions",
-            "server_addons_list",
-            "world_backups_list",
-            "allowlist_backups_list",
-            "properties_backups_list",
-            "permissions_backups_list",
-            "allowed_players",
-            "online_players",
-            "server_bans",
-            "global_players_list",
-            "available_worlds_list",
-            "available_addons_list",
-            "plugins_data",
-            "pid",
-            "uptime",
-            "bsm_settings_revision",
-            "bsm_updated_at",
-            "bsm_last_error",
-        }
-    )
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_device_info: dr.DeviceInfo
     _attr_has_entity_name = True
 
@@ -638,11 +575,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             return len(data.get("available_addons", []))
         if key == KEY_MANAGER_APP_VERSION:
             info = data.get("info", {})
-            return (
-                info.get("app_version", "Unknown")
-                if isinstance(info, dict)
-                else "Unknown"
-            )
+            return info.get("app_version") if isinstance(info, dict) else None
         if key == KEY_PLUGIN_STATUSES:
             plugins_data = data.get("plugins_status", {})
             if isinstance(plugins_data, dict):
@@ -667,14 +600,14 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             KEY_MANAGER_APP_VERSION: "info",
             KEY_PLUGIN_STATUSES: "plugins_status",
         }.get(key)
-        attrs: Dict[str, Any] = {
-            "bsm_role": "manager",
-            "bsm_key": key,
-            "bsm_manager_url": self._manager_host_port_id,
-            **self.coordinator.resource_metadata(resource),
-        }
+        attrs = entity_attributes(
+            "manager",
+            key,
+            self._manager_host_port_id,
+            metadata=self.coordinator.resource_metadata(resource),
+        )
         if not self.available:
-            return attrs
+            return bounded_attributes(attrs)
         attrs["bsm_settings_revision"] = self.coordinator.state.generation
         if key == KEY_GLOBAL_PLAYERS_COUNT:
             attrs[ATTR_GLOBAL_PLAYERS_LIST] = data.get("global_players", [])
@@ -685,7 +618,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
         if key == KEY_MANAGER_APP_VERSION:
             info = data.get("info", {})
             attrs[ATTR_MANAGER_OS_TYPE] = (
-                info.get("os_type", "Unknown") if isinstance(info, dict) else "Unknown"
+                info.get("os_type") if isinstance(info, dict) else None
             )
         if key == KEY_PLUGIN_STATUSES:
             attrs["bsm_settings_revision"] = self.coordinator.state.generation
@@ -695,7 +628,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             else:
                 attrs[ATTR_PLUGINS_DATA] = {}
 
-        return attrs if attrs else None
+        return bounded_attributes(attrs)
 
 
 def uptime_seconds(value: str | None) -> float | None:

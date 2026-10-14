@@ -276,3 +276,63 @@ async def test_consolidated_health_removes_old_registry_entities(hass, api):
         "sys_cpu_percent",
         "sys_ram_percent",
     }
+
+
+@pytest.mark.asyncio
+async def test_status_attributes_preserve_nested_settings_and_protect_identity(
+    hass, api
+):
+    import json
+
+    from homeassistant.components.sensor import SensorEntityDescription
+
+    from custom_components.bedrock_server_manager.sensor import MinecraftServerSensor
+
+    coordinator = MinecraftBedrockCoordinator(hass, api, "survival", 30)
+    settings = {
+        "server_info": {"name": "survival"},
+        "settings": {"autostart": False, "nested": {"retry": 0}},
+        "custom": {"bsm_role": "attacker", "nested": [1, None]},
+        "bsm_role": "attacker",
+        "bsm_manager_url": "attacker",
+    }
+    coordinator.async_set_updated_data(
+        {"server_status": "STOPPED", "server_settings": settings}
+    )
+    sensor = MinecraftServerSensor(
+        coordinator,
+        SensorEntityDescription(key="status"),
+        "survival",
+        ("bedrock_server_manager", "http://host"),
+        None,
+        None,
+        "Linux",
+    )
+    attrs = sensor.extra_state_attributes
+    assert attrs["bsm_role"] == "server"
+    assert attrs["bsm_manager_url"] == "http://host"
+    assert attrs["server_settings"] == settings
+    assert "settings_autostart" not in attrs
+    assert attrs["server_settings"]["settings"]["autostart"] is False
+    assert attrs["server_settings"]["settings"]["nested"]["retry"] == 0
+    json.dumps(attrs, allow_nan=False)
+    attrs["server_settings"]["settings"]["autostart"] = True
+    assert settings["settings"]["autostart"] is False
+    assert "server_settings" in sensor._unrecorded_attributes
+    assert "bsm_role" not in sensor._unrecorded_attributes
+    coordinator.last_update_success = False
+    assert sensor.extra_state_attributes["bsm_role"] == "server"
+
+
+@pytest.mark.asyncio
+async def test_health_without_evidence_is_unknown_not_healthy(hass, api):
+    coordinator = ApplicationMonitorCoordinator(hass, api, 30)
+    coordinator.async_set_updated_data(
+        {"health": {"ready": None, "checks": {"database": {}}}}
+    )
+    entity = ApplicationHealthSensor(
+        coordinator, ("bedrock_server_manager", "http://host"), "health"
+    )
+    assert not entity.available
+    assert entity.is_on is None
+    assert entity.extra_state_attributes["failed_checks"] == []

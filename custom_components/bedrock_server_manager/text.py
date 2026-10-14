@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import DOMAIN
 from .coordinator import MinecraftBedrockCoordinator
 from .reconcile import refresh_after_action
@@ -32,6 +33,7 @@ async def async_setup_entry(
 class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEntity):
     """Edit and synchronize the desired Bedrock version without optimistic state."""
 
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_name = "Target version"
     _attr_icon = "mdi:update"
@@ -48,6 +50,7 @@ class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEnti
         self._attr_extra_state_attributes = {
             "bsm_role": "server",
             "bsm_key": "target_version",
+            "bsm_manager_url": manager_identifier[1],
         }
         self._attr_unique_id = f"{DOMAIN}_{manager_identifier[1]}_{coordinator.server_name}_target_version".lower().replace(
             ":", "_"
@@ -58,11 +61,14 @@ class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEnti
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Keep identity and resource freshness available during outages."""
-        return {
-            **self._attr_extra_state_attributes,
-            **self.coordinator.resource_metadata("server_settings"),
-        }
+        """Expose stable identity and resource freshness during outages."""
+        return entity_attributes(
+            "server",
+            "target_version",
+            self._attr_extra_state_attributes["bsm_manager_url"],
+            server_name=self.coordinator.server_name,
+            metadata=self.coordinator.resource_metadata("server_settings"),
+        )
 
     @property
     def available(self) -> bool:

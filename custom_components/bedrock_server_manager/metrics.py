@@ -14,6 +14,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import DOMAIN
 from .coordinator import ApplicationMonitorCoordinator
 
@@ -117,7 +118,7 @@ class ApplicationMetricSensor(
 ):
     """Expose one metric, leaving historic samples to Home Assistant's recorder."""
 
-    _unrecorded_attributes = frozenset({"bsm_updated_at", "bsm_last_error"})
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     entity_description: MetricDescription
     _attr_has_entity_name = True
 
@@ -143,11 +144,15 @@ class ApplicationMetricSensor(
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
-            **self._attr_extra_state_attributes,
-            "bsm_manager_url": self.manager_url,
-            **self.coordinator.resource_metadata(self.entity_description.resource),
-        }
+        """Expose stable identity and resource freshness during outages."""
+        return entity_attributes(
+            "manager",
+            self.entity_description.key,
+            self.manager_url,
+            metadata=self.coordinator.resource_metadata(
+                self.entity_description.resource
+            ),
+        )
 
     @property
     def available(self) -> bool:

@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import DOMAIN
 from .coordinator import ManagerDataCoordinator
 from .reconcile import refresh_after_action
@@ -40,6 +41,7 @@ async def async_setup_entry(
 class SettingNumber(CoordinatorEntity[ManagerDataCoordinator], NumberEntity):
     """Read confirmed values and preserve backend validation for writes."""
 
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_entity_registry_enabled_default = False
@@ -67,11 +69,13 @@ class SettingNumber(CoordinatorEntity[ManagerDataCoordinator], NumberEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Keep identity and resource freshness available during outages."""
-        return {
-            **self._attr_extra_state_attributes,
-            **self.coordinator.resource_metadata("application_settings"),
-        }
+        """Expose stable identity and resource freshness during outages."""
+        return entity_attributes(
+            "manager",
+            self._attr_extra_state_attributes["bsm_key"],
+            self._attr_extra_state_attributes["bsm_manager_url"],
+            metadata=self.coordinator.resource_metadata("application_settings"),
+        )
 
     @property
     def native_value(self) -> float | None:

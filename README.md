@@ -402,3 +402,10 @@ match the reviewed client update before the next SDK beta is published.
 The application health entity exposes backend `ready` separately from health and lifecycle. Home Assistant's downloadable integration diagnostics now request the backend's bounded support report on demand, alongside web-runtime and event observations. This adds subsystem health/readiness, collector and persistence metadata, retained records, and instance summaries without extra polling or recorder entities. Live OpenAPI discovery lets the integration use this endpoint before a newer SDK release is installed.
 
 Older backends, missing operations, administrator denials, and timeouts affect only their diagnostic source; available sources remain included. Error entries contain exception types rather than response text, and the integration applies its existing credential/URL/player-data redaction to the combined output. Review downloaded reports before sharing.
+
+### Entity attribute contract
+
+Identity and freshness attributes are flat. Structured settings, properties,
+plugins and collection details retain native dictionaries/lists; they are not
+JSON strings. See [entity attributes](docs/entity_attributes.md) for shapes,
+limits, Recorder exclusions and migration from flattened server settings.

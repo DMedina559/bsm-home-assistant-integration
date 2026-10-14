@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, bounded_attributes, entity_attributes
 from .const import DOMAIN
 from .coordinator import ApplicationMonitorCoordinator
 
@@ -50,16 +51,7 @@ class ApplicationHealthSensor(
 ):
     """Distinguish reachable APIs, live WebSockets, and dependency problems."""
 
-    _unrecorded_attributes = frozenset(
-        {
-            "checks",
-            "failed_checks",
-            "checked_at",
-            "message",
-            "bsm_updated_at",
-            "bsm_last_error",
-        }
-    )
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -101,41 +93,44 @@ class ApplicationHealthSensor(
             super().available
             and "health" not in self.coordinator.unavailable_resources
             and "health" not in self.coordinator.unsupported_resources
-            and bool(health)
+            and health.get("health") in {"healthy", "degraded"}
         )
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         if self.key == "connection":
             return self.coordinator.http_connected
         if self.key == "websocket":
             return self.coordinator.websocket_connected
         health = (self.coordinator.data or {}).get("health") or {}
-        return health.get("health") == "degraded"
+        value = health.get("health")
+        return value == "degraded" if value in {"healthy", "degraded"} else None
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        metadata = {
-            "bsm_role": "manager",
-            "bsm_key": self.key,
-            "bsm_manager_url": self.manager_url,
-            **self.coordinator.resource_metadata(
+        metadata = entity_attributes(
+            "manager",
+            self.key,
+            self.manager_url,
+            metadata=self.coordinator.resource_metadata(
                 "health" if self.key not in {"connection", "websocket"} else None
             ),
-        }
+        )
         if self.key == "health":
             health = (self.coordinator.data or {}).get("health") or {}
             checks = health.get("checks") or {}
-            return {
-                **metadata,
-                "checks": checks,
-                "failed_checks": [
-                    name
-                    for name, check in checks.items()
-                    if not check.get("healthy", False)
-                ],
-                "lifecycle": health.get("lifecycle"),
-                "ready": health.get("ready"),
-                "checked_at": health.get("checked_at"),
-            }
+            return bounded_attributes(
+                {
+                    **metadata,
+                    "checks": checks,
+                    "failed_checks": [
+                        name
+                        for name, check in checks.items()
+                        if isinstance(check, dict) and check.get("healthy") is False
+                    ],
+                    "lifecycle": health.get("lifecycle"),
+                    "ready": health.get("ready"),
+                    "checked_at": health.get("checked_at"),
+                }
+            )
         return metadata

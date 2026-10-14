@@ -1037,3 +1037,15 @@ for (const status of ["partial", "skipped"]) {
     ).toBeVisible();
   });
 }
+
+test("bounded entity attributes show a partial-data notice", async ({
+  page,
+}) => {
+  await mount(page, "bsm-properties-card", { entity: "sensor.props" });
+  await page.evaluate(() =>
+    window.push("sensor.props", {
+      bsm_truncated_attributes: ["server_properties"],
+    }),
+  );
+  await expect(page.getByText(/Entity details are limited/)).toBeVisible();
+});

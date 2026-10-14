@@ -557,6 +557,7 @@ export class BsmCard extends LitElement {
         ${picker ? this.pick() : nothing}
         ${this.selection && !this.available ? html`<p class="notice" role="status">${this.state ? "This resource is unavailable. Controls are disabled until it recovers." : "The configured entity is missing. Choose another resource."}</p>` : nothing}
         ${this.liveNotice ? html`<small role="status">${this.liveNotice}</small>` : nothing}
+        ${Array.isArray(this.state?.attributes.bsm_truncated_attributes) && this.state.attributes.bsm_truncated_attributes.length ? html`<p class="notice" role="status">Entity details are limited (${this.state.attributes.bsm_truncated_attributes.join(", ")}). Use BSM data services or a diagnostics download for complete data.</p>` : nothing}
         ${this.resourceNotice()} ${body}
         <div aria-live="polite" role="status" ?hidden=${!this.feedback}>
           ${this.feedback}

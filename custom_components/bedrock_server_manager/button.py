@@ -21,6 +21,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .action_common import _base_api_call_handler
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 from .reconcile import refresh_after_action
@@ -213,6 +214,7 @@ class MinecraftServerButton(
     """Representation of a button entity for a specific Minecraft server action."""
 
     _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
 
     def __init__(
@@ -227,10 +229,9 @@ class MinecraftServerButton(
         """Initialize the server button."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
-        self._attr_extra_state_attributes = {
-            "bsm_role": "server",
-            "bsm_key": description.key,
-        }
+        self._attr_extra_state_attributes = entity_attributes(
+            "server", description.key, manager_identifier[1], server_name=server_name
+        )
         self._server_name = (
             server_name  # Store the server name (e.g., "s1", "my_world")
         )
@@ -337,6 +338,7 @@ class MinecraftManagerButton(
     """Representation of a button entity for a global BSM manager action."""
 
     _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -352,10 +354,9 @@ class MinecraftManagerButton(
     ) -> None:
         """Initialize the manager button."""
         self.entity_description = description
-        self._attr_extra_state_attributes = {
-            "bsm_role": "manager",
-            "bsm_key": description.key,
-        }
+        self._attr_extra_state_attributes = entity_attributes(
+            "manager", description.key, manager_identifier[1]
+        )
         self._config_entry_id = (
             config_entry_id  # Store for retrieving API client if not passed directly
         )

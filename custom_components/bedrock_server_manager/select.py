@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import DOMAIN
 from .coordinator import MinecraftBedrockCoordinator
 from .reconcile import refresh_after_action
@@ -32,6 +33,7 @@ async def async_setup_entry(
 class UpdateChannelSelect(CoordinatorEntity[MinecraftBedrockCoordinator], SelectEntity):
     """Offer standard channels and retain any configured exact version as an option."""
 
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_name = "Update channel"
     _attr_entity_category = EntityCategory.CONFIG
@@ -56,11 +58,14 @@ class UpdateChannelSelect(CoordinatorEntity[MinecraftBedrockCoordinator], Select
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Keep identity and resource freshness available during outages."""
-        return {
-            **self._attr_extra_state_attributes,
-            **self.coordinator.resource_metadata("server_settings"),
-        }
+        """Expose stable identity and resource freshness during outages."""
+        return entity_attributes(
+            "server",
+            "update_channel",
+            self._attr_extra_state_attributes["bsm_manager_url"],
+            server_name=self.coordinator.server_name,
+            metadata=self.coordinator.resource_metadata("server_settings"),
+        )
 
     @property
     def current_option(self) -> str | None:

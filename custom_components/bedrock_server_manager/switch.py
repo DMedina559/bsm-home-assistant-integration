@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .action_common import _base_api_call_handler
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
 from .reconcile import refresh_after_action
@@ -117,6 +118,7 @@ class MinecraftServerSwitch(
     """Represents a switch to control a Minecraft Bedrock server."""
 
     _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True  # Name will be "Device Name Switch Name" (e.g. "Server MyServer Server Power")
 
     def __init__(
@@ -134,10 +136,9 @@ class MinecraftServerSwitch(
         """Initialize the server switch."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
-        self._attr_extra_state_attributes = {
-            "bsm_role": "server",
-            "bsm_key": description.key,
-        }
+        self._attr_extra_state_attributes = entity_attributes(
+            "server", description.key, manager_identifier[1], server_name=server_name
+        )
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._attr_installed_version_static = installed_version_static
@@ -322,10 +323,9 @@ class MinecraftServerSettingSwitch(
         """Initialize the setting switch."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_extra_state_attributes = {
-            "bsm_role": "server",
-            "bsm_key": description.key,
-        }
+        self._attr_extra_state_attributes = entity_attributes(
+            "server", description.key, manager_identifier[1], server_name=server_name
+        )
         self._server_name = server_name
         self._manager_host_port_id = manager_identifier[1]
         self._setting_key = setting_key
@@ -407,6 +407,7 @@ class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntit
     """A plugin enable control that remains consistent with live backend changes."""
 
     _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:puzzle"
@@ -419,10 +420,9 @@ class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntit
     ) -> None:
         super().__init__(coordinator)
         self.plugin_name = plugin_name
-        self._attr_extra_state_attributes = {
-            "bsm_role": "manager",
-            "bsm_key": f"plugin:{plugin_name}",
-        }
+        self._attr_extra_state_attributes = entity_attributes(
+            "manager", f"plugin:{plugin_name}", manager_identifier[1]
+        )
         self._attr_name = f"Plugin {plugin_name}"
         self._attr_unique_id = (
             f"{DOMAIN}_{manager_identifier[1]}_plugin_{plugin_name}".lower().replace(
