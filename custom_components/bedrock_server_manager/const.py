@@ -179,6 +179,11 @@ INTEGRATION_VERSION = get_integration_version()
 # --- List of JS Modules for Frontend Cards ---
 JS_MODULES = [
     {
+        "filename": "bsm-overview-card.js",
+        "version": INTEGRATION_VERSION,
+        "name": "BSM Server Overview Card",
+    },
+    {
         "filename": "bsm-command-card.js",
         "version": INTEGRATION_VERSION,
         "name": "BSM Send Command Card",
@@ -224,3 +229,4 @@ JS_MODULES = [
         "name": "BSM Event Trigger Card",
     },
 ]
+

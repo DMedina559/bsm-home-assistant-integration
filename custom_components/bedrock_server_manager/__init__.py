@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import services
+from .card_api import async_register_card_api
 from .const import (
     CONF_BASE_URL,
     CONF_SERVER_NAMES,
@@ -38,6 +39,7 @@ async def _async_setup_entry(  # noqa: C901
 ) -> bool:
     """Set up Bedrock Server Manager from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    async_register_card_api(hass)
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
 
     # Frontend Registration
@@ -399,3 +401,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
     await _async_cleanup_entry(hass, entry)
     return True
+

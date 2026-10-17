@@ -1,0 +1,16 @@
+{
+  "name": "bsm-home-assistant-cards",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-cards.mjs",
+    "build:check": "node scripts/build-cards.mjs --check",
+    "test": "node --test frontend/test/*.test.js"
+  },
+  "dependencies": {
+    "@bedrock-server-manager/api-client": "0.1.0",
+    "@bedrock-server-manager/runtime": "0.1.0",
+    "@bedrock-server-manager/storage": "0.1.0"
+  },
+  "engines": { "node": ">=22.12.0" }
+}
