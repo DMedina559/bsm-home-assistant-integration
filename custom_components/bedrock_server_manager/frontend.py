@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ class BsmFrontendRegistration:
         """Initialise."""
         self.hass = hass
         self.lovelace: Any = self.hass.data.get("lovelace")
-        self._retry_unsub = None
+        self._retry_unsub: Callable[[], None] | None = None
         self._register_lock = asyncio.Lock()
         self._registered = False
         self._path_registered = False
@@ -89,7 +90,9 @@ class BsmFrontendRegistration:
                 _LOGGER.debug(
                     "Lovelace resources not yet loaded. Trying again in 5 seconds."
                 )
-                self._retry_unsub = async_call_later(self.hass, 5, _check_lovelace_resources_loaded)
+                self._retry_unsub = async_call_later(
+                    self.hass, 5, _check_lovelace_resources_loaded
+                )
 
         await _check_lovelace_resources_loaded(0)
 

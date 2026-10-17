@@ -14,7 +14,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^custom_components/bedrock_server_manager/frontend/
       - id: end-of-file-fixer
+        exclude: ^custom_components/bedrock_server_manager/frontend/
       - id: check-yaml
       - id: check-added-large-files
 
@@ -37,4 +39,8 @@ repos:
     rev: v1.20.1
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML, homeassistant]
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+          - homeassistant==2026.10.1
+          - "bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@0e6a335d556320c5f582e88041e77629e0b6fe5e#subdirectory=packages/bsm-api-client"

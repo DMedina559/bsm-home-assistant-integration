@@ -6,7 +6,9 @@ from typing import Any
 
 def device_config_entry_ids(device: Any) -> set[str]:
     """Read modern ownership, including legacy composite and pre-2026.8 devices."""
-    if hasattr(device, "config_entry_id") and not getattr(device, "is_composite_device", False):
+    if hasattr(device, "config_entry_id") and not getattr(
+        device, "is_composite_device", False
+    ):
         return {device.config_entry_id} if device.config_entry_id else set()
     return set(device.config_entries)
 

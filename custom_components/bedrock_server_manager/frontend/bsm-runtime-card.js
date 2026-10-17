@@ -1,0 +1,6 @@
+import{b as c}from"./shared-UXCKWJE4.js";import{g as t,h as i,j as n}from"./shared-66JIFLDQ.js";var e=class extends c{static title="Web runtime";static role="manager";static key="bsm_version";static properties={shutdownAccepted:{state:!0}};selectedChanged(){super.selectedChanged(),this.shutdownAccepted=!1}async action(s,o,a,u){let r=await super.action(s,o,a,u);return r&&s==="shutdown_web_runtime"&&(this.shutdownAccepted=!0),r}render(){return this.frame(t`${this.readNotice()}${this.readButton("Load runtime status","get_web_runtime")}${this.result?i(this.result):""}
+        <p class="muted">
+          Administrator access required. Shutdown stops the web runtime.
+          Starting it again requires access to the host or service manager.
+        </p>
+        ${this.shutdownAccepted?t`<p class="notice" role="status">Shutdown accepted. API and WebSocket disconnection is expected.</p>`:this.button("Shut down web runtime","shutdown_web_runtime",{confirm:!0},{message:"Shutdown accepted. Disconnection is expected.",confirm:"Stop the BSM web runtime? API access will disconnect. You must restart it from the host or service manager."})}`)}};n("bsm-runtime-card",e,"BSM Web Runtime","Inspect runtime state and request a confirmed graceful shutdown.");
