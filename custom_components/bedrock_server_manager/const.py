@@ -244,6 +244,7 @@ JS_MODULES.extend(
             ("bsm-runtime-card.js", "BSM Web Runtime Card"),
             ("bsm-fleet-card.js", "BSM Fleet Card"),
             ("bsm-overview-card.js", "BSM Overview Card"),
+            ("bsm-npm-overview-card.js", "BSM npm Server Overview Card"),
             ("bsm-tasks-card.js", "BSM Tasks Card"),
             ("bsm-settings-card.js", "BSM Settings Card"),
             ("bsm-bans-card.js", "BSM Bans Card"),

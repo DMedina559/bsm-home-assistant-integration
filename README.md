@@ -417,3 +417,73 @@ on-demand diagnostics, logs, audit and runtime cards; declared event contracts;
 backup pruning; individual plugin reload; response compatibility; and permissions.
 All features use existing backend contracts. Optional diagnostic entities are
 disabled by default, and full diagnostic snapshots are kept out of Recorder.
+
+
+### npm Server Overview Example
+
+Add **BSM npm Server Overview** from the dashboard card picker, then choose a BSM
+integration connection in its visual editor. The card shows the selected servers
+in a responsive grid with running status, CPU, memory, and uptime. Use **Running
+only** to filter the grid; that preference is remembered separately for each Home
+Assistant account and BSM connection.
+
+```yaml
+type: custom:bsm-npm-overview-card
+title: Bedrock servers
+entry_id: YOUR_BSM_CONFIG_ENTRY_ID
+refresh_interval: 30
+```
+
+The editor fills `entry_id` for you. `refresh_interval` accepts an integer from
+10 to 3600 seconds. Refresh reads the integration's latest coordinator snapshots;
+it does not force a new BSM API poll. The existing integration polling intervals
+and WebSocket updates determine the underlying data freshness. A failed server
+snapshot appears as **Unavailable**, rather than **Stopped**. If a card refresh
+fails, the last snapshot remains visible with its read time and an error message.
+
+This card requires a **Home Assistant administrator**. It uses the integration's
+configured BSM account through authenticated Home Assistant WebSocket commands,
+and only exposes monitored servers. No BSM URL, token, password, browser-to-BSM
+connection, or CORS configuration is required in the dashboard.
+
+Resources register automatically for storage-mode dashboards. For YAML resource
+configuration, add:
+
+```yaml
+lovelace:
+  resources:
+    - url: /bsm_cards/bsm-npm-overview-card.js
+      type: module
+```
+
+#### npm package example
+
+The card is a standalone consumer of the published BSM npm packages:
+
+| Package | Use in the card |
+| --- | --- |
+| `@bedrock-server-manager/api-client` | Resolve and validate `list_servers` and `get_server_process_info`, using a Home Assistant transport adapter. |
+| `@bedrock-server-manager/runtime` | Cancel session work and discard stale responses when switching connections, accounts, or removing the card. |
+| `@bedrock-server-manager/storage` | Validate, version, and isolate the running-only preference; fall back to memory when browser storage is unavailable. |
+
+The application assets package `@bedrock-server-manager/frontend` contains a full
+web application rather than embeddable UI components, so this native Lovelace
+card uses the shared libraries directly and inherits Home Assistant theme colors.
+
+For contributors, Node.js 22.12+ is needed only when rebuilding the card:
+
+```sh
+npm ci --ignore-scripts
+npm run build
+npm run test:unit
+python -m pytest tests
+```
+
+Edit `frontend/npm-example/`, then commit the regenerated files under
+`custom_components/bedrock_server_manager/frontend/`. The build copies the
+installed npm dependency graph into local ES modules, converting JSON imports
+to JavaScript modules for browser compatibility. It preserves the upstream MIT
+license. Exact package versions are pinned in `package.json`; CI checks that the
+committed assets match the installed packages with `npm run check:build`.
+Home Assistant users install the integration normally; Node.js and external CDNs
+are not needed to run this card.

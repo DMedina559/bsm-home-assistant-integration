@@ -23,8 +23,9 @@ const files = new Map(
   result.outputFiles.map((file) => [path.basename(file.path), file.contents]),
 );
 if (process.argv.includes("--check")) {
-  const actual = (await readdir(outdir)).filter((file) =>
-    /\.(js|LEGAL\.txt)$/.test(file),
+  const actual = (await readdir(outdir)).filter(
+    (file) =>
+      /\.(js|LEGAL\.txt)$/.test(file) && file !== "bsm-npm-overview-card.js",
   );
   for (const name of actual)
     if (!files.has(name)) throw Error(`Obsolete frontend bundle: ${name}`);
@@ -34,7 +35,11 @@ if (process.argv.includes("--check")) {
   }
 } else {
   for (const name of await readdir(outdir))
-    if (/\.(js|LEGAL\.txt)$/.test(name) && !files.has(name))
+    if (
+      /\.(js|LEGAL\.txt)$/.test(name) &&
+      name !== "bsm-npm-overview-card.js" &&
+      !files.has(name)
+    )
       await unlink(path.join(outdir, name));
   for (const [name, contents] of files)
     await writeFile(path.join(outdir, name), contents);
