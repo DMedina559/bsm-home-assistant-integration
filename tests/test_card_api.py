@@ -14,7 +14,7 @@ def load_card_api():
     """Load only the transport, independently of a running HA installation."""
     modules = {}
     for name in (
-        "voluptuous",
+        "probatio",
         "homeassistant",
         "homeassistant.components",
         "homeassistant.components.websocket_api",
@@ -24,7 +24,7 @@ def load_card_api():
         "custom_components.bedrock_server_manager.const",
     ):
         modules[name] = ModuleType(name)
-    vol = modules["voluptuous"]
+    vol = modules["probatio"]
     vol.Required = vol.Optional = lambda value: value
     vol.In = lambda value: value
     core = modules["homeassistant.core"]

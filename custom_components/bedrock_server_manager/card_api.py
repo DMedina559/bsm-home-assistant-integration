@@ -1,6 +1,6 @@
 """Authenticated, read-only coordinator transport for the npm example card."""
 
-import voluptuous as vol
+import probatio
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
@@ -18,7 +18,7 @@ def async_register_card_api(hass: HomeAssistant) -> None:
     hass.data[marker] = True
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/card_entries"})
+@websocket_api.websocket_command({probatio.Required("type"): f"{DOMAIN}/card_entries"})
 @websocket_api.require_admin
 @callback
 def websocket_card_entries(hass, connection, msg):
@@ -36,10 +36,12 @@ def websocket_card_entries(hass, connection, msg):
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): f"{DOMAIN}/card_read",
-        vol.Required("entry_id"): str,
-        vol.Required("operation"): vol.In(["list_servers", "get_server_process_info"]),
-        vol.Optional("server_name"): str,
+        probatio.Required("type"): f"{DOMAIN}/card_read",
+        probatio.Required("entry_id"): str,
+        probatio.Required("operation"): probatio.In(
+            ["list_servers", "get_server_process_info"]
+        ),
+        probatio.Optional("server_name"): str,
     }
 )
 @websocket_api.require_admin

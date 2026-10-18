@@ -109,7 +109,13 @@ async def test_monitor_fetches_health_and_only_latest_metrics(hass, api):
     )
     api.application.async_get_application_health = AsyncMock(
         return_value=GetApplicationHealthResponse(
-            checked_at=1, checks={}, health="healthy", lifecycle="ready", ready=True
+            checked_at=1,
+            checks={},
+            health="healthy",
+            lifecycle="ready",
+            ready=True,
+            pid=123,
+            version="4.0.0",
         )
     )
     coordinator = ApplicationMonitorCoordinator(hass, api)
