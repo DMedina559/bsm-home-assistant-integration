@@ -2,12 +2,17 @@ name: HACS Validate
 
 on:
   push:
+    branches: [main, dev]
   pull_request:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * 1"
   workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-hacs:

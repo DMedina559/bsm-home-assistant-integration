@@ -56,7 +56,9 @@
           "update_credentials": "Update API Credentials",
           "select_servers": "Select Servers to Monitor",
           "update_server_interval": "Set Server Data Polling Interval",
-          "update_manager_interval": "Set Manager Data Polling Interval"
+          "update_manager_interval": "Set Manager Data Polling Interval",
+          "update_monitor_interval": "Health and metrics fallback interval",
+          "update_event_filters": "Event forwarding"
         }
       },
       "update_credentials": {
@@ -86,6 +88,21 @@
         "description": "Define how often Home Assistant polls global Bedrock Server Manager data (e.g., BSM OS/Version, Global Players List, Available Content). This is typically less frequent than individual server polling.",
         "data": {
           "manager_scan_interval": "Manager data update frequency (seconds)"
+        }
+      },
+      "update_monitor_interval": {
+        "title": "Health and metrics fallback interval",
+        "description": "Live metrics follow the BSM sampling interval. This controls HTTP fallback polling and health checks.",
+        "data": {
+          "monitor_scan_interval": "Fallback interval (seconds)"
+        }
+      },
+      "update_event_filters": {
+        "title": "Event forwarding",
+        "description": "Choose events forwarded to the Home Assistant event bus. This does not filter internal state updates. Blank names forward all events.",
+        "data": {
+          "forward_events": "Forward BSM events",
+          "event_names": "Event names (comma-separated)"
         }
       }
     },
@@ -166,22 +183,22 @@
   },
   "services": {
     "send_command": {
-      "name": "Send command to server",
+      "name": "Send Server Command",
       "description": "Sends a command to the specified Minecraft server's console. Target entities or devices associated with the server instance you want to command.",
       "fields": {
         "command": {
           "name": "Command",
-          "description": "The command string to send to the server console (without the leading '/')."
+          "description": "The command to send to the server console (e.g., 'say Hello World')."
         }
       }
     },
     "prune_download_cache": {
-      "name": "Prune BSM download cache",
-      "description": "Deletes older downloaded server archives from a specified directory on the BSM manager host, keeping a defined number of newest files. Targets a BSM manager instance.",
+      "name": "Prune Download Cache",
+      "description": "Deletes older downloaded server archives from a specified directory on the manager host, keeping a defined number of newest files. Targets a BSM manager instance.",
       "fields": {
         "directory": {
           "name": "Directory Path",
-          "description": "The absolute path on the BSM manager host where download files (.zip) are stored."
+          "description": "The absolute path on the manager host where download files (.zip) are stored."
         },
         "keep": {
           "name": "Number to Keep",
@@ -190,39 +207,39 @@
       }
     },
     "trigger_backup": {
-      "name": "Trigger server backup",
+      "name": "Trigger Server Backup",
       "description": "Triggers a specific backup operation (world, config file, or all) for the target server(s).",
       "fields": {
         "backup_type": {
           "name": "Backup Type",
-          "description": "Type of backup to perform ('all', 'world', or 'config')."
+          "description": "Type of backup to perform."
         },
         "file_to_backup": {
           "name": "File to Backup (for config type)",
-          "description": "(Optional) Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
+          "description": "Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
         }
       }
     },
     "restore_backup": {
-      "name": "Restore server backup",
+      "name": "Restore Server Backup",
       "description": "Restores a specific world or config file from a backup for the target server(s). WARNING: This overwrites current files! Use with caution.",
       "fields": {
         "restore_type": {
           "name": "Restore Type",
-          "description": "Type of restore to perform ('world' or 'config')."
+          "description": "Type of restore to perform."
         },
         "backup_file": {
           "name": "Backup Filename",
-          "description": "The filename of the backup to restore (e.g., 'world_backup_xyz.mcworld' or 'server_backup_abc.properties'). This file must exist within the specific server's backup subdirectory inside the BSM manager's main BACKUP_DIR."
+          "description": "The filename of the backup to restore (e.g., 'world_backup_xyz.mcworld' or 'server_backup_abc.properties'). This file must exist within the specific server's backup subdirectory inside the manager's main BACKUP_DIR."
         }
       }
     },
     "restore_latest_all": {
-      "name": "Restore latest full server backup",
-      "description": "Restores the server's world and standard configuration files from the most recent 'all' type backup for the target server(s). WARNING: This overwrites current files! Use with caution."
+      "name": "Restore Latest Full Server Backup",
+      "description": "Restores the world and standard configuration files from the most recent 'all' type backup for the target server(s). WARNING: This overwrites current files! Use with caution."
     },
     "install_server": {
-      "name": "Install new Minecraft server",
+      "name": "Install New Minecraft Server",
       "description": "Installs a new Minecraft Bedrock server instance via the targeted BSM manager. Set 'overwrite: true' explicitly if you intend to replace an existing server with the same name.",
       "fields": {
         "server_name": {
@@ -240,7 +257,7 @@
       }
     },
     "delete_server": {
-      "name": "Delete Minecraft server",
+      "name": "Delete Minecraft Server",
       "description": "Permanently deletes ALL data for the target server instance(s), including its installation, configuration files, and all backups. THIS ACTION IS IRREVERSIBLE. USE WITH EXTREME CAUTION!",
       "fields": {
         "confirm_deletion": {
@@ -250,7 +267,7 @@
       }
     },
     "add_to_allowlist": {
-      "name": "Add players to server allowlist",
+      "name": "Add Players to Server Allowlist",
       "description": "Adds one or more players to the target server's allowlist. This does not remove players already on the list.",
       "fields": {
         "players": {
@@ -264,38 +281,38 @@
       }
     },
     "remove_from_allowlist": {
-      "name": "Remove player from server allowlist",
-      "description": "Removes a specific player from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.",
+      "name": "Remove Players from Server Allowlist",
+      "description": "Removes specific players from the target server's allowlist. Player name matching is case-insensitive on the BSM API side.",
       "fields": {
-        "player_name": {
-          "name": "Player Name",
-          "description": "The Gamertag of the player to remove from the allowlist."
+        "players": {
+          "name": "Players",
+          "description": "A list of player Gamertags to remove from the allowlist."
         }
       }
     },
     "set_permissions": {
-      "name": "Set server player permissions",
+      "name": "Set Server Player Permissions",
       "description": "Sets permission levels ('visitor', 'member', 'operator') for one or more players using their XUIDs on the target server(s). This replaces existing permission levels for the specified players.",
       "fields": {
         "permissions": {
-          "name": "Permissions Dictionary",
-          "description": "A dictionary mapping Player XUIDs (as strings) to permission level strings (e.g., 'visitor', 'member', 'operator'). Input as YAML or JSON."
+          "name": "Permissions List",
+          "description": "A list of player permission objects, where each object has 'name', 'xuid', and 'permission_level'."
         }
       }
     },
     "update_properties": {
-      "name": "Update server properties",
+      "name": "Update Server Properties",
       "description": "Updates specified server properties (e.g., 'max-players', 'difficulty') for the target server(s). Only properties allowed by the BSM API can be changed.",
       "fields": {
         "properties": {
           "name": "Properties Dictionary",
-          "description": "A dictionary mapping server property keys (strings) to their new desired values (strings, numbers, or booleans). Refer to BSM documentation for allowed keys and value types. Input as YAML or JSON."
+          "description": "A dictionary mapping server property keys (strings) to their new desired values (strings, numbers, or booleans). Refer to BSM documentation for allowed keys and value types."
         }
       }
     },
     "install_world": {
-      "name": "Install world to server from file",
-      "description": "Installs a world from a .mcworld file into the target server, REPLACING its current world. WARNING: This is a destructive operation. The .mcworld file must already exist in the BSM manager's 'content/worlds' directory.",
+      "name": "Install World to Server",
+      "description": "Installs a world from a .mcworld file into the target server, replacing its current world. WARNING: This is a destructive operation. The .mcworld file must already exist in the BSM manager's 'content/worlds' directory.",
       "fields": {
         "filename": {
           "name": "World Filename",
@@ -304,7 +321,7 @@
       }
     },
     "install_addon": {
-      "name": "Install addon to server from file",
+      "name": "Install Addon to Server",
       "description": "Installs an addon (.mcaddon or .mcpack) file into the target server. The addon file must already exist in the BSM manager's 'content/addons' directory.",
       "fields": {
         "filename": {
@@ -314,32 +331,513 @@
       }
     },
     "configure_os_service": {
-      "name": "Configure server OS service settings",
-      "description": "Configures OS-specific service settings for the target server(s), such as autoupdate or autostart (Autostart is Linux systemd only).",
+      "name": "Configure Server OS Service",
+      "description": "Configures OS-specific service settings for the target server(s), such as autoupdate or autostart (Linux systemd only for autostart).",
       "fields": {
         "autoupdate": {
           "name": "Enable Autoupdate",
-          "description": "Set to true/false to enable/disable the autoupdate feature for the server. This typically applies to a Linux systemd service 'ExecStartPre' command or a similar configuration flag for Windows servers managed by BSM."
+          "description": "Enable or disable the autoupdate feature for the server. This typically applies to Linux systemd service 'ExecStartPre' or a similar flag in Windows server configuration."
         },
         "autostart": {
           "name": "Enable Autostart (Linux Only)",
-          "description": "(Optional, Linux Only) Set to true/false to enable/disable the server to start automatically on system boot (via systemd user service on Linux). If not provided for a Linux manager, the existing autostart setting may not be changed or could default to disabled depending on BSM API behavior."
+          "description": "(Optional, Linux Only) Enable or disable the server to autostart with the system via systemd user service. If not provided on Linux, the existing autostart setting may not be changed or could default to disabled depending on BSM API behavior."
         }
       }
     },
     "add_global_players": {
-      "name": "Add/Update global players list",
+      "name": "Add/Update Global Players",
       "description": "Adds or updates players in the BSM manager's global player list (players.json). This is a global manager action; target a BSM manager instance.",
       "fields": {
         "players": {
           "name": "Players Data",
-          "description": "A list of player strings, each in \"PlayerName:PlayerXUID\" format (e.g., '[\"Steve:123...\", \"Alex:456...\"]'). Input as a YAML/JSON list."
+          "description": "A list of player strings, each in \"PlayerName:PlayerXUID\" format. Example: [\"Steve:123...\", \"Alex:456...\"]. Input as a YAML/JSON list."
         }
       }
     },
     "scan_players": {
-      "name": "Scan player logs globally",
+      "name": "Scan Player Logs",
       "description": "Triggers a scan of all server log files on the BSM manager host to update the global list of known players. Targets a BSM manager instance."
+    },
+    "get_plugin_settings": {
+      "name": "Get plugin settings",
+      "description": "Read a plugin's settings and validation schema. Supports response data.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin name"
+        }
+      }
+    },
+    "update_plugin_settings": {
+      "name": "Update plugin settings",
+      "description": "Validate and persist settings for plugins that declare a settings schema.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin name"
+        },
+        "settings": {
+          "name": "Settings"
+        }
+      }
+    },
+    "list_tasks": {
+      "name": "List task outcomes",
+      "description": "Return tasks visible to the selected manager account, including results and errors."
+    },
+    "get_task": {
+      "name": "Get task outcome",
+      "description": "Return a task snapshot with its status, result, error and revision.",
+      "fields": {
+        "task_id": {
+          "name": "Task ID"
+        }
+      }
+    },
+    "update_server": {
+      "name": "Update server",
+      "description": "Check for a Bedrock update and return its task identifier when queued."
+    },
+    "restart_server": {
+      "name": "Restart server",
+      "description": "Restart each selected server and return the backend outcome."
+    },
+    "reload_plugins": {
+      "name": "Reload plugins",
+      "description": "Reload plugins on each targeted manager and return the backend outcome."
+    },
+    "set_global_setting": {
+      "name": "Set Global Setting",
+      "description": "Sets a specific global application setting on the BSM manager. Refer to BSM documentation for available setting keys and expected value types.",
+      "fields": {
+        "key": {
+          "name": "Setting Key",
+          "description": "The dot-notation key of the setting (e.g., 'web.port', 'logging.level')."
+        },
+        "value": {
+          "name": "Setting Value",
+          "description": "The new value for the setting. For complex values (like lists or objects), ensure correct YAML/JSON formatting if inputting as text. Simple values like strings, numbers, booleans can be entered directly."
+        }
+      }
+    },
+    "reload_global_settings": {
+      "name": "Reload Global Settings",
+      "description": "Forces a reload of global application settings and logging configuration on the BSM manager."
+    },
+    "set_plugin_enabled": {
+      "name": "Set Plugin Enabled Status",
+      "description": "Enables or disables a specific plugin on the BSM manager. Targets a BSM manager instance.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin Name",
+          "description": "The name of the plugin (filename without .py extension)."
+        },
+        "plugin_enabled": {
+          "name": "Enabled",
+          "description": "Set to true to enable the plugin, false to disable it."
+        }
+      }
+    },
+    "trigger_plugin_event": {
+      "name": "Trigger Plugin Event",
+      "description": "Triggers a custom plugin event on the BSM manager, optionally with a JSON payload. Targets a BSM manager instance.",
+      "fields": {
+        "event_name": {
+          "name": "Event Name",
+          "description": "The namespaced name of the custom event to trigger (e.g., 'my_plugin:custom_action')."
+        },
+        "event_payload": {
+          "name": "Payload (JSON)",
+          "description": "(Optional) A JSON object (as a string or dictionary) containing data to pass to event listeners."
+        }
+      }
+    },
+    "add_server_ban": {
+      "name": "Add Server Ban",
+      "description": "Adds a ban to the server's ban list.",
+      "fields": {
+        "player_name": {
+          "name": "Player Name",
+          "description": "The Gamertag of the player to ban."
+        },
+        "xuid": {
+          "name": "Player XUID",
+          "description": "The XUID of the player to ban."
+        },
+        "reason": {
+          "name": "Ban Reason",
+          "description": "The reason for the ban."
+        }
+      }
+    },
+    "remove_server_ban": {
+      "name": "Remove Server Ban",
+      "description": "Removes a ban from the server's ban list based on the XUID.",
+      "fields": {
+        "xuid": {
+          "name": "Player XUID",
+          "description": "The XUID of the player whose ban to remove."
+        }
+      }
+    },
+    "reset_world": {
+      "name": "Delete Minecraft World",
+      "description": "Permanently deletes ALL world data for the target server instance(s). THIS ACTION IS IRREVERSIBLE. USE WITH EXTREME CAUTION!",
+      "fields": {
+        "confirm_deletion": {
+          "name": "Confirm Deletion",
+          "description": "MUST be set to 'true' to confirm you understand this action is irreversible and will permanently delete all selected server world data."
+        }
+      }
+    },
+    "enable_addon": {
+      "name": "Enable Addon",
+      "description": "Enables an installed addon on the target server.",
+      "fields": {
+        "pack_uuid": {
+          "name": "Pack UUID",
+          "description": "The UUID of the addon pack."
+        },
+        "pack_type": {
+          "name": "Pack Type",
+          "description": "The type of the addon pack (behavior or resource)."
+        }
+      }
+    },
+    "disable_addon": {
+      "name": "Disable Addon",
+      "description": "Disables an installed addon on the target server.",
+      "fields": {
+        "pack_uuid": {
+          "name": "Pack UUID",
+          "description": "The UUID of the addon pack."
+        },
+        "pack_type": {
+          "name": "Pack Type",
+          "description": "The type of the addon pack (behavior or resource)."
+        }
+      }
+    },
+    "uninstall_addon": {
+      "name": "Uninstall Addon",
+      "description": "Uninstalls an addon from the target server.",
+      "fields": {
+        "pack_uuid": {
+          "name": "Pack UUID",
+          "description": "The UUID of the addon pack."
+        },
+        "pack_type": {
+          "name": "Pack Type",
+          "description": "The type of the addon pack (behavior or resource)."
+        }
+      }
+    },
+    "reorder_addons": {
+      "name": "Reorder Addons",
+      "description": "Reorders installed addons on the target server.",
+      "fields": {
+        "pack_type": {
+          "name": "Pack Type",
+          "description": "The type of the addon packs to reorder (behavior or resource)."
+        },
+        "uuids": {
+          "name": "Pack UUIDs",
+          "description": "A list of addon UUIDs in the desired order."
+        }
+      }
+    },
+    "update_addon_subpack": {
+      "name": "Update Addon Subpack",
+      "description": "Updates the active subpack for an installed addon on the target server.",
+      "fields": {
+        "pack_uuid": {
+          "name": "Pack UUID",
+          "description": "The UUID of the addon pack."
+        },
+        "pack_type": {
+          "name": "Pack Type",
+          "description": "The type of the addon pack (behavior or resource)."
+        },
+        "subpack_name": {
+          "name": "Subpack Name",
+          "description": "The name of the subpack to activate."
+        }
+      }
+    },
+    "get_application_settings": {
+      "name": "Get Application Settings",
+      "description": "Get application settings."
+    },
+    "get_server_settings": {
+      "name": "Get Server Settings",
+      "description": "Get server settings."
+    },
+    "set_server_setting": {
+      "name": "Set Server Setting",
+      "description": "Set server setting.",
+      "fields": {
+        "key": {
+          "name": "Key"
+        },
+        "value": {
+          "name": "Value"
+        }
+      }
+    },
+    "discover_operations": {
+      "name": "Discover Operations",
+      "description": "Discover current core and plugin OpenAPI operations.",
+      "fields": {
+        "refresh": {
+          "name": "Refresh"
+        }
+      }
+    },
+    "call_operation": {
+      "name": "Call Operation",
+      "description": "Invoke an advertised operation using SDK contract validation and manager authentication.",
+      "fields": {
+        "operation_id": {
+          "name": "Operation Id"
+        },
+        "path_params": {
+          "name": "Path Params"
+        },
+        "query": {
+          "name": "Query"
+        },
+        "json_data": {
+          "name": "Json Data"
+        }
+      }
+    },
+    "upload_content": {
+      "name": "Upload Content",
+      "description": "Upload a world or addon from a Home Assistant allowed path.",
+      "fields": {
+        "file_path": {
+          "name": "File Path"
+        }
+      }
+    },
+    "export_world": {
+      "name": "Export World",
+      "description": "Export world."
+    },
+    "get_application_diagnostics": {
+      "name": "Get Application Diagnostics",
+      "description": "Collect a bounded backend diagnostic snapshot on demand.",
+      "fields": {}
+    },
+    "get_subsystem_diagnostics": {
+      "name": "Get Subsystem Diagnostics",
+      "description": "Collect one subsystem with findings and freshness metadata.",
+      "fields": {
+        "subsystem": {
+          "name": "Subsystem",
+          "description": "Subsystem"
+        }
+      }
+    },
+    "get_diagnostic_history": {
+      "name": "Get Diagnostic History",
+      "description": "Read retained diagnostic records with optional filters and cursor.",
+      "fields": {
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum records returned."
+        },
+        "subsystem": {
+          "name": "Subsystem",
+          "description": "Subsystem"
+        },
+        "instance_id": {
+          "name": "Instance Id",
+          "description": "Instance id"
+        },
+        "correlation_id": {
+          "name": "Correlation Id",
+          "description": "Correlation id"
+        },
+        "cursor": {
+          "name": "Cursor",
+          "description": "Cursor"
+        },
+        "owner": {
+          "name": "Owner",
+          "description": "Owner"
+        },
+        "code": {
+          "name": "Code",
+          "description": "Code"
+        },
+        "outcome": {
+          "name": "Outcome",
+          "description": "Outcome"
+        },
+        "operation_id": {
+          "name": "Operation Id",
+          "description": "Operation id"
+        }
+      }
+    },
+    "get_diagnostic_runs": {
+      "name": "Get Diagnostic Runs",
+      "description": "Read retained backend runs across restarts.",
+      "fields": {
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum records returned."
+        }
+      }
+    },
+    "get_diagnostic_trace": {
+      "name": "Get Diagnostic Trace",
+      "description": "Correlate event, task and retained diagnostic metadata.",
+      "fields": {
+        "correlation_id": {
+          "name": "Correlation Id",
+          "description": "Correlation id"
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum records returned."
+        },
+        "cursor": {
+          "name": "Cursor",
+          "description": "Cursor"
+        }
+      }
+    },
+    "get_diagnostic_report": {
+      "name": "Get Diagnostic Report",
+      "description": "Return the backend support report. Review before sharing.",
+      "fields": {}
+    },
+    "compare_diagnostic_snapshots": {
+      "name": "Compare Diagnostic Snapshots",
+      "description": "Compare two supplied snapshots without changing the backend.",
+      "fields": {
+        "before": {
+          "name": "Before",
+          "description": "Snapshot to compare, or the preceding byte offset for log history."
+        },
+        "after": {
+          "name": "After",
+          "description": "Snapshot collected after the baseline."
+        }
+      }
+    },
+    "list_application_events": {
+      "name": "List Application Events",
+      "description": "List declared event names, descriptions and payload contracts.",
+      "fields": {}
+    },
+    "get_event_activity": {
+      "name": "Get Event Activity",
+      "description": "Read bounded event delivery activity and capacity metadata.",
+      "fields": {
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum records returned."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Name"
+        },
+        "owner": {
+          "name": "Owner",
+          "description": "Owner"
+        },
+        "correlation_id": {
+          "name": "Correlation Id",
+          "description": "Correlation id"
+        },
+        "status": {
+          "name": "Status",
+          "description": "Status"
+        }
+      }
+    },
+    "get_web_runtime": {
+      "name": "Get Web Runtime",
+      "description": "Read administrator web-runtime state.",
+      "fields": {}
+    },
+    "shutdown_web_runtime": {
+      "name": "Shutdown Web Runtime",
+      "description": "Request graceful web-runtime shutdown. Administrator access and confirm: true are required. Restart from the host or service manager.",
+      "fields": {
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be true to request shutdown."
+        }
+      }
+    },
+    "get_log_history": {
+      "name": "Get Log History",
+      "description": "Read a bounded log page for the authorized server target. A changed file returns HTTP 409; reload without before and file_id.",
+      "fields": {
+        "before": {
+          "name": "Before",
+          "description": "Snapshot to compare, or the preceding byte offset for log history."
+        },
+        "file_id": {
+          "name": "File Id",
+          "description": "Identity returned by the previous log page."
+        }
+      }
+    },
+    "get_application_log_history": {
+      "name": "Get Application Log History",
+      "description": "Read bounded application log history. Administrator access required.",
+      "fields": {
+        "before": {
+          "name": "Before",
+          "description": "Snapshot to compare, or the preceding byte offset for log history."
+        },
+        "file_id": {
+          "name": "File Id",
+          "description": "Identity returned by the previous log page."
+        }
+      }
+    },
+    "list_audit_logs": {
+      "name": "List Audit Logs",
+      "description": "Fetch backend audit history on demand, then filter exact action matches and return the latest limited selection. The backend currently fetches all records.",
+      "fields": {
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum records returned."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Action"
+        }
+      }
+    },
+    "get_raw_properties": {
+      "name": "Get Raw Properties",
+      "description": "Read server.properties comments and values without editing the document.",
+      "fields": {}
+    },
+    "validate_server": {
+      "name": "Validate Server",
+      "description": "Validate the selected server using the existing backend contract.",
+      "fields": {}
+    },
+    "prune_backups": {
+      "name": "Prune Backups",
+      "description": "Prune old backups using server retention settings. Returns an accepted task.",
+      "fields": {}
+    },
+    "reload_plugin": {
+      "name": "Reload Plugin",
+      "description": "Reload one plugin and drain its previous generation.",
+      "fields": {
+        "plugin_name": {
+          "name": "Plugin Name",
+          "description": "Plugin name"
+        }
+      }
     }
   }
 }
