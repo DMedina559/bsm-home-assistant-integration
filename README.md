@@ -1,5 +1,5 @@
 ﻿<div style="text-align: center;">
-    <img src="https://raw.githubusercontent.com/DMedina559/bsm-frontend/main/frontend/public/image/icon/favicon.svg" alt="BSM Logo" width="150">
+    <img src="https://raw.githubusercontent.com/DMedina559/bsm-frontend/main/frontend/public/image/icon/web-app-manifest-512x512.png" alt="BSM Logo" width="150">
 </div>
 
 # Bedrock Server Manager - Home Assistant Integration
@@ -23,8 +23,9 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 ## Prerequisites
 
-*   Home Assistant installation (Version 2025.x or later recommended).
-*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) application.
+*   Home Assistant 2026.10 or newer (Python 3.14).
+*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) 4.0.0b5 or newer, with metrics, health, task and revisioned WebSocket contracts.
+*   `bsm-api-client` 1.7.0b4 or newer (installed automatically by Home Assistant).
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
 *   API Credentials (Username and Password) configured for your BSM instance.
 *   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
@@ -55,17 +56,16 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 
 Once installed and Home Assistant is restarted, configure the integration via the UI:
 
-> [!tip] 
+> [!tip]
 > Easily add the integration through the Home Assistant UI:
-> 
+>
 > [![Open your Home Assistant instance and show an integration.](https://my.home-assistant.io/badges/integration.svg)](https://my.home-assistant.io/redirect/integration/?domain=bedrock_server_manager)
 
 1.  Go to **Settings -> Devices & Services**.
 2.  Click the **+ Add Integration** button in the bottom right.
 3.  Search for "Bedrock Server Manager" and select it.
 4.  **Step 1: Connect to Manager**
-    *   **Host / IP Address:** The address of your BSM instance.
-    *   **Port:** The port BSM API is listening on (defaults to 11325).
+    *   **Base URL:** The full BSM address, including scheme, port and any proxy path, for example `http://192.168.1.10:11325`.
     *   **API Username & Password:** Credentials for the BSM API.
     *   Click **Submit**.
 5.  **Step 2: Select Initial Servers**
@@ -74,17 +74,56 @@ Once installed and Home Assistant is restarted, configure the integration via th
     *   Click **Submit**.
 6.  The integration will set up a device for the BSM instance and child devices for each selected Minecraft server.
 
-## Lovelace Custom Cards
+## Dashboard cards
 
-This integration provides the backend entities and services. To create a more user-friendly interface in your dashboards, custom Lovelace cards are available:
+The integration registers locally bundled cards in dashboards using storage mode. They require no CDN connection. For YAML dashboards, register each desired module manually:
 
+```yaml
+resources:
+  - url: /bsm_cards/bsm-monitor-card.js
+    type: module
+  - url: /bsm_cards/bsm-health-card.js
+    type: module
+```
 
-- ### Send Server Commands
-- ### Server Properties Manager
-- ### Server Allowlist Manager
-- ### Server Permissions Manager
-- ### Server Restore Card
-- ### Server Content Installer
+The card picker includes:
+
+| Card type | Purpose |
+| --- | --- |
+| `custom:bsm-overview-card` | Server cards or table with start/stop, update and quick actions |
+| `custom:bsm-tasks-card` | Active and completed tasks, structured results, errors and raw response |
+| `custom:bsm-settings-card` | Grouped application or server settings with typed values |
+| `custom:bsm-bans-card` | Manage server bans and select known players |
+| `custom:bsm-api-card` | Discover and call core/plugin API operations using SDK validation |
+| `custom:bsm-fleet-card` | Compact server overview; click a server to open native entity details |
+| `custom:bsm-monitor-card` | Server controls, target version, settings, metrics and native history graphs |
+| `custom:bsm-health-card` | API/WebSocket connectivity, health checks, separate app/system metrics and history |
+| `custom:bsm-plugin-settings-card` | Plugin tabs, typed settings, server checklists and backend validation |
+| `custom:bsm-command-card` | Send a server command |
+| `custom:bsm-properties-card` | Edit server properties |
+| `custom:bsm-allowlist-card` | Manage allowed players |
+| `custom:bsm-permissions-card` | Stage and save player permissions |
+| `custom:bsm-restore-card` | Restore a selected backup or latest backups |
+| `custom:bsm-content-card` | Install worlds/addons, upload from HA allowed paths and export worlds |
+| `custom:bsm-addon-card` | Manage addon status, order and subpacks |
+| `custom:bsm-plugins-card` | Plugin status, enable/disable and reload |
+| `custom:bsm-event-trigger-card` | Trigger plugin events |
+
+Set the default server or manager with the visual editor's **Entity** field. Select the corresponding resource sensor (for example, a level-name sensor for properties or a plugin-status sensor for plugin settings). Runtime selectors list only matching resources. Entity IDs may be renamed: cards use resource metadata and device relationships, not entity-name conventions.
+
+```yaml
+type: custom:bsm-monitor-card
+entity: sensor.my_server_status
+history_hours: 6
+```
+
+All cards support optional `title` and `debug`. History cards support `history_hours` (1–168). The fleet card optionally accepts an `entities` list of server status sensors. The content card accepts `content_source_sensor_entity`. Existing `manager_entity`, `target_server_sensor_entity` and `target_device` configurations remain recognized; use `entity` for new configurations.
+
+Properties, permissions, addon order and plugin settings retain unsaved edits during live updates. Conflicting external changes block saving until edits are discarded and reloaded. Plugin settings include a **Check for updates** action. Plugins without settings stay out of the settings tabs. Restore, world install and addon removal require confirmation.
+
+Task-backed actions stay pending until a terminal outcome arrives. WebSocket events provide live feedback, with task-endpoint polling as a fallback. Switching targets or removing a card releases its task tracking and ignores late responses. Cards use Home Assistant's native recorder graphs, with unlike units on separate graphs. Enable additional diagnostic entities on the manager device to show their measurements.
+
+Large live lists (properties, players, addons, backups and plugin metadata) remain accessible to cards and automations but are excluded from recorder attribute history. Numeric sensor history remains available.
 
 ## Features
 
@@ -98,7 +137,7 @@ This integration provides the backend entities and services. To create a more us
 Entity IDs are typically `platform.server_name_entity_key` (e.g., `sensor.server_name_status`) or `platform.manager_id_entity_key` for global entities.
 
 *   **Sensors (Per Server Device):**
-    *   **Status:** Current state (`Running`, `Stopped`, etc.). *Attributes:* World Name, Installed Version, Allowlisted Players (list of names), All Server Properties (dictionary), PID, Uptime (when running).
+    *   **Status:** Current state (`RUNNING`, `STOPPED`, `INSTALLED`, etc.). *Attributes:* Installed Version and server settings. Properties, player lists and process details are provided by their corresponding sensors.
     *   **CPU Usage:** CPU percentage (%). *Attributes:* PID, Uptime (when running).
     *   **Memory Usage:** Memory usage (MiB).
     *   **Permissioned Players:** Count of players in the server's `permissions.json`. *Attributes:* Full list of permissioned players with XUIDs and levels.
@@ -127,14 +166,14 @@ All services use the domain `bedrock_server_manager`.
     *   Target: Server device(s)/entity(s).
     *   Data: `command` (string, required).
 *   **`prune_download_cache`**: Prunes global download cache.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `directory` (string, required), `keep` (integer, optional).
 *   **`trigger_backup`**: Triggers a specific backup type.
     *   Target: Server device(s)/entity(s).
     *   Data: `backup_type` (string, required: `all`, `world`, `config`), `file_to_backup` (string, optional, required for `config` type).
 *   **`restore_backup`**: Restores a specific backup. **CAUTION: Overwrites data.**
     *   Target: Server device(s)/entity(s).
-    *   Data: `restore_type` (string, required: `world`, `config`), `backup_file` (string, required: filename relative to server's backup folder).
+    *   Data: `restore_type` (string, required: `world`, `properties`, `allowlist`, `permissions`), `backup_file` (string, required: filename relative to server's backup folder).
 *   **`restore_latest_all`**: Restores latest full backup. **CAUTION: Overwrites data.**
     *   Target: Server device(s)/entity(s).
     *   Data: None.
@@ -143,22 +182,22 @@ All services use the domain `bedrock_server_manager`.
     *   Data: `players` (list of strings, required), `ignores_player_limit` (boolean, optional).
 *   **`remove_from_allowlist`**: Removes a player from a server's allowlist.
     *   Target: Server device(s)/entity(s).
-    *   Data: `player_name` (string, required).
+    *   Data: `players` (list of player names, required).
 *   **`set_permissions`**: Sets server-specific player permissions via XUID.
     *   Target: Server device(s)/entity(s).
-    *   Data: `permissions` (dictionary, required: `{"XUID": "level", ...}`).
+    *   Data: `permissions` (list, required: `[{"name": "Alex", "xuid": "123", "permission_level": "member"}]`).
 *   **`update_properties`**: Updates allowed `server.properties` values.
     *   Target: Server device(s)/entity(s).
     *   Data: `properties` (dictionary, required: `{"key": "value", ...}`).
 *   **`install_server`**: Installs a new server instance via the manager.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `server_name` (string, required), `server_version` (string, required), `overwrite` (boolean, optional).
 *   **`delete_server`**: Permanently deletes ALL data for a server. **IRREVERSIBLE.**
     *   Target: Server device(s)/entity(s).
     *   Data: `confirm_deletion` (boolean, required: must be `true`).
-*   **`configure_os_service`**: Configures OS service settings for a server.
+*   **`configure_os_service`**: Updates server autostart and autoupdate settings; the action name is retained for existing automations.
     *   Target: Server device(s)/entity(s).
-    *   Data: `autoupdate` (boolean, required), `autostart` (boolean, optional, Linux only).
+    *   Data: `autoupdate` (boolean, required), `autostart` (boolean, optional).
 *   **`install_world`**: Installs a `.mcworld` file to a server. **CAUTION: Overwrites current world.**
     *   Target: Server device(s)/entity(s).
     *   Data: `filename` (string, required: relative to manager's `content/worlds`).
@@ -166,7 +205,7 @@ All services use the domain `bedrock_server_manager`.
     *   Target: Server device(s)/entity(s).
     *   Data: `filename` (string, required: relative to manager's `content/addons`).
 *   **`add_global_players`**: Adds/updates players in the manager's global `players.json`.
-    *   Target: None.
+    *   Target: Manager device or one of its entities.
     *   Data: `players` (list of strings, required: `"PlayerName:PlayerXUID"` format).
 
 ## Options / Reconfiguration
@@ -190,3 +229,261 @@ Changes trigger an automatic reload of the integration.
       logs:
         custom_components.bedrock_server_manager: debug
     ```
+
+## Metrics, health and live state
+
+The manager device provides separate application and system measurements: CPU, memory, uptime, background operations, asyncio tasks, threads, event loop lag, disk throughput and network throughput. Native units and measurement state classes support Home Assistant history, statistics and dashboard charts. Memory is reported in MiB and throughput in KiB/s; supported units can be changed through Home Assistant entity settings. Detailed diagnostic measurements are disabled by default and can be enabled on the device page.
+
+API and WebSocket connections have separate connectivity entities. An application problem entity and individual lifecycle, database, state and metrics checks distinguish a reachable backend from a degraded application. Health timestamps and lifecycle state are also available.
+
+Live samples follow the backend sampling interval (normally three seconds). The integration's **Health and metrics fallback interval** defaults to 30 seconds and controls HTTP fallback polling and health checks, independently of server and manager polling. Only the latest sample is held in coordinator state; Home Assistant's recorder owns history. Mutation events refresh affected resources, and reconnects reconcile all selected resources. The event subscription also receives new core and custom plugin events. Selected-server resource subscriptions remain explicit. Successful unknown `after_*` events reconcile their named server and manager data (all selected servers if no server is identified); before and failed events do not trigger state refreshes. Revisions and backend epochs prevent older HTTP results from replacing newer WebSocket data.
+
+Selected servers expose editable target versions and native uptime measurements. Plugins have enable switches, including plugins discovered after a reload. `get_plugin_settings` and `update_plugin_settings` actions expose the declared settings schema and validate changes through BSM. Plugins without declared settings cannot use these settings actions.
+
+`list_tasks` and `get_task` support response data containing typed status, result and error snapshots. Live task updates fire `bedrock_server_manager_task_update` events with `manager_url`, `id`, `status`, `message`, `result`, `error`, `epoch` and `revision`. Automations can filter by manager URL and task ID. Core before/after events, custom `ws_event` messages and plugin broadcasts also fire `bedrock_server_manager_event`, retaining the original envelope plus `manager_url`. Filter by `topic` or `event`; event payloads describe operations and are not authoritative entity snapshots. Destructive actions wait for actual task completion before removing Home Assistant devices.
+
+## Development
+
+Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook install the reviewed SDK source revision in `requirements-test.txt`, matching the backend `dev` contracts.
+
+```sh
+python -m pip install -r requirements-test.txt ../bsm-api-client/packages/bsm-api-client
+python -m pytest tests
+python -m mypy custom_components/bedrock_server_manager
+python -m black --check --workers 1 custom_components tests
+python -m isort --check-only custom_components tests
+python -m flake8 --jobs 1 custom_components tests
+```
+
+### Frontend development
+
+Card source lives in `frontend/src`; the committed modules under `custom_components/bedrock_server_manager/frontend` are the installable HACS resources. Build output includes the shared Lit runtime and its license notices.
+
+```bash
+npm ci
+npm run build
+npm run check:build
+npx playwright install chromium
+npm test
+```
+
+Browser tests cover draft conflicts, unavailable resources, target-switch races, accepted tasks, missed WebSocket outcomes, plugin checklists, typed permission payloads, subscription cleanup and mobile layouts in light/dark themes. Python platform tests exercise real Home Assistant entry setup, entity/device registration, response-capable services, live metrics and unloading; network responses are simulated.
+
+### Overview, tasks and configuration
+
+Use `custom:bsm-overview-card` for fleet controls. `layout: cards` is the default;
+`layout: table` provides a compact table. An optional `entities` list restricts the
+servers shown. Start remains available for installed and updated servers. More
+Actions provides restart, backup and native details for configuration resources.
+
+```yaml
+type: grid
+columns: 1
+square: false
+cards:
+  - type: custom:bsm-overview-card
+    layout: cards
+  - type: custom:bsm-tasks-card
+    entity: sensor.my_manager_bsm_version
+  - type: custom:bsm-health-card
+    entity: sensor.my_manager_bsm_version
+```
+
+The tasks card loads tasks on selection, receives live updates and polls every five
+seconds while mounted. Completed outcomes remain visible when viewed. Filters show
+active, completed, failed or cancelled tasks. Results and nested error details use
+structured layouts with a raw-response disclosure. The backend exposes no percentage
+or task timestamps; the card displays its actual status and message.
+
+Use `custom:bsm-settings-card` with `scope: application` and a manager entity, or
+`scope: server` and a server status entity. Boolean and numeric values retain their
+JSON types. Application sections and server settings are grouped, external updates
+retain drafts, and conflicting edits block saving. Updates are sent individually;
+if one fails, earlier successful changes remain applied. Backend validation remains
+authoritative. Plugin settings additionally support declared schemas, nested objects,
+server checklists, descriptions and numeric bounds.
+
+Response-capable actions include `get_application_settings`, `get_server_settings`,
+`set_server_setting`, `discover_operations`, `call_operation`, `upload_content` and
+`export_world`. Dynamic calls use an operation ID, optional `path_params`, `query`
+and `json_data`; the SDK discovers and validates the contract using the configured
+manager credentials. `custom:bsm-api-card` exposes these operations and their request
+contracts. Binary responses are not supported by HA action responses. Content uploads require the content-uploader plugin and
+read an existing file from a Home Assistant allowed path; they do not upload a browser
+file. World export outcomes appear in the task display.
+
+Known configuration mutations refresh only the affected server resources. Reconnects,
+terminal task events and unknown plugin mutations retain full refreshes. Runtime API
+discovery also lets optional metrics, health and ban endpoints be skipped when absent.
+
+### Card runtime and native settings
+
+Cards on the same Home Assistant connection share one runtime: one pair of BSM event
+subscriptions, coalesced concurrent reads, a bounded cache of 500 revision-ordered task
+outcomes, and one fallback poll per watched manager. Subscriptions and timers stop when
+the last card releases them. Polling pauses while the browser document is hidden and
+reconciles when it becomes visible or the connection recovers. No backend credentials,
+server state or task results are written to browser storage. HA coordinators and entity
+states remain authoritative for backend resources; recorder owns metric history.
+
+Settings saves report success/failure per field, stop on the first failed update and
+retain unsaved edits for retry. Field validation errors stay attached to their fields.
+Reconnects retain drafts and detect conflicting backend changes.
+
+The overview supports `sort: name`, `status` or `players`, independent busy states for
+each server, and optional `monitor_path`/`settings_path` navigation. Paths must be local
+HA paths; `{server}` is replaced with the encoded server name. `monitor_paths` and
+`settings_paths` optionally map individual server status entity IDs to destinations.
+Without a configured destination, server titles open native entity details.
+
+Optional native configuration entities (disabled by default) expose application and
+Bedrock metric intervals, startup/shutdown/task-drain timeouts as `number` entities and
+server update channels as `select` entities. The channel selector includes LATEST,
+PREVIEW and any currently configured exact version; the existing text entity remains
+available for arbitrary exact versions. Enable these entities on the manager/server
+device to use them in native dashboards and automations. Writes are confirmed through
+coordinator refreshes rather than optimistic state.
+
+Resource metadata preserves manager/server identity during outages and distinguishes
+`current`, `stale`, `forbidden`, `unsupported`, `unavailable` and `unknown` data. `bsm_updated_at` is
+the last locally received successful resource update; it is not a backend task timestamp.
+Cards label retained stale data and unsupported resources. Service translations cover
+the declared actions and current payload fields.
+
+## Permissions and runtime recovery
+
+Server actions enforce the calling Home Assistant user's read/control permissions on
+the selected server entities, including device and area targets. Manager-wide actions
+(including dynamic API calls, settings and task queries) require a Home Assistant admin
+because they use the integration's shared BSM credentials. Automations without a user
+context remain supported. BSM HTTP 403 responses mark individual resources as forbidden;
+expired credentials still trigger reauthentication.
+
+Actions acknowledge API acceptance before refreshing entity data in the background.
+Multi-target actions retain successful task IDs alongside failed-target outcomes.
+Task results remain visible after completion, with a maximum of 500 cached task records
+per connection and bounded backend revision history. Unloading an entry cancels its
+pending requests and refreshes before closing the transport.
+
+After a connection changes during a request, cards release pending controls and explain
+that the outcome needs checking before retrying. Accepted tasks resume tracking rather
+than being submitted again. If Home Assistant denies live event subscriptions, cards
+show a notice and retain task polling and entity updates. Manager selectors work even
+when the application version sensor was previously disabled. Content sources are limited
+to the selected server's manager. Diagnostics redact nested and flattened JWT secrets.
+
+### Health and diagnostic entity defaults
+
+New installations expose API connectivity, WebSocket connectivity, and one application health problem entity. The health entity includes all dependency checks, failed-check names, lifecycle, and check time as attributes. The health card displays these attributes directly. Old individual check entities and separate lifecycle/check-time sensors are removed from the registry; automations should use the consolidated health entity and its attributes.
+
+Application CPU, memory, background tasks and uptime, plus system CPU and memory usage, are enabled by default. Asyncio/thread counts, loop lag, memory totals, disk/network rates, and the metrics sample timestamp are opt-in diagnostics. Numeric sensors remain separate for recorder statistics and graphs. Existing enabled/disabled selections are preserved. Freshness timestamps and diagnostic errors are visible in entity attributes but excluded from recorder history.
+
+The current integration requires `bsm-api-client>=1.7.0b4,<2` for the backend response contracts. Release that SDK beta before installing this integration update. Tests use the reviewed SDK source revision until the beta is published.
+
+
+### Current backend event and runtime contracts
+
+The integration targets the merged backend `dev` contract, including event
+catalog/activity and graceful web-runtime control. Diagnostic downloads request
+bounded, metadata-only event activity and web-runtime status on demand. These
+administrator-only reads are reported unavailable for accounts without access;
+normal coordinators keep using their existing health/state contracts. No shutdown
+request is issued by diagnostics or polling.
+
+Core-event automations retain the backend `event_id` and `correlation_id` fields.
+Plugin event actions must target declared, public custom events. The SDK's
+regenerated operation catalog also makes the new operations available through
+existing operation-ID discovery/call services. The SDK source pin used by CI must
+match the reviewed client update before the next SDK beta is published.
+
+
+### Backend support diagnostics
+
+The application health entity exposes backend `ready` separately from health and lifecycle. Home Assistant's downloadable integration diagnostics now request the backend's bounded support report on demand, alongside web-runtime and event observations. This adds subsystem health/readiness, collector and persistence metadata, retained records, and instance summaries without extra polling or recorder entities. Live OpenAPI discovery lets the integration use this endpoint before a newer SDK release is installed.
+
+Older backends, missing operations, administrator denials, and timeouts affect only their diagnostic source; available sources remain included. Error entries contain exception types rather than response text, and the integration applies its existing credential/URL/player-data redaction to the combined output. Review downloaded reports before sharing.
+
+### Entity attribute contract
+
+Identity and freshness attributes are flat. Structured settings, properties,
+plugins and collection details retain native dictionaries/lists; they are not
+JSON strings. See [entity attributes](docs/entity_attributes.md) for shapes,
+limits, Recorder exclusions and migration from flattened server settings.
+
+### Operational actions and diagnostic cards
+
+See [Operations and diagnostics](docs/operations_and_diagnostics.md) for the new
+on-demand diagnostics, logs, audit and runtime cards; declared event contracts;
+backup pruning; individual plugin reload; response compatibility; and permissions.
+All features use existing backend contracts. Optional diagnostic entities are
+disabled by default, and full diagnostic snapshots are kept out of Recorder.
+
+
+### npm Server Overview Example
+
+Add **BSM npm Server Overview** from the dashboard card picker, then choose a BSM
+integration connection in its visual editor. The card shows the selected servers
+in a responsive grid with running status, CPU, memory, and uptime. Use **Running
+only** to filter the grid; that preference is remembered separately for each Home
+Assistant account and BSM connection.
+
+```yaml
+type: custom:bsm-npm-overview-card
+title: Bedrock servers
+entry_id: YOUR_BSM_CONFIG_ENTRY_ID
+refresh_interval: 30
+```
+
+The editor fills `entry_id` for you. `refresh_interval` accepts an integer from
+10 to 3600 seconds. Refresh reads the integration's latest coordinator snapshots;
+it does not force a new BSM API poll. The existing integration polling intervals
+and WebSocket updates determine the underlying data freshness. A failed server
+snapshot appears as **Unavailable**, rather than **Stopped**. If a card refresh
+fails, the last snapshot remains visible with its read time and an error message.
+
+This card requires a **Home Assistant administrator**. It uses the integration's
+configured BSM account through authenticated Home Assistant WebSocket commands,
+and only exposes monitored servers. No BSM URL, token, password, browser-to-BSM
+connection, or CORS configuration is required in the dashboard.
+
+Resources register automatically for storage-mode dashboards. For YAML resource
+configuration, add:
+
+```yaml
+lovelace:
+  resources:
+    - url: /bsm_cards/bsm-npm-overview-card.js
+      type: module
+```
+
+#### npm package example
+
+The card is a standalone consumer of the published BSM npm packages:
+
+| Package | Use in the card |
+| --- | --- |
+| `@bedrock-server-manager/api-client` | Resolve and validate `list_servers` and `get_server_process_info`, using a Home Assistant transport adapter. |
+| `@bedrock-server-manager/runtime` | Cancel session work and discard stale responses when switching connections, accounts, or removing the card. |
+| `@bedrock-server-manager/storage` | Validate, version, and isolate the running-only preference; fall back to memory when browser storage is unavailable. |
+
+The application assets package `@bedrock-server-manager/frontend` contains a full
+web application rather than embeddable UI components, so this native Lovelace
+card uses the shared libraries directly and inherits Home Assistant theme colors.
+
+For contributors, Node.js 22.12+ is needed only when rebuilding the card:
+
+```sh
+npm ci --ignore-scripts
+npm run build
+npm run test:unit
+python -m pytest tests
+```
+
+Edit `frontend/npm-example/`, then commit the regenerated files under
+`custom_components/bedrock_server_manager/frontend/`. The build copies the
+installed npm dependency graph into local ES modules, converting JSON imports
+to JavaScript modules for browser compatibility. It preserves the upstream MIT
+license. Exact package versions are pinned in `package.json`; CI checks that the
+committed assets match the installed packages with `npm run check:build`.
+Home Assistant users install the integration normally; Node.js and external CDNs
+are not needed to run this card.

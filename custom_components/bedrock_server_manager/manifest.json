@@ -2,7 +2,9 @@
   "domain": "bedrock_server_manager",
   "name": "Bedrock Server Manager",
   "after_dependencies": [],
-  "codeowners": [ "@DMedina559" ],
+  "codeowners": [
+    "@DMedina559"
+  ],
   "config_flow": true,
   "dependencies": [
     "http",
@@ -17,7 +19,7 @@
     "bsm_api_client"
   ],
   "requirements": [
-    "bsm-api-client>=1.6.0"
+    "bsm-api-client>=1.7.0b4,<1.8"
   ],
-  "version": "0.18.0"
+  "version": "0.19.0b1"
 }
