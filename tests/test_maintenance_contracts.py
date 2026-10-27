@@ -231,3 +231,24 @@ async def test_archive_download_returns_path_without_buffering_content(hass, tmp
         "alpha", "archive", str(destination)
     )
     assert result == {"status": "success", "file_path": str(destination)}
+
+
+def test_service_targets_follow_home_assistant_entity_filter_contract():
+    """Hassfest prohibits device filters inside a service target declaration."""
+    from pathlib import Path
+
+    from homeassistant.helpers.selector import TargetSelector
+    from homeassistant.util.yaml import load_yaml_dict
+
+    services = load_yaml_dict(
+        str(
+            Path(__file__).parents[1]
+            / "custom_components/bedrock_server_manager/services.yaml"
+        )
+    )
+    for name, service in services.items():
+        target = service.get("target")
+        if target is None:
+            continue
+        assert "device" not in target, name
+        TargetSelector.CONFIG_SCHEMA(target)

@@ -582,7 +582,8 @@ get_plugin_settings:
   name: Get plugin settings
   description: Read a plugin's settings and validation schema. Supports response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     scope:
@@ -605,7 +606,8 @@ update_plugin_settings:
   name: Update plugin settings
   description: Validate and persist settings for plugins that declare a settings schema.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     scope:
@@ -634,13 +636,15 @@ list_tasks:
   name: List task outcomes
   description: Return tasks visible to the selected manager account, including results and errors.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
 get_task:
   name: Get task outcome
   description: Return a task snapshot with its status, result, error and revision.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     task_id:
@@ -653,19 +657,22 @@ update_server:
   name: Update server
   description: Check for a Bedrock update and return its task identifier when queued.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
 restart_server:
   name: Restart server
   description: Restart each selected server and return the backend outcome.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
 reload_plugins:
   name: Reload plugins
   description: Reload plugins on each targeted manager and return the backend outcome.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
 
 get_application_settings:
@@ -1067,7 +1074,8 @@ import_server_snapshot:
   description: Import server snapshot. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     file_path:
@@ -1090,7 +1098,8 @@ download_server_snapshot:
   description: Download server snapshot. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1111,7 +1120,8 @@ list_server_snapshots:
   description: List server snapshots. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1120,7 +1130,8 @@ create_server_snapshot:
   description: Create server snapshot. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     mode:
@@ -1144,7 +1155,8 @@ inspect_server_snapshot:
   description: Inspect server snapshot. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1165,7 +1177,8 @@ plan_snapshot_restore:
   description: Review component destinations and warnings. Returns a task; its completed
     result contains the token required to restore.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1191,7 +1204,8 @@ restore_server_snapshot:
   description: Restore only reviewed components using the token from a completed restore
     plan. May stop and restart the server.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1232,7 +1246,8 @@ dry_run_server_restore:
   description: Validate the selected components in isolation without changing the
     live server.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1258,7 +1273,8 @@ manage_server_snapshot:
   description: Verify, pin, copy, annotate, test recovery keys, or run a recovery
     drill. Returns a tracked task.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1299,7 +1315,8 @@ get_backup_health:
   description: Get backup health. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1308,7 +1325,8 @@ get_restore_recovery:
   description: Get restore recovery. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1317,7 +1335,8 @@ recover_server_backup:
   description: Recover server backup. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1326,7 +1345,8 @@ download_backup_recovery_report:
   description: Download backup recovery report. Uses the live backend contract and
     supports response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1335,7 +1355,8 @@ prepare_backup_copy:
   description: Prepare backup copy. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     backup_id:
@@ -1382,7 +1403,8 @@ cleanup_backup_destination:
   description: Cleanup backup destination. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     destination:
@@ -1401,7 +1423,8 @@ list_backup_keys:
   description: List backup keys. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields: {}
 
@@ -1410,7 +1433,8 @@ rotate_backup_key:
   description: Rotate backup key. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     confirm:
@@ -1424,7 +1448,8 @@ list_schedules:
   description: List schedules. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     server_name:
@@ -1438,7 +1463,8 @@ save_schedule:
   description: Save schedule. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     schedule_id:
@@ -1459,7 +1485,8 @@ delete_schedule:
   description: Delete schedule. Uses the live backend contract and supports response
     data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     schedule_id:
@@ -1473,7 +1500,8 @@ get_diagnostic_activity:
   description: Get diagnostic activity. Uses the live backend contract and supports
     response data.
   target:
-    device:
+    entity:
+      domain: sensor
       integration: bedrock_server_manager
   fields:
     limit:
