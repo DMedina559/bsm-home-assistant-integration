@@ -196,3 +196,11 @@ subsystem snapshots, reports, history and health views include the scheduler and
 timezone checks reported by BSM without hardcoding a list of subsystem names.
 Custom and plugin settings, including recovery keys, are redacted from integration
 diagnostic exports.
+
+Scheduler controls use the `control_schedule` action with `schedule_id`, `action`
+(`run_now`, `pause`, `resume`, `retry`) and optional `revision` from the listing.
+The card confirms immediate runs and retries, refreshes after controls, shows
+pending attempts separately from calendar occurrences, and protects unsaved forms
+when switching entries. New schedules start paused. Leave timezone blank to inherit
+the BSM application timezone; existing schedules retain their stored timezone.
+Run acknowledgement is not completion: inspect recent runs for the outcome.

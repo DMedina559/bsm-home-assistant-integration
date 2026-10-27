@@ -1137,6 +1137,21 @@
           "name": "Source"
         }
       }
+    },
+    "control_schedule": {
+      "name": "Control schedule",
+      "description": "Queue a run or retry, or pause/resume a schedule. Immediate work uses the existing run history; an optional revision rejects stale controls.",
+      "fields": {
+        "schedule_id": {
+          "name": "Schedule ID"
+        },
+        "action": {
+          "name": "Action"
+        },
+        "revision": {
+          "name": "Revision"
+        }
+      }
     }
   }
 }

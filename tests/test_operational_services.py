@@ -292,11 +292,14 @@ async def test_optional_diagnostics_fetch_only_for_enabled_consumers_and_store_s
     )
 
 
-def test_every_dedicated_operation_exists_in_sdk_contract():
+def test_dedicated_operations_are_shipped_or_explicit_discovery_extensions():
     from bsm_api_client.openapi import generated_schema, index_operations
 
     operations = index_operations(generated_schema())
-    assert {spec.operation for spec in ACTIONS.values()} <= operations.keys()
+    # Scheduler controls intentionally use live discovery until the SDK release.
+    assert {spec.operation for spec in ACTIONS.values()} <= operations.keys() | {
+        "control_schedule"
+    }
 
 
 @pytest.mark.asyncio

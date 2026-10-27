@@ -1449,3 +1449,79 @@ test("scheduler saves IANA timezone and verification settings", async ({
     options: {},
   });
 });
+
+test("scheduler inherits the application timezone when left blank", async ({
+  page,
+}) => {
+  await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
+  await page.getByLabel("Schedule ID", { exact: true }).fill("inherited-zone");
+  await page.getByLabel("Server name", { exact: true }).fill("Alpha");
+  await page
+    .getByRole("button", { name: "Save schedule", exact: true })
+    .click();
+  const request = await page.evaluate(() =>
+    window.requests.find((r) => r.service === "save_schedule"),
+  );
+  expect(request.service_data.configuration).not.toHaveProperty("timezone");
+  expect(request.service_data.configuration.enabled).toBe(false);
+});
+
+test("scheduler protects drafts and forwards control revisions", async ({
+  page,
+}) => {
+  await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
+  await page.evaluate(() => {
+    const original = window.hass.callWS;
+    window.hass.callWS = async (request) => {
+      if (request.service === "list_schedules")
+        return {
+          response: {
+            results: [
+              {
+                manager_url: "http://bsm",
+                result: {
+                  schedules: [
+                    {
+                      schedule_id: "nightly",
+                      configuration: {
+                        task: "verify",
+                        server_name: "Alpha",
+                        enabled: true,
+                        time: "03:00",
+                        timezone: "UTC",
+                        weekdays: [0, 1, 2, 3, 4, 5, 6],
+                        catch_up: true,
+                        stagger_minutes: 0,
+                        options: {},
+                      },
+                      available: true,
+                      revision: "current",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        };
+      return original(request);
+    };
+  });
+  await page
+    .getByRole("button", { name: "Refresh schedules", exact: true })
+    .click();
+  await page.getByLabel("Schedule ID", { exact: true }).fill("unsaved");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.getByLabel("Schedule ID", { exact: true })).toHaveValue(
+    "unsaved",
+  );
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const request = await page.evaluate(() =>
+    window.requests.find((r) => r.service === "control_schedule"),
+  );
+  expect(request.service_data).toEqual({
+    schedule_id: "nightly",
+    action: "pause",
+    revision: "current",
+  });
+});

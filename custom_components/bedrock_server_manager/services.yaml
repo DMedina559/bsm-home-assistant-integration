@@ -1559,3 +1559,32 @@ get_diagnostic_activity:
       required: false
       selector:
         text: {}
+
+control_schedule:
+  name: Control schedule
+  description: Queue a run or retry, or pause/resume a schedule. Immediate work uses
+    the existing run history; an optional revision rejects stale controls.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    schedule_id:
+      name: Schedule ID
+      required: true
+      selector:
+        text: {}
+    action:
+      name: Action
+      required: true
+      selector:
+        select:
+          options:
+          - run_now
+          - pause
+          - resume
+          - retry
+    revision:
+      name: Revision
+      selector:
+        text: {}
