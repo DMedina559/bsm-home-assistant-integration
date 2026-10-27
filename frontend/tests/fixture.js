@@ -23,6 +23,7 @@ await Promise.all(
     "monitor",
     "health",
     "plugin-settings",
+    "scheduler",
   ].map((name) => import(`${root}bsm-${name}-card.js`)),
 );
 const state = (id, key, role, attrs = {}, value = "0") => ({

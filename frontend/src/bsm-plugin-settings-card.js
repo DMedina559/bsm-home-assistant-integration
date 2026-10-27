@@ -21,12 +21,16 @@ class PluginSettingsCard extends BsmCard {
   static role = "manager";
   static key = "plugin_statuses";
   static properties = {
+    scope: { state: true },
+    serverName: { state: true },
     plugin: { state: true },
     schema: { state: true },
     loading: { state: true },
   };
   constructor() {
     super();
+    this.scope = "plugin";
+    this.serverName = "";
     this.plugin = "";
     this.schema = null;
     this.loading = false;
@@ -47,11 +51,48 @@ class PluginSettingsCard extends BsmCard {
     /></label>`;
   }
   selectedChanged() {
+    this.serverName = "";
     this.plugin = "";
     this.schema = null;
     this.loading = false;
   }
+  _eventUpdate(envelope) {
+    if (!this.plugin || envelope?.manager_url !== this._managerUrl) return;
+    const name = envelope.event || envelope.topic?.replace("event:", "");
+    if (
+      [
+        "after_plugin_settings_update",
+        "after_setting_update",
+        "after_set_server_setting",
+        "after_restore",
+      ].includes(name)
+    ) {
+      if (this.busy || this.loading) this._reloadPending = true;
+      else this.load(this.plugin, true);
+    }
+  }
+  scopeOptions() {
+    return {
+      scope: this.scope,
+      ...(this.scope === "server" ? { server_name: this.serverName } : {}),
+    };
+  }
+  changeScope(scope, serverName = this.serverName) {
+    if (this.draft.dirty) {
+      this.feedback = "Save or discard your edits before changing scope.";
+      return;
+    }
+    this._request = (this._request || 0) + 1;
+    this.scope = scope;
+    this.serverName = serverName;
+    this.plugin = "";
+    this.schema = null;
+    this.loading = false;
+    this.error = "";
+    this.draft.reset({});
+  }
   async load(plugin, refresh = false) {
+    if (this.scope === "server" && !this.serverName) return;
     if (this.draft.dirty && plugin !== this.plugin) {
       this.error = "Discard or save your edits before switching plugins.";
       return;
@@ -64,6 +105,7 @@ class PluginSettingsCard extends BsmCard {
     try {
       const response = await this.responseService("get_plugin_settings", {
         plugin_name: plugin,
+        ...this.scopeOptions(),
       });
       if (generation !== this._generation || request !== this._request) return;
       const manager = response.results
@@ -99,6 +141,10 @@ class PluginSettingsCard extends BsmCard {
     } finally {
       if (generation === this._generation && request === this._request)
         this.loading = false;
+      if (generation === this._generation && this._reloadPending) {
+        this._reloadPending = false;
+        this.load(this.plugin, true);
+      }
     }
   }
   syncState() {
@@ -168,7 +214,7 @@ class PluginSettingsCard extends BsmCard {
                   e.target.checked ? next.add(option) : next.delete(option);
                   this.edit(key, [...next], schema);
                 }}
-              />${option}</label
+              />${schema["x-bsm-choice-labels"]?.[option] || option}</label
             >`,
         )}
       </fieldset>`;
@@ -220,7 +266,11 @@ class PluginSettingsCard extends BsmCard {
     if (
       await this.action(
         "update_plugin_settings",
-        { plugin_name: this.plugin, settings: this.draft.value },
+        {
+          plugin_name: this.plugin,
+          settings: this.draft.value,
+          ...this.scopeOptions(),
+        },
         "Plugin settings saved.",
       )
     ) {
@@ -237,10 +287,42 @@ class PluginSettingsCard extends BsmCard {
   render() {
     const plugins = Object.entries(
       this.state?.attributes.plugins_data || {},
-    ).filter(([, plugin]) => plugin.has_settings);
+    ).filter(
+      ([, plugin]) =>
+        plugin[
+          {
+            plugin: "has_settings",
+            global: "has_global_settings",
+            server: "has_server_settings",
+          }[this.scope]
+        ],
+    );
+    const servers = [
+      ...new Set(
+        Object.values(this.hass?.states || {})
+          .filter(
+            (s) =>
+              s.attributes.bsm_manager_url ===
+                this.state?.attributes.bsm_manager_url &&
+              s.attributes.bsm_server_name,
+          )
+          .map((s) => s.attributes.bsm_server_name),
+      ),
+    ];
     return this.frame(
-      html`<div class="tabs row" role="tablist" aria-label="Plugin settings">
-          ${plugins.map(([name, plugin]) => html`<button role="tab" aria-selected=${String(name === this.plugin)} ?disabled=${this.busy || this.loading || !this.available} @click=${() => this.load(name)}>${plugin.name || name}</button>`)}
+      html`${this.selectInput(
+          "Settings scope",
+          this.scope,
+          [
+            { value: "plugin", label: "Plugin" },
+            { value: "global", label: "Global" },
+            { value: "server", label: "Server" },
+          ],
+          (v) => this.changeScope(v),
+        )}
+        ${this.scope === "server" ? this.selectInput("Server", this.serverName, [{ value: "", label: "Select server" }, ...servers], (v) => this.changeScope(this.scope, v)) : ""}
+        <div class="tabs row" role="tablist" aria-label="Plugin settings">
+          ${plugins.map(([name, plugin]) => html`<button role="tab" aria-selected=${String(name === this.plugin)} ?disabled=${this.busy || this.loading || !this.available || (this.scope === "server" && !this.serverName)} @click=${() => this.load(name)}>${plugin.name || name}</button>`)}
         </div>
         ${this.available && !plugins.length ? html`<p class="muted">No loaded plugins declare settings.</p>` : ""}${this.loading ? html`<p role="status">Loading settings…</p>` : ""}${this.editNotice()}${
           this.schema

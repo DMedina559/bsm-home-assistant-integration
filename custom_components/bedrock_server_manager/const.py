@@ -238,6 +238,7 @@ JS_MODULES.extend(
             "name": name,
         }
         for filename, name in (
+            ("bsm-scheduler-card.js", "BSM Scheduler Card"),
             ("bsm-diagnostics-card.js", "BSM Diagnostics Card"),
             ("bsm-logs-card.js", "BSM Logs Card"),
             ("bsm-audit-card.js", "BSM Audit History Card"),

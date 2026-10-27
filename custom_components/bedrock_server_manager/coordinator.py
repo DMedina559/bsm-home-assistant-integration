@@ -468,7 +468,11 @@ class ManagerDataCoordinator(BsmCoordinator):
                 "global_players": self.api.players.async_get_players(),
                 "available_worlds": self.api.content.async_get_content_worlds(),
                 "available_addons": self.api.content.async_get_content_addons(),
-                "plugins_status": self.api.plugins.async_get_plugin_statuses(),
+                "plugins_status": (
+                    self.api.discovery.call("list_plugins", authenticated=True)
+                    if hasattr(getattr(self.api, "discovery", None), "call")
+                    else self.api.plugins.async_get_plugin_statuses()
+                ),
             },
             {
                 "application_settings": "settings",

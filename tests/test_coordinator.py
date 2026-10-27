@@ -1,6 +1,7 @@
 """Current contract serialization and HTTP/WebSocket ordering regressions."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -353,3 +354,43 @@ async def test_unavailable_players_do_not_make_server_status_unavailable(hass, a
     assert coordinator.data["players_available"] is False
     assert not sensor(KEY_ONLINE_PLAYERS_COUNT).available
     assert sensor("status").available
+
+
+@pytest.mark.asyncio
+async def test_manager_preserves_new_plugin_scope_flags_via_discovery(hass, api):
+    """Avoid rejecting current plugin metadata in older installed SDK models."""
+    api.application.async_get_info = AsyncMock(
+        return_value=AppInfoResponse(status="success", info={"app_version": "4"})
+    )
+    api.players.async_get_players = AsyncMock(
+        return_value=PlayerListResponse(status="success", players=[])
+    )
+    api.content.async_get_content_worlds = AsyncMock(
+        return_value=ContentListResponse(status="success", files=[])
+    )
+    api.content.async_get_content_addons = AsyncMock(
+        return_value=ListAvailableAddonsResponse(files=[])
+    )
+    api.plugins.async_get_plugin_statuses = AsyncMock(
+        side_effect=AssertionError("Do not parse scope flags with the old model")
+    )
+    api.discovery = SimpleNamespace(
+        discover=AsyncMock(return_value={}),
+        call=AsyncMock(
+            return_value={
+                "status": "success",
+                "plugins": {
+                    "profiles": {
+                        "enabled": True,
+                        "has_global_settings": True,
+                        "has_server_settings": True,
+                    }
+                },
+            }
+        ),
+    )
+    coordinator = ManagerDataCoordinator(hass, api, 600)
+    data = await coordinator._async_update_data()
+    assert data["plugins_status"]["profiles"]["has_global_settings"] is True
+    assert data["plugins_status"]["profiles"]["has_server_settings"] is True
+    api.plugins.async_get_plugin_statuses.assert_not_awaited()

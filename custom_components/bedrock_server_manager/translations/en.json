@@ -364,6 +364,14 @@
       "fields": {
         "plugin_name": {
           "name": "Plugin name"
+        },
+        "scope": {
+          "name": "Settings scope",
+          "description": "Plugin, global, or server."
+        },
+        "server_name": {
+          "name": "Server name",
+          "description": "Required only for server scope."
         }
       }
     },
@@ -376,6 +384,14 @@
         },
         "settings": {
           "name": "Settings"
+        },
+        "scope": {
+          "name": "Settings scope",
+          "description": "Plugin, global, or server."
+        },
+        "server_name": {
+          "name": "Server name",
+          "description": "Required only for server scope."
         }
       }
     },
@@ -836,6 +852,289 @@
         "plugin_name": {
           "name": "Plugin Name",
           "description": "Plugin name"
+        }
+      }
+    },
+    "import_server_snapshot": {
+      "name": "Import server snapshot",
+      "description": "Import server snapshot. Uses the live backend contract and supports response data.",
+      "fields": {
+        "file_path": {
+          "name": "File path",
+          "description": "Absolute path on Home Assistant inside an allowed directory. Downloads require a new filename."
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        }
+      }
+    },
+    "download_server_snapshot": {
+      "name": "Download server snapshot",
+      "description": "Download server snapshot. Uses the live backend contract and supports response data.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "file_path": {
+          "name": "File path",
+          "description": "Absolute path on Home Assistant inside an allowed directory. Downloads require a new filename."
+        }
+      }
+    },
+    "list_server_snapshots": {
+      "name": "List server snapshots",
+      "description": "List server snapshots. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "create_server_snapshot": {
+      "name": "Create server snapshot",
+      "description": "Create server snapshot. Uses the live backend contract and supports response data.",
+      "fields": {
+        "mode": {
+          "name": "Mode"
+        },
+        "components": {
+          "name": "Components"
+        },
+        "encrypted": {
+          "name": "Encrypted"
+        }
+      }
+    },
+    "inspect_server_snapshot": {
+      "name": "Inspect server snapshot",
+      "description": "Inspect server snapshot. Uses the live backend contract and supports response data.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        }
+      }
+    },
+    "plan_snapshot_restore": {
+      "name": "Plan snapshot restore",
+      "description": "Review component destinations and warnings. Returns a task; its completed result contains the token required to restore.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "components": {
+          "name": "Components"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        }
+      }
+    },
+    "restore_server_snapshot": {
+      "name": "Restore server snapshot",
+      "description": "Restore only reviewed components using the token from a completed restore plan. May stop and restart the server.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "components": {
+          "name": "Components"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        },
+        "token": {
+          "name": "Token"
+        },
+        "restart": {
+          "name": "Restart"
+        },
+        "stop_running": {
+          "name": "Stop running"
+        }
+      }
+    },
+    "dry_run_server_restore": {
+      "name": "Dry run server restore",
+      "description": "Validate the selected components in isolation without changing the live server.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "components": {
+          "name": "Components"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        }
+      }
+    },
+    "manage_server_snapshot": {
+      "name": "Manage server snapshot",
+      "description": "Verify, pin, copy, annotate, test recovery keys, or run a recovery drill. Returns a tracked task.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        },
+        "action": {
+          "name": "Action"
+        },
+        "destination": {
+          "name": "Destination"
+        },
+        "label": {
+          "name": "Label"
+        },
+        "notes": {
+          "name": "Notes"
+        }
+      }
+    },
+    "get_backup_health": {
+      "name": "Get backup health",
+      "description": "Get backup health. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "get_restore_recovery": {
+      "name": "Get restore recovery",
+      "description": "Get restore recovery. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "recover_server_backup": {
+      "name": "Recover server backup",
+      "description": "Recover server backup. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "download_backup_recovery_report": {
+      "name": "Download backup recovery report",
+      "description": "Download backup recovery report. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "prepare_backup_copy": {
+      "name": "Prepare backup copy",
+      "description": "Prepare backup copy. Uses the live backend contract and supports response data.",
+      "fields": {
+        "backup_id": {
+          "name": "Backup id"
+        },
+        "recovery_key": {
+          "name": "Recovery key",
+          "description": "Only needed for an encrypted archive whose key is not stored on the BSM host."
+        },
+        "target_server": {
+          "name": "Target server"
+        },
+        "target_version": {
+          "name": "Target version"
+        },
+        "server_port": {
+          "name": "Server port"
+        },
+        "server_portv6": {
+          "name": "Server portv6"
+        }
+      }
+    },
+    "cleanup_backup_destination": {
+      "name": "Cleanup backup destination",
+      "description": "Cleanup backup destination. Uses the live backend contract and supports response data.",
+      "fields": {
+        "destination": {
+          "name": "Destination"
+        },
+        "token": {
+          "name": "Token"
+        }
+      }
+    },
+    "list_backup_keys": {
+      "name": "List backup keys",
+      "description": "List backup keys. Uses the live backend contract and supports response data.",
+      "fields": {}
+    },
+    "rotate_backup_key": {
+      "name": "Rotate backup key",
+      "description": "Rotate backup key. Uses the live backend contract and supports response data.",
+      "fields": {
+        "confirm": {
+          "name": "Confirm"
+        }
+      }
+    },
+    "list_schedules": {
+      "name": "List schedules",
+      "description": "List schedules. Uses the live backend contract and supports response data.",
+      "fields": {
+        "server_name": {
+          "name": "Server name"
+        }
+      }
+    },
+    "save_schedule": {
+      "name": "Save schedule",
+      "description": "Save schedule. Uses the live backend contract and supports response data.",
+      "fields": {
+        "schedule_id": {
+          "name": "Schedule id"
+        },
+        "configuration": {
+          "name": "Configuration",
+          "description": "Schedule fields: task, server_name, time, IANA timezone, weekdays (Monday=0), enabled, catch_up, stagger_minutes, options."
+        }
+      }
+    },
+    "delete_schedule": {
+      "name": "Delete schedule",
+      "description": "Delete schedule. Uses the live backend contract and supports response data.",
+      "fields": {
+        "schedule_id": {
+          "name": "Schedule id"
+        }
+      }
+    },
+    "get_diagnostic_activity": {
+      "name": "Get diagnostic activity",
+      "description": "Get diagnostic activity. Uses the live backend contract and supports response data.",
+      "fields": {
+        "limit": {
+          "name": "Limit"
+        },
+        "name": {
+          "name": "Name"
+        },
+        "owner": {
+          "name": "Owner"
+        },
+        "correlation_id": {
+          "name": "Correlation id"
+        },
+        "status": {
+          "name": "Status"
+        },
+        "phase": {
+          "name": "Phase"
+        },
+        "sequence_id": {
+          "name": "Sequence id"
+        },
+        "operation_id": {
+          "name": "Operation id"
+        },
+        "operation_name": {
+          "name": "Operation name"
+        },
+        "server_name": {
+          "name": "Server name"
+        },
+        "source": {
+          "name": "Source"
         }
       }
     }

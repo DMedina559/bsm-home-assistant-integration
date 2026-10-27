@@ -585,6 +585,17 @@ get_plugin_settings:
     device:
       integration: bedrock_server_manager
   fields:
+    scope:
+      name: Settings scope
+      description: Plugin-local, global, or per-server plugin settings.
+      selector:
+        select:
+          options: [plugin, global, server]
+    server_name:
+      name: Server name
+      description: Required only for server scope.
+      selector:
+        text:
     plugin_name:
       name: Plugin name
       required: true
@@ -597,6 +608,17 @@ update_plugin_settings:
     device:
       integration: bedrock_server_manager
   fields:
+    scope:
+      name: Settings scope
+      description: Plugin-local, global, or per-server plugin settings.
+      selector:
+        select:
+          options: [plugin, global, server]
+    server_name:
+      name: Server name
+      description: Required only for server scope.
+      selector:
+        text:
     plugin_name:
       name: Plugin name
       required: true
@@ -1037,5 +1059,475 @@ reload_plugin:
     plugin_name:
       name: Plugin Name
       required: true
+      selector:
+        text: {}
+
+import_server_snapshot:
+  name: Import server snapshot
+  description: Import server snapshot. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    file_path:
+      name: File path
+      required: true
+      selector:
+        text: {}
+      description: Absolute path on Home Assistant inside an allowed directory. Downloads
+        require a new filename.
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+
+download_server_snapshot:
+  name: Download server snapshot
+  description: Download server snapshot. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    file_path:
+      name: File path
+      required: true
+      selector:
+        text: {}
+      description: Absolute path on Home Assistant inside an allowed directory. Downloads
+        require a new filename.
+
+list_server_snapshots:
+  name: List server snapshots
+  description: List server snapshots. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+create_server_snapshot:
+  name: Create server snapshot
+  description: Create server snapshot. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    mode:
+      name: Mode
+      required: false
+      selector:
+        text: {}
+    components:
+      name: Components
+      required: false
+      selector:
+        object: {}
+    encrypted:
+      name: Encrypted
+      required: false
+      selector:
+        boolean: {}
+
+inspect_server_snapshot:
+  name: Inspect server snapshot
+  description: Inspect server snapshot. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+
+plan_snapshot_restore:
+  name: Plan snapshot restore
+  description: Review component destinations and warnings. Returns a task; its completed
+    result contains the token required to restore.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    components:
+      name: Components
+      required: true
+      selector:
+        object: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+
+restore_server_snapshot:
+  name: Restore server snapshot
+  description: Restore only reviewed components using the token from a completed restore
+    plan. May stop and restart the server.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    components:
+      name: Components
+      required: true
+      selector:
+        object: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+    token:
+      name: Token
+      required: true
+      selector:
+        text: {}
+    restart:
+      name: Restart
+      required: false
+      selector:
+        boolean: {}
+    stop_running:
+      name: Stop running
+      required: false
+      selector:
+        boolean: {}
+
+dry_run_server_restore:
+  name: Dry run server restore
+  description: Validate the selected components in isolation without changing the
+    live server.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    components:
+      name: Components
+      required: true
+      selector:
+        object: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+
+manage_server_snapshot:
+  name: Manage server snapshot
+  description: Verify, pin, copy, annotate, test recovery keys, or run a recovery
+    drill. Returns a tracked task.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+    action:
+      name: Action
+      required: true
+      selector:
+        text: {}
+    destination:
+      name: Destination
+      required: false
+      selector:
+        text: {}
+    label:
+      name: Label
+      required: false
+      selector:
+        text: {}
+    notes:
+      name: Notes
+      required: false
+      selector:
+        text: {}
+
+get_backup_health:
+  name: Get backup health
+  description: Get backup health. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+get_restore_recovery:
+  name: Get restore recovery
+  description: Get restore recovery. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+recover_server_backup:
+  name: Recover server backup
+  description: Recover server backup. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+download_backup_recovery_report:
+  name: Download backup recovery report
+  description: Download backup recovery report. Uses the live backend contract and
+    supports response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+prepare_backup_copy:
+  name: Prepare backup copy
+  description: Prepare backup copy. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    backup_id:
+      name: Backup id
+      required: true
+      selector:
+        text: {}
+    recovery_key:
+      name: Recovery key
+      required: false
+      selector:
+        text: {}
+      description: Only needed for an encrypted archive whose key is not stored on
+        the BSM host.
+    target_server:
+      name: Target server
+      required: true
+      selector:
+        text: {}
+    target_version:
+      name: Target version
+      required: false
+      selector:
+        text: {}
+    server_port:
+      name: Server port
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65535
+          mode: box
+    server_portv6:
+      name: Server portv6
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 65535
+          mode: box
+
+cleanup_backup_destination:
+  name: Cleanup backup destination
+  description: Cleanup backup destination. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    destination:
+      name: Destination
+      required: true
+      selector:
+        text: {}
+    token:
+      name: Token
+      required: false
+      selector:
+        text: {}
+
+list_backup_keys:
+  name: List backup keys
+  description: List backup keys. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields: {}
+
+rotate_backup_key:
+  name: Rotate backup key
+  description: Rotate backup key. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    confirm:
+      name: Confirm
+      required: true
+      selector:
+        boolean: {}
+
+list_schedules:
+  name: List schedules
+  description: List schedules. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    server_name:
+      name: Server name
+      required: false
+      selector:
+        text: {}
+
+save_schedule:
+  name: Save schedule
+  description: Save schedule. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    schedule_id:
+      name: Schedule id
+      required: true
+      selector:
+        text: {}
+    configuration:
+      name: Configuration
+      required: true
+      selector:
+        object: {}
+      description: 'Schedule fields: task, server_name, time, IANA timezone, weekdays
+        (Monday=0), enabled, catch_up, stagger_minutes, options.'
+
+delete_schedule:
+  name: Delete schedule
+  description: Delete schedule. Uses the live backend contract and supports response
+    data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    schedule_id:
+      name: Schedule id
+      required: true
+      selector:
+        text: {}
+
+get_diagnostic_activity:
+  name: Get diagnostic activity
+  description: Get diagnostic activity. Uses the live backend contract and supports
+    response data.
+  target:
+    device:
+      integration: bedrock_server_manager
+  fields:
+    limit:
+      name: Limit
+      required: false
+      selector:
+        text: {}
+    name:
+      name: Name
+      required: false
+      selector:
+        text: {}
+    owner:
+      name: Owner
+      required: false
+      selector:
+        text: {}
+    correlation_id:
+      name: Correlation id
+      required: false
+      selector:
+        text: {}
+    status:
+      name: Status
+      required: false
+      selector:
+        text: {}
+    phase:
+      name: Phase
+      required: false
+      selector:
+        text: {}
+    sequence_id:
+      name: Sequence id
+      required: false
+      selector:
+        text: {}
+    operation_id:
+      name: Operation id
+      required: false
+      selector:
+        text: {}
+    operation_name:
+      name: Operation name
+      required: false
+      selector:
+        text: {}
+    server_name:
+      name: Server name
+      required: false
+      selector:
+        text: {}
+    source:
+      name: Source
+      required: false
       selector:
         text: {}

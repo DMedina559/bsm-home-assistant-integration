@@ -1,5 +1,6 @@
 import { runtimeFor } from "./runtime.js";
 import { LitElement, html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import { taskOutcome } from "./task-outcome.js";
 import { styles } from "./styles.js";
 import {
@@ -536,7 +537,7 @@ export class BsmCard extends LitElement {
     return html`<label
       >${title}<select
         aria-label=${title}
-        .value=${String(value ?? "")}
+        .value=${live(String(value ?? ""))}
         ?disabled=${this.busy}
         @change=${(event) => change(event.target.value)}
       >
