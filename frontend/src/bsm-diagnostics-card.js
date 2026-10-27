@@ -133,6 +133,12 @@ class DiagnosticsCard extends InspectorCard {
                 ${outcomeValue(this.comparison)}`
             : ""
         }
+        <h3>Global activity</h3>
+        <p class="muted">
+          Events across all operations and servers. Use a correlation ID below
+          to inspect one chain.
+        </p>
+        ${this.readButton("Load activity", "get_diagnostic_activity", { limit: 100 })}
         <h3>Retained history</h3>
         <div class="actions">
           ${this.readButton("Load history", "get_diagnostic_history", { limit: 50, ...(this.subsystem ? { subsystem: this.subsystem } : {}) })}${this.readButton("Load runs", "get_diagnostic_runs", { limit: 20 })}${this.result?.next_cursor ? this.readButton("Next history page", "get_diagnostic_history", { limit: 50, cursor: this.result.next_cursor, ...(this.subsystem ? { subsystem: this.subsystem } : {}) }) : ""}

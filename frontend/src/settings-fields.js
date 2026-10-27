@@ -7,6 +7,8 @@ const number = (description, min = 0, max, step = 1, unit) => ({
   unit,
 });
 export const settingGroups = {
+  general: "General",
+  backups: "Backups",
   paths: "Storage locations",
   retention: "Retention",
   monitoring: "Monitoring",
@@ -30,6 +32,27 @@ export const settingGroupHelp = {
   custom: "Additional settings used by your extensions.",
 };
 const fields = {
+  "general.timezone": {
+    type: "string",
+    label: "Application timezone",
+    description:
+      "Use an IANA name, such as America/Los_Angeles. Timestamps keep their original offset; Home Assistant displays local time.",
+  },
+  "backups.mode": {
+    type: "string",
+    enum: ["world", "selected", "full"],
+    description: "Default backup contents. Full includes the server directory.",
+  },
+  "backups.components": {
+    type: "array",
+    description:
+      "Default component IDs for selected backups. World includes packs installed in the world.",
+  },
+  "backups.verify_after_create": {
+    type: "boolean",
+    description:
+      "Verify after creation. Disabled by default; use a verify schedule for periodic checks.",
+  },
   "monitoring.app_metrics_interval_sec": {
     ...number(
       "Application and system metrics sampling.",

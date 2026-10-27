@@ -3,6 +3,7 @@ Bundled license information:
 lit-html/lit-html.js:
 @lit/reactive-element/reactive-element.js:
 lit-element/lit-element.js:
+lit-html/directive.js:
   /**
    * @license
    * Copyright 2017 Google LLC
@@ -20,5 +21,13 @@ lit-html/is-server.js:
   /**
    * @license
    * Copyright 2022 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   */
+
+lit-html/directive-helpers.js:
+lit-html/directives/live.js:
+  /**
+   * @license
+   * Copyright 2020 Google LLC
    * SPDX-License-Identifier: BSD-3-Clause
    */

@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import probatio as vol
@@ -27,6 +28,8 @@ class OperationalAction:
     path: tuple[str, ...] = ()
     server: bool = False
     mutation: bool = False
+    body: bool = False
+    timeout: int | None = None
 
 
 def limit(maximum: int, default: int = 50) -> dict:
@@ -63,6 +66,24 @@ ACTIONS = {
                 "code",
                 "outcome",
                 "operation_id",
+            ),
+        },
+    ),
+    "get_diagnostic_activity": OperationalAction(
+        "get_diagnostic_activity",
+        {
+            **limit(200, 100),
+            **optional_strings(
+                "name",
+                "owner",
+                "correlation_id",
+                "status",
+                "phase",
+                "sequence_id",
+                "operation_id",
+                "operation_name",
+                "server_name",
+                "source",
             ),
         },
     ),
@@ -120,8 +141,230 @@ ACTIONS = {
 }
 
 
+# The discovered backend schema validates component choices and schedule options.
+# Do not duplicate its enums here or pin these actions to generated SDK models.
+SNAPSHOT_PATH: dict[Any, Any] = {vol.Required("backup_id"): cv.string}
+RECOVERY_KEY: dict[Any, Any] = {vol.Optional("recovery_key"): cv.string}
+SELECTION: dict[Any, Any] = {vol.Required("components"): [cv.string], **RECOVERY_KEY}
+ACTIONS.update(
+    {
+        "import_server_snapshot": OperationalAction(
+            "import_server_snapshot",
+            {
+                vol.Required("file_path"): cv.string,
+                **RECOVERY_KEY,
+            },
+            server=True,
+            mutation=True,
+            timeout=1800,
+        ),
+        "download_server_snapshot": OperationalAction(
+            "download_server_snapshot",
+            {
+                **SNAPSHOT_PATH,
+                vol.Required("file_path"): cv.string,
+            },
+            ("backup_id",),
+            server=True,
+            timeout=1800,
+        ),
+        "list_server_snapshots": OperationalAction(
+            "list_server_snapshots", {}, server=True
+        ),
+        "create_server_snapshot": OperationalAction(
+            "create_server_snapshot",
+            {
+                vol.Optional("mode"): vol.In(["world", "selected", "full"]),
+                vol.Optional("components"): [cv.string],
+                vol.Optional("encrypted"): cv.boolean,
+            },
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "inspect_server_snapshot": OperationalAction(
+            "inspect_server_snapshot",
+            {
+                **SNAPSHOT_PATH,
+                **RECOVERY_KEY,
+            },
+            ("backup_id",),
+            server=True,
+            body=True,
+        ),
+        "plan_snapshot_restore": OperationalAction(
+            "plan_snapshot_restore",
+            {
+                **SNAPSHOT_PATH,
+                **SELECTION,
+            },
+            ("backup_id",),
+            server=True,
+            body=True,
+        ),
+        "restore_server_snapshot": OperationalAction(
+            "restore_server_snapshot",
+            {
+                **SNAPSHOT_PATH,
+                **SELECTION,
+                vol.Required("token"): cv.string,
+                vol.Optional("restart"): cv.boolean,
+                vol.Optional("stop_running"): cv.boolean,
+            },
+            ("backup_id",),
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "dry_run_server_restore": OperationalAction(
+            "dry_run_server_restore",
+            {
+                **SNAPSHOT_PATH,
+                **SELECTION,
+            },
+            ("backup_id",),
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "manage_server_snapshot": OperationalAction(
+            "manage_server_snapshot",
+            {
+                **SNAPSHOT_PATH,
+                **RECOVERY_KEY,
+                vol.Required("action"): vol.In(
+                    ["verify", "pin", "unpin", "copy", "test_key", "annotate", "drill"]
+                ),
+                **optional_strings("destination", "label", "notes"),
+            },
+            ("backup_id",),
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "get_backup_health": OperationalAction("get_backup_health", {}, server=True),
+        "get_restore_recovery": OperationalAction(
+            "get_restore_recovery", {}, server=True
+        ),
+        "recover_server_backup": OperationalAction(
+            "recover_server_backup", {}, server=True, mutation=True, body=True
+        ),
+        "download_backup_recovery_report": OperationalAction(
+            "download_backup_recovery_report", {}, server=True
+        ),
+        "prepare_backup_copy": OperationalAction(
+            "prepare_backup_copy",
+            {
+                **SNAPSHOT_PATH,
+                **RECOVERY_KEY,
+                vol.Required("target_server"): cv.string,
+                vol.Optional("target_version"): cv.string,
+                vol.Required("server_port"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=65535)
+                ),
+                vol.Required("server_portv6"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=65535)
+                ),
+            },
+            ("backup_id",),
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "cleanup_backup_destination": OperationalAction(
+            "cleanup_backup_destination",
+            {
+                vol.Required("destination"): cv.string,
+                vol.Optional("token"): cv.string,
+            },
+            ("destination",),
+            server=True,
+            mutation=True,
+            body=True,
+        ),
+        "list_backup_keys": OperationalAction("list_backup_keys", {}),
+        "rotate_backup_key": OperationalAction(
+            "rotate_backup_key",
+            {
+                vol.Required("confirm"): vol.In([True]),
+            },
+            mutation=True,
+            body=True,
+        ),
+        "list_schedules": OperationalAction(
+            "list_schedules", optional_strings("server_name")
+        ),
+        "save_schedule": OperationalAction(
+            "save_schedule",
+            {
+                vol.Required("schedule_id"): cv.string,
+                vol.Required("configuration"): dict,
+            },
+            ("schedule_id",),
+            mutation=True,
+            body=True,
+        ),
+        "delete_schedule": OperationalAction(
+            "delete_schedule",
+            {
+                vol.Required("schedule_id"): cv.string,
+            },
+            ("schedule_id",),
+            mutation=True,
+        ),
+    }
+)
+
+
+async def _transfer_archive(api, spec, fields, path, server, hass):
+    """Restrict archive transfers to Home Assistant allowed paths."""
+    local_path = str(Path(fields["file_path"]).expanduser().resolve())
+    if hass is None or not hass.config.is_allowed_path(local_path):
+        raise ServiceValidationError(
+            "File must be inside a Home Assistant allowed path"
+        )
+    if spec.operation == "download_server_snapshot":
+        destination = await api.backups.async_download_to(
+            server, path["backup_id"], local_path
+        )
+        return {"status": "success", "file_path": str(destination)}
+    stream = await hass.async_add_executor_job(open, local_path, "rb")
+    try:
+        return await api.backups.async_import(
+            server, stream, Path(local_path).name, fields.get("recovery_key")
+        )
+    finally:
+        await hass.async_add_executor_job(stream.close)
+
+
+def _request_kwargs(spec, fields, path):
+    """Keep HA-only confirmation and targeting fields out of API requests."""
+    kwargs: dict[str, Any] = {"path_params": path}
+    if spec.operation == "save_schedule":
+        kwargs["json_data"] = fields["configuration"]
+    elif spec.operation == "rotate_backup_key":
+        if fields.pop("confirm", False) is not True:
+            raise ServiceValidationError(
+                "Explicit key rotation confirmation is required"
+            )
+        kwargs["json_data"] = {}
+    elif spec.body or spec.operation == "compare_diagnostic_snapshots":
+        kwargs["json_data"] = fields
+    elif spec.operation == "shutdown_web_runtime":
+        if fields.get("confirm") is not True:
+            raise ServiceValidationError("Explicit shutdown confirmation is required")
+        kwargs["json_data"] = {}
+    elif spec.operation not in {"list_audit_logs", "delete_schedule"}:
+        kwargs["query"] = fields
+    return kwargs
+
+
 async def _execute(
-    api: Any, spec: OperationalAction, values: dict, server: str | None
+    api: Any,
+    spec: OperationalAction,
+    values: dict,
+    server: str | None,
+    hass: HomeAssistant | None = None,
 ) -> Any:
     """Validate requests through the live SDK contract, including plugin contracts."""
     operations = await api.discovery.discover()
@@ -138,15 +381,9 @@ async def _execute(
     if spec.operation == "get_log_history":
         # Log topics are derived from the authorized target, never supplied by callers.
         fields["topic"] = f"server_log:{server}" if server else "app_log"
-    kwargs: dict[str, Any] = {"path_params": path}
-    if spec.operation == "compare_diagnostic_snapshots":
-        kwargs["json_data"] = fields
-    elif spec.operation == "shutdown_web_runtime":
-        if fields.get("confirm") is not True:
-            raise ServiceValidationError("Explicit shutdown confirmation is required")
-        kwargs["json_data"] = {}
-    elif spec.operation != "list_audit_logs":
-        kwargs["query"] = fields
+    if spec.operation in {"import_server_snapshot", "download_server_snapshot"}:
+        return await _transfer_archive(api, spec, fields, path, server, hass)
+    kwargs = _request_kwargs(spec, fields, path)
     response = await api.discovery.call(spec.operation, authenticated=True, **kwargs)
     if spec.operation == "list_audit_logs":
         # The current backend has no pagination/filter parameters. Filter on demand.
@@ -173,8 +410,10 @@ async def operational_action(hass: HomeAssistant, call: ServiceCall) -> dict:
     for entry, server in sorted(targets):
         data = hass.data[DOMAIN][entry]
         try:
-            async with asyncio.timeout(180 if spec.mutation else 30):
-                response = await _execute(data["api"], spec, dict(call.data), server)
+            async with asyncio.timeout(spec.timeout or (180 if spec.mutation else 30)):
+                response = await _execute(
+                    data["api"], spec, dict(call.data), server, hass
+                )
             outcome = target_result(
                 data["manager_identifier"][1], response, server_name=server
             )

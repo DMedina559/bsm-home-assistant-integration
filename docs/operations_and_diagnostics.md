@@ -31,7 +31,7 @@ The audit backend currently returns all records. The action filters and bounds i
 response locally; it does not provide backend pagination.
 
 The properties card includes a read-only raw document viewer and server validation.
-The restore card can prune backups using configured retention rules and follows the
+The backup card can prune archives using configured retention rules and follows the
 accepted task to completion. Each plugin has its own confirmed reload action.
 
 ## Action responses
@@ -121,3 +121,78 @@ OpenAPI capabilities refresh after a backend WebSocket reconnect or version chan
 Settings revisions are resource-specific so unrelated changes do not unnecessarily
 reload an editor. Existing credential recovery, scoped refreshes and polling fallback
 remain active.
+
+## Portable backups and restores
+
+The **BSM Backups and Restore** card (`custom:bsm-restore-card`) uses the portable
+`.bsmbackup` archive API. Refresh the list on demand; an unloaded list is distinct
+from an empty list. Create a world backup, select individual components, capture
+the full server directory, or use global defaults. World backups already include
+packs installed inside the world. Component names and labels come from the live
+backend schema; there is no separate server-pack flag.
+
+Inspect an archive, select the included components, and choose **Review restore**.
+Inspection and planning run as tracked tasks. The completed review supplies the
+required token; only then does the card offer a confirmed restore. Changing the
+archive, selection, recovery key, manager, or connection invalidates that review.
+A dry run validates an isolated restore without modifying the live server.
+Verification, pin/unpin, recovery drills, pruning and restore-journal recovery use
+tracked tasks too. Verification after creation follows the global backend setting
+and is disabled by default. A recovery drill tests an isolated restore; it does not
+replace the live server.
+
+Native response actions include `list_server_snapshots`, `create_server_snapshot`,
+`inspect_server_snapshot`, `plan_snapshot_restore`, `restore_server_snapshot`,
+`dry_run_server_restore`, `manage_server_snapshot`, `get_backup_health`,
+`get_restore_recovery`, `recover_server_backup`, `prepare_backup_copy`,
+`cleanup_backup_destination`, `download_backup_recovery_report`, `list_backup_keys`
+and explicitly confirmed `rotate_backup_key`. A destination cleanup without a
+token is a preview; a reviewed token authorizes cleanup. Backup-copy preparation
+creates a stopped target; review its restore separately.
+
+`import_server_snapshot` and `download_server_snapshot` transfer archives between
+BSM and a `file_path` on the Home Assistant host inside an allowed directory.
+Downloads stream to disk and require a new filename. These paths are not browser
+uploads/downloads. Optional `recovery_key` values are only needed when BSM does not
+have the archive's key; the card keeps them in memory and clears them on target
+changes. Emergency recovery kits and decrypted archive exports remain available
+through the BSM frontend. Review and safeguard credentials before sharing files.
+The existing category backup actions remain available for existing automations.
+
+## Scheduler and timezones
+
+Add `custom:bsm-scheduler-card` for the manager. Load schedules on demand, edit
+backup/verify schedules, select weekdays, configure catch-up and staggering, and
+inspect next-run times, last errors and run history. Discovered plugin task types
+also appear in the task selector; their options remain a JSON object.
+
+Automations can call `list_schedules`, `save_schedule`, and `delete_schedule`.
+`save_schedule` accepts `schedule_id` and a `configuration` object matching the
+backend schema. Use an IANA timezone such as `America/Los_Angeles`, not `PDT`.
+The backend handles daylight saving and reports timezone database availability.
+The application timezone (`general.timezone`) and backup defaults are editable in
+the application settings card. Stored timestamps retain their offsets; the cards
+show run and archive dates in the browser's local timezone.
+
+## Scoped plugin settings and activity
+
+The plugin settings card offers **Plugin**, **Global**, and **Server** scopes.
+Only plugins declaring the corresponding model appear. Server scope also needs a
+server name. Unsaved edits block switching scopes; refreshes retain edits and flag
+conflicts. `get_plugin_settings` and `update_plugin_settings` accept optional
+`scope` (default `plugin`) and `server_name` (required only for `server`). Both the
+save and follow-up read use the same scope, so a refresh failure never replays a
+successful save. Existing plugin-local actions are unchanged.
+
+New scope fields and plugin capability flags use live API discovery, avoiding
+field loss or rejection in the installed SDK's older generated models. New
+maintenance actions likewise validate against the connected backend. Unsupported
+actions return a structured error instead of falling back to a different operation.
+
+The diagnostics card's **Load activity** action shows global events across
+operations and servers. `get_diagnostic_activity` supports name, owner, status,
+phase, server, source, operation, sequence and correlation filters. Existing
+subsystem snapshots, reports, history and health views include the scheduler and
+timezone checks reported by BSM without hardcoding a list of subsystem names.
+Custom and plugin settings, including recovery keys, are redacted from integration
+diagnostic exports.

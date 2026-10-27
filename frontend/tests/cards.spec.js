@@ -1295,3 +1295,157 @@ test("saved plugin settings show refresh warnings without sending the write agai
     ),
   ).toBe(1);
 });
+
+test("plugin scope changes keep unsaved edits and forward server context", async ({
+  page,
+}) => {
+  await mount(page, "bsm-plugin-settings-card", { entity: "sensor.manager" });
+  await page.evaluate(() =>
+    window.push("sensor.manager", {
+      plugins_data: {
+        backup: {
+          name: "Backup",
+          has_settings: true,
+          has_global_settings: true,
+          has_server_settings: true,
+        },
+      },
+    }),
+  );
+  await page.getByLabel("Settings scope").selectOption("server");
+  await page.getByLabel("Server", { exact: true }).selectOption("Alpha");
+  await page.getByRole("tab", { name: "Backup" }).click();
+  await page.getByLabel("Interval", { exact: true }).fill("7");
+  await page.getByLabel("Settings scope").selectOption("global");
+  await expect(page.getByLabel("Settings scope")).toHaveValue("server");
+  await expect(
+    page.getByText("Save or discard your edits before changing scope."),
+  ).toBeVisible();
+  // Editing a valid field clears the notice before saving.
+  await page.getByLabel("Interval", { exact: true }).fill("8");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  const request = await page.evaluate(() =>
+    window.requests.find((r) => r.service === "update_plugin_settings"),
+  );
+  expect(request.service_data.scope).toBe("server");
+  expect(request.service_data.server_name).toBe("Alpha");
+});
+
+test("snapshot backups show loading and require a completed restore review", async ({
+  page,
+}) => {
+  await mount(page, "bsm-restore-card", { entity: "sensor.backups" });
+  await expect(
+    page.getByText("No backups available.", { exact: true }),
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    const original = window.hass.callWS;
+    window.hass.callWS = async (request) => {
+      const results = (result) => ({
+        response: {
+          results: [
+            { manager_url: "http://bsm", server_name: "Alpha", result },
+          ],
+        },
+      });
+      if (request.service === "list_server_snapshots") {
+        window.requests.push(request);
+        return results({
+          backups: [
+            {
+              backup_id: "archive",
+              filename: "backup.bsmbackup",
+              created_at: "2026-10-27T01:00:00Z",
+            },
+          ],
+        });
+      }
+      if (request.service === "discover_operations")
+        return results({ operations: [] });
+      if (request.service === "plan_snapshot_restore") {
+        window.requests.push(request);
+        return results({ task_id: "plan-task", status: "accepted" });
+      }
+      return original(request);
+    };
+  });
+  await page
+    .getByRole("button", { name: "Refresh backups", exact: true })
+    .click();
+  await page.getByLabel("Backup", { exact: true }).selectOption("archive");
+  await expect(
+    page.getByRole("button", { name: "Restore reviewed components" }),
+  ).toHaveCount(0);
+  await page.evaluate(() => (window.acceptTask = true));
+  await page.getByRole("button", { name: "Inspect", exact: true }).click();
+  await page.evaluate(() =>
+    window.task({
+      status: "completed",
+      revision: 3,
+      result: {
+        backup: {
+          backup_id: "archive",
+          manifest: {
+            components: { world: "included", bsm_settings: "included" },
+          },
+        },
+      },
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Review restore", exact: true })
+    .click();
+  await page.evaluate(() =>
+    window.task({
+      status: "completed",
+      id: "plan-task",
+      revision: 4,
+      result: {
+        plan: {
+          backup_id: "archive",
+          token: "reviewed",
+          components: ["world", "bsm_settings"],
+          warnings: ["Data will be replaced"],
+        },
+      },
+    }),
+  );
+  await expect(
+    page.getByText("Data will be replaced", { exact: true }).first(),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Restore reviewed components" })
+    .click();
+  await expect(page.getByText(/Restore the reviewed components/)).toBeVisible();
+  const pending = await page.evaluate(() =>
+    window.requests.filter((r) => r.service === "restore_server_snapshot"),
+  );
+  expect(pending).toHaveLength(0);
+});
+
+test("scheduler saves IANA timezone and verification settings", async ({
+  page,
+}) => {
+  await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
+  await page.getByLabel("Schedule ID", { exact: true }).fill("verify-nightly");
+  await page.getByLabel("Task", { exact: true }).selectOption("verify");
+  await page.getByLabel("Server name", { exact: true }).fill("Alpha");
+  await page.getByLabel("Time", { exact: true }).fill("03:30");
+  await page
+    .getByLabel("Timezone", { exact: true })
+    .fill("America/Los_Angeles");
+  await page
+    .getByRole("button", { name: "Save schedule", exact: true })
+    .click();
+  const request = await page.evaluate(() =>
+    window.requests.find((r) => r.service === "save_schedule"),
+  );
+  expect(request.service_data.configuration).toMatchObject({
+    task: "verify",
+    timezone: "America/Los_Angeles",
+    time: "03:30",
+    server_name: "Alpha",
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    options: {},
+  });
+});

@@ -152,7 +152,7 @@ Entity IDs are typically `platform.server_name_entity_key` (e.g., `sensor.server
 *   **Buttons (Per Server Device):**
     *   **Restart:** Restarts the server.
     *   **Update:** Initiates server update process.
-    *   **Backup:** Triggers a full backup (`backup_type: all`).
+    *   **Backup:** Triggers a backup using global component defaults (`backup_type: all`).
     *   **Export World:** Exports the server's current world.
     *   **Prune Backups:** Prunes old backups for this server.
 *   **Buttons (Manager Device):**
@@ -487,3 +487,10 @@ license. Exact package versions are pinned in `package.json`; CI checks that the
 committed assets match the installed packages with `npm run check:build`.
 Home Assistant users install the integration normally; Node.js and external CDNs
 are not needed to run this card.
+
+### Current backend workflows
+
+The backup card now supports portable archives, component selections and reviewed
+restores. Add `custom:bsm-scheduler-card` to manage backup and verification
+schedules. Plugin settings support plugin-local, global and server scopes; the
+diagnostics card includes global activity. See the [workflow guide](docs/operations_and_diagnostics.md#portable-backups-and-restores) for actions, file paths, timezones and task outcomes.

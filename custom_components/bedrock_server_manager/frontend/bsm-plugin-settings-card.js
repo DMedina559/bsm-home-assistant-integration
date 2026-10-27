@@ -1,51 +1,53 @@
-import{a as y}from"./shared-UXCKWJE4.js";import{b as c,f,g as n,j as $,k as m}from"./shared-66JIFLDQ.js";function p(d,e){return d?.$ref?.startsWith("#/")?d.$ref.slice(2).split("/").reduce((s,t)=>s?.[t],e)||d:d?.anyOf?p(d.anyOf.find(s=>s.type!=="null")||d,e):d||{}}var b=class extends m{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.plugin="",this.schema=null,this.loading=!1}reconnected(){super.reconnected(),this.loading=!1,this.plugin&&this.available&&this.load(this.plugin,!0)}input(e,s,t,l="text"){return n`<label
-      >${e}<input
-        aria-label=${e}
-        type=${l}
-        .value=${String(s??"")}
+import{a as _}from"./shared-7NSZLO6S.js";import{b as c,f,g as n,j as m,k as v}from"./shared-3LOQBGQY.js";function p(o,t){return o?.$ref?.startsWith("#/")?o.$ref.slice(2).split("/").reduce((a,e)=>a?.[e],t)||o:o?.anyOf?p(o.anyOf.find(a=>a.type!=="null")||o,t):o||{}}var b=class extends v{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={scope:{state:!0},serverName:{state:!0},plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.scope="plugin",this.serverName="",this.plugin="",this.schema=null,this.loading=!1}reconnected(){super.reconnected(),this.loading=!1,this.plugin&&this.available&&this.load(this.plugin,!0)}input(t,a,e,s="text"){return n`<label
+      >${t}<input
+        aria-label=${t}
+        type=${s}
+        .value=${String(a??"")}
         ?disabled=${this.busy||this.loading}
-        @input=${a=>t(a.target.value)}
-    /></label>`}selectedChanged(){this.plugin="",this.schema=null,this.loading=!1}async load(e,s=!1){if(this.draft.dirty&&e!==this.plugin){this.error="Discard or save your edits before switching plugins.";return}let t=this._generation,l=this._request=(this._request||0)+1;this.plugin=e,this.loading=!0,this.error="";try{let a=await this.responseService("get_plugin_settings",{plugin_name:e});if(t!==this._generation||l!==this._request)return;let h=a.results?y(a):a.managers?.[0];if(!h)throw Error("No plugin settings were returned.");this.schema=h.settings_schema||{type:"object",properties:Object.fromEntries(Object.entries(h.settings).map(([o,r])=>[o,{title:c(o),type:Array.isArray(r)?"array":typeof r=="boolean"?"boolean":typeof r=="number"?"number":r!==null&&typeof r=="object"?"object":"string"}]))},s?this.draft.update(h.settings):this.draft.reset(h.settings),this.revision++}catch(a){t===this._generation&&l===this._request&&(this.error=a.message||String(a))}finally{t===this._generation&&l===this._request&&(this.loading=!1)}}syncState(){let e=this.state,s=e?.attributes.bsm_settings_revision;this.plugin&&this.available&&(s==null?e!==this._lastState:s!==this._lastRevision)&&!this.busy&&!this.loading&&this.load(this.plugin,!0),this._lastRevision=s,this._lastState=e}edit(e,s,t){try{let l=e.split("."),a=l.shift(),h=f(s,t);if(!l.length)this.draft.set(a,h);else{let o=structuredClone(this.draft.value[a]||{}),r=o;for(let i of l.slice(0,-1))r=r[i]||={};r[l.at(-1)]=h,this.draft.set(a,o)}this.error=""}catch(l){this.error=`${c(e)}: ${l.message}`}this.requestUpdate()}field(e,s){let t=p(s,this.schema),l=e.split(".").reduce((i,u)=>i?.[u],this.draft.value)??t.default,a=t.title||c(e),h=t.description,o=p(t.items,this.schema),r;return t.type==="object"&&t.properties?r=n`<fieldset ?disabled=${this.busy||this.loading}>
-        <legend>${a}</legend>
+        @input=${r=>e(r.target.value)}
+    /></label>`}selectedChanged(){this.serverName="",this.plugin="",this.schema=null,this.loading=!1}_eventUpdate(t){if(!this.plugin||t?.manager_url!==this._managerUrl)return;let a=t.event||t.topic?.replace("event:","");["after_plugin_settings_update","after_setting_update","after_set_server_setting","after_restore"].includes(a)&&(this.busy||this.loading?this._reloadPending=!0:this.load(this.plugin,!0))}scopeOptions(){return{scope:this.scope,...this.scope==="server"?{server_name:this.serverName}:{}}}changeScope(t,a=this.serverName){if(this.draft.dirty){this.feedback="Save or discard your edits before changing scope.";return}this._request=(this._request||0)+1,this.scope=t,this.serverName=a,this.plugin="",this.schema=null,this.loading=!1,this.error="",this.draft.reset({})}async load(t,a=!1){if(this.scope==="server"&&!this.serverName)return;if(this.draft.dirty&&t!==this.plugin){this.error="Discard or save your edits before switching plugins.";return}let e=this._generation,s=this._request=(this._request||0)+1;this.plugin=t,this.loading=!0,this.error="";try{let r=await this.responseService("get_plugin_settings",{plugin_name:t,...this.scopeOptions()});if(e!==this._generation||s!==this._request)return;let h=r.results?_(r):r.managers?.[0];if(!h)throw Error("No plugin settings were returned.");this.schema=h.settings_schema||{type:"object",properties:Object.fromEntries(Object.entries(h.settings).map(([u,l])=>[u,{title:c(u),type:Array.isArray(l)?"array":typeof l=="boolean"?"boolean":typeof l=="number"?"number":l!==null&&typeof l=="object"?"object":"string"}]))},a?this.draft.update(h.settings):this.draft.reset(h.settings),this.revision++}catch(r){e===this._generation&&s===this._request&&(this.error=r.message||String(r))}finally{e===this._generation&&s===this._request&&(this.loading=!1),e===this._generation&&this._reloadPending&&(this._reloadPending=!1,this.load(this.plugin,!0))}}syncState(){let t=this.state,a=t?.attributes.bsm_settings_revision;this.plugin&&this.available&&(a==null?t!==this._lastState:a!==this._lastRevision)&&!this.busy&&!this.loading&&this.load(this.plugin,!0),this._lastRevision=a,this._lastState=t}edit(t,a,e){try{let s=t.split("."),r=s.shift(),h=f(a,e);if(!s.length)this.draft.set(r,h);else{let u=structuredClone(this.draft.value[r]||{}),l=u;for(let i of s.slice(0,-1))l=l[i]||={};l[s.at(-1)]=h,this.draft.set(r,u)}this.error=""}catch(s){this.error=`${c(t)}: ${s.message}`}this.requestUpdate()}field(t,a){let e=p(a,this.schema),s=t.split(".").reduce((i,d)=>i?.[d],this.draft.value)??e.default,r=e.title||c(t),h=e.description,u=p(e.items,this.schema),l;return e.type==="object"&&e.properties?l=n`<fieldset ?disabled=${this.busy||this.loading}>
+        <legend>${r}</legend>
         <div class="grid">
-          ${Object.entries(t.properties).map(([i,u])=>this.field(`${e}.${i}`,u))}
+          ${Object.entries(e.properties).map(([i,d])=>this.field(`${t}.${i}`,d))}
         </div>
-      </fieldset>`:t.type==="array"&&o.enum?r=n`<fieldset ?disabled=${this.busy||this.loading}>
-        <legend>${a}</legend>
-        ${o.enum.map(i=>n`<label class="row"
+      </fieldset>`:e.type==="array"&&u.enum?l=n`<fieldset ?disabled=${this.busy||this.loading}>
+        <legend>${r}</legend>
+        ${u.enum.map(i=>n`<label class="row"
               ><input
                 style="width:auto"
                 type="checkbox"
                 aria-label=${String(i)}
-                .checked=${(l||[]).includes(i)}
-                @change=${u=>{let g=new Set(l||[]);u.target.checked?g.add(i):g.delete(i),this.edit(e,[...g],t)}}
-              />${i}</label
+                .checked=${(s||[]).includes(i)}
+                @change=${d=>{let g=new Set(s||[]);d.target.checked?g.add(i):g.delete(i),this.edit(t,[...g],e)}}
+              />${e["x-bsm-choice-labels"]?.[i]||i}</label
             >`)}
-      </fieldset>`:t.type==="boolean"?r=n`<label class="row"
+      </fieldset>`:e.type==="boolean"?l=n`<label class="row"
         ><input
           style="width:auto"
           type="checkbox"
-          aria-label=${a}
-          .checked=${!!l}
+          aria-label=${r}
+          .checked=${!!s}
           ?disabled=${this.busy||this.loading}
-          @change=${i=>this.edit(e,i.target.checked,t)}
-        />${a}</label
-      >`:t.enum?r=n`<fieldset ?disabled=${this.busy||this.loading}>
-        ${this.selectInput(a,l,t.enum.map(i=>({value:String(i),label:String(i)})),i=>this.edit(e,i,t))}
-      </fieldset>`:["object","array"].includes(t.type)?r=n`<label
-        >${a} (JSON)<textarea
-          aria-label=${a}
-          .value=${JSON.stringify(l??(t.type==="array"?[]:{}),null,2)}
+          @change=${i=>this.edit(t,i.target.checked,e)}
+        />${r}</label
+      >`:e.enum?l=n`<fieldset ?disabled=${this.busy||this.loading}>
+        ${this.selectInput(r,s,e.enum.map(i=>({value:String(i),label:String(i)})),i=>this.edit(t,i,e))}
+      </fieldset>`:["object","array"].includes(e.type)?l=n`<label
+        >${r} (JSON)<textarea
+          aria-label=${r}
+          .value=${JSON.stringify(s??(e.type==="array"?[]:{}),null,2)}
           ?disabled=${this.busy||this.loading}
-          @change=${i=>this.edit(e,i.target.value,t)}
+          @change=${i=>this.edit(t,i.target.value,e)}
         ></textarea>
-      </label>`:r=this.input(a,l,i=>this.edit(e,i,t),["number","integer"].includes(t.type)?"number":"text"),n`<div>
-      ${r}${h?n`<small>${h}</small>`:""}
-    </div>`}async save(){this.draft.conflicts.length||await this.action("update_plugin_settings",{plugin_name:this.plugin,settings:this.draft.value},"Plugin settings saved.")&&(this._lastResponse?.results?.[0]?.warnings?.some(e=>e.code==="refresh_failed")?(this.draft.reset(this.draft.value),this.requestUpdate()):await this.load(this.plugin))}render(){let e=Object.entries(this.state?.attributes.plugins_data||{}).filter(([,s])=>s.has_settings);return this.frame(n`<div class="tabs row" role="tablist" aria-label="Plugin settings">
-          ${e.map(([s,t])=>n`<button role="tab" aria-selected=${String(s===this.plugin)} ?disabled=${this.busy||this.loading||!this.available} @click=${()=>this.load(s)}>${t.name||s}</button>`)}
+      </label>`:l=this.input(r,s,i=>this.edit(t,i,e),["number","integer"].includes(e.type)?"number":"text"),n`<div>
+      ${l}${h?n`<small>${h}</small>`:""}
+    </div>`}async save(){this.draft.conflicts.length||await this.action("update_plugin_settings",{plugin_name:this.plugin,settings:this.draft.value,...this.scopeOptions()},"Plugin settings saved.")&&(this._lastResponse?.results?.[0]?.warnings?.some(t=>t.code==="refresh_failed")?(this.draft.reset(this.draft.value),this.requestUpdate()):await this.load(this.plugin))}render(){let t=Object.entries(this.state?.attributes.plugins_data||{}).filter(([,e])=>e[{plugin:"has_settings",global:"has_global_settings",server:"has_server_settings"}[this.scope]]),a=[...new Set(Object.values(this.hass?.states||{}).filter(e=>e.attributes.bsm_manager_url===this.state?.attributes.bsm_manager_url&&e.attributes.bsm_server_name).map(e=>e.attributes.bsm_server_name))];return this.frame(n`${this.selectInput("Settings scope",this.scope,[{value:"plugin",label:"Plugin"},{value:"global",label:"Global"},{value:"server",label:"Server"}],e=>this.changeScope(e))}
+        ${this.scope==="server"?this.selectInput("Server",this.serverName,[{value:"",label:"Select server"},...a],e=>this.changeScope(this.scope,e)):""}
+        <div class="tabs row" role="tablist" aria-label="Plugin settings">
+          ${t.map(([e,s])=>n`<button role="tab" aria-selected=${String(e===this.plugin)} ?disabled=${this.busy||this.loading||!this.available||this.scope==="server"&&!this.serverName} @click=${()=>this.load(e)}>${s.name||e}</button>`)}
         </div>
-        ${this.available&&!e.length?n`<p class="muted">No loaded plugins declare settings.</p>`:""}${this.loading?n`<p role="status">Loading settings…</p>`:""}${this.editNotice()}${this.schema?n`<div class="grid">
-                  ${Object.entries(this.schema.properties||{}).map(([s,t])=>this.field(s,t))}
+        ${this.available&&!t.length?n`<p class="muted">No loaded plugins declare settings.</p>`:""}${this.loading?n`<p role="status">Loading settings…</p>`:""}${this.editNotice()}${this.schema?n`<div class="grid">
+                  ${Object.entries(this.schema.properties||{}).map(([e,s])=>this.field(e,s))}
                 </div>
                 <div class="actions">
                   <button
@@ -62,4 +64,4 @@ import{a as y}from"./shared-UXCKWJE4.js";import{b as c,f,g as n,j as $,k as m}fr
                   </button>
                 </div>`:this.plugin&&!this.loading?n`<p class="muted">
                   This plugin has no editable settings schema.
-                </p>`:""}`)}};$("bsm-plugin-settings-card",b,"BSM Plugin Settings","Typed plugin settings with server checklists and backend validation.");
+                </p>`:""}`)}};m("bsm-plugin-settings-card",b,"BSM Plugin Settings","Typed plugin settings with server checklists and backend validation.");

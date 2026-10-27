@@ -225,6 +225,13 @@ class SettingsCard extends BsmCard {
       }
       this.requestUpdate();
     };
+    if (field.enum)
+      return this.selectInput(
+        field.label || label(key),
+        value,
+        field.enum,
+        edit,
+      );
     if (type === "boolean")
       return html`<label class="row"
         ><input
@@ -270,7 +277,7 @@ class SettingsCard extends BsmCard {
               <summary>${settingGroups[group] || label(group)}</summary>
               ${settingGroupHelp[group] ? html`<small>${settingGroupHelp[group]}</small>` : ""}
               <div class="grid">
-                ${fields.map(([key, value]) => html`<div>${this.field(key, value)}${this.fieldErrors?.[key] ? html`<small class="error" role="alert">${this.fieldErrors[key]}</small>` : ""}</div>`)}
+                ${fields.map(([key, value]) => html`<div>${this.field(key, value)}${settingField(key).description ? html`<small>${settingField(key).description}</small>` : ""}${this.fieldErrors?.[key] ? html`<small class="error" role="alert">${this.fieldErrors[key]}</small>` : ""}</div>`)}
               </div>
             </details>`,
         )}

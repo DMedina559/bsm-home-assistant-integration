@@ -14,6 +14,7 @@ from .configuration_services import (
     unregister_configuration_services,
 )
 from .const import DOMAIN
+from .coordinator import json_data
 from .operational_services import (
     register_operational_services,
     unregister_operational_services,
@@ -24,13 +25,60 @@ from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets
 
 GET_SETTINGS_SCHEMA = vol.Schema(
-    {vol.Required("plugin_name"): cv.string, **TARGETING_SCHEMA_FIELDS}
+    {
+        vol.Required("plugin_name"): cv.string,
+        vol.Optional("scope", default="plugin"): vol.In(["plugin", "global", "server"]),
+        vol.Optional("server_name"): cv.string,
+        **TARGETING_SCHEMA_FIELDS,
+    }
 )
 UPDATE_SETTINGS_SCHEMA = GET_SETTINGS_SCHEMA.extend({vol.Required("settings"): dict})
 
 
+async def _read_settings(api, plugin_name, options):
+    """Use discovery for scoped fields absent from the installed SDK models."""
+    if options["scope"] == "plugin":
+        return await api.plugins.async_get_plugin_settings(plugin_name)
+    return await api.discovery.call(
+        "get_plugin_settings",
+        authenticated=True,
+        path_params={"plugin_name": plugin_name},
+        query=options,
+    )
+
+
+async def _write_settings(api, plugin_name, options, settings):
+    """Forward scope explicitly rather than dropping fields in old SDK models."""
+    if options["scope"] == "plugin":
+        return await api.plugins.async_update_plugin_settings(
+            plugin_name, PluginSettingsPayload(settings=settings)
+        )
+    return await api.discovery.call(
+        "update_plugin_settings",
+        authenticated=True,
+        path_params={"plugin_name": plugin_name},
+        json_data={**options, "settings": settings},
+    )
+
+
+def _raise_failed_settings(errors, results, return_response):
+    """Preserve per-target outcomes for response calls and raise total failures otherwise."""
+    if errors and len(errors) == len(results) and not return_response:
+        if isinstance(errors[0], HomeAssistantError):
+            raise errors[0]
+        raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
+            0
+        ]
+
+
 async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
     """Read schemas or validate updates through the plugin's declared API contract."""
+    scope = call.data.get("scope", "plugin")
+    server_name = call.data.get("server_name")
+    if (scope == "server") != bool(server_name):
+        raise ServiceValidationError(
+            "Server scope requires server_name; other scopes must omit it"
+        )
     targets = await resolve_manager_targets(call, hass)
     result = []
     results = []
@@ -44,17 +92,32 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
         applied = False
         write_response = None
         try:
-            if not plugin or not plugin.get("has_settings"):
+            if not plugin or not plugin.get(
+                {
+                    "plugin": "has_settings",
+                    "global": "has_global_settings",
+                    "server": "has_server_settings",
+                }[scope]
+            ):
                 raise ServiceValidationError(
                     f"Plugin '{plugin_name}' does not declare settings"
                 )
+            api = data["api"]
+            options = {
+                "scope": scope,
+                **({"server_name": server_name} if server_name else {}),
+            }
             if call.service == "update_plugin_settings":
-                write_response = await data["api"].plugins.async_update_plugin_settings(
-                    plugin_name, PluginSettingsPayload(settings=call.data["settings"])
+                write_response = await _write_settings(
+                    api, plugin_name, options, call.data["settings"]
                 )
                 applied = True
                 refresh_after_action(data["manager_coordinator"])
-            response = await data["api"].plugins.async_get_plugin_settings(plugin_name)
+                if server_name:
+                    refresh_after_action(
+                        data.get("servers", {}).get(server_name, {}).get("coordinator")
+                    )
+            response = await _read_settings(api, plugin_name, options)
         except (APIError, ValueError, HomeAssistantError) as error:
             failure = action_error(error)
             if applied:
@@ -74,6 +137,8 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
                     {
                         "manager_url": data["manager_identifier"][1],
                         "plugin_name": plugin_name,
+                        "scope": scope,
+                        "server_name": server_name,
                         "applied": True,
                         "warnings": outcome["warnings"],
                     }
@@ -89,6 +154,8 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
                 {
                     "manager_url": data["manager_identifier"][1],
                     "plugin_name": plugin_name,
+                    "scope": scope,
+                    "server_name": server_name,
                     "error": action_error(error),
                 }
             )
@@ -98,15 +165,12 @@ async def settings_action(hass: HomeAssistant, call: ServiceCall) -> dict:
             {
                 "manager_url": data["manager_identifier"][1],
                 "plugin_name": plugin_name,
-                **response.model_dump(mode="json"),
+                "scope": scope,
+                "server_name": server_name,
+                **json_data(response),
             }
         )
-    if errors and len(errors) == len(result) and not call.return_response:
-        if isinstance(errors[0], HomeAssistantError):
-            raise errors[0]
-        raise HomeAssistantError("; ".join(str(error) for error in errors)) from errors[
-            0
-        ]
+    _raise_failed_settings(errors, result, call.return_response)
     return action_response(results, managers=result)
 
 
