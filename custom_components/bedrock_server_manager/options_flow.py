@@ -4,7 +4,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-import voluptuous as vol
+import probatio as vol
 from bsm_api_client import (
     APIError,
     AuthError,
@@ -31,6 +31,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
 )
+from .utils import device_config_entry_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,9 +75,8 @@ STEP_MANAGER_POLLING_SCHEMA = vol.Schema(
 class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Bedrock Server Manager options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize BSM options flow."""
-        self.config_entry = config_entry
         self._discovered_servers: Optional[List[str]] = None
         self._api_client_instance: Optional[BedrockServerManagerApi] = None
 
@@ -85,8 +85,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> BedrockServerManagerApi:
         """Get an API client instance, potentially with overridden data for validation."""
         if self._api_client_instance and not data_override:
-            # Consider if re-using is safe or always create new with overrides
-            pass
+            return self._api_client_instance
 
         current_data = self.config_entry.data
         effective_data = {**current_data, **(data_override or {})}
@@ -96,7 +95,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         password = effective_data[CONF_PASSWORD]  # Assumed to always exist
         verify_ssl = effective_data.get(CONF_VERIFY_SSL, True)  # Use verify_ssl
 
-        # Always create a new session for short-lived validation/option tasks
+        # Borrow HA's session; close only the SDK-owned HTTP transport.
         session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
 
         api_client = BedrockServerManagerApi(
@@ -117,12 +116,12 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             self._api_client_instance = None
 
     def _get_manager_display_name(self) -> str:
-        """Helper to get a display string for the manager (host or host:port)."""
+        """Return the configured manager URL for display."""
         return str(self.config_entry.data.get(CONF_BASE_URL, "Unknown BSM URL"))
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Manage the options menu."""
         manager_display_name = self._get_manager_display_name()
         return self.async_show_menu(
@@ -132,20 +131,22 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 "select_servers",
                 "update_server_interval",
                 "update_manager_interval",
+                "update_monitor_interval",
+                "update_event_filters",
             ],
             description_placeholders={"base_url": manager_display_name},
         )
 
     async def async_step_update_credentials(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle updating credentials."""
         errors: Dict[str, str] = {}
         description_placeholders: Optional[Dict[str, str]] = None
         manager_display_name = self._get_manager_display_name()
 
         if user_input is not None:
-            # Create a temporary data dict for validation, including existing host/port/ssl/verify_ssl
+            # Validate updated credentials with the existing base URL and TLS options.
             validation_data = {
                 CONF_BASE_URL: self.config_entry.data[CONF_BASE_URL],
                 CONF_VERIFY_SSL: self.config_entry.data.get(
@@ -228,7 +229,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_select_servers(  # noqa: C901
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle server selection."""
         errors: Dict[str, str] = {}
         description_placeholders: Optional[Dict[str, str]] = None
@@ -242,7 +243,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 api_client_for_list = await self._get_api_client()
 
                 self._discovered_servers = (
-                    await api_client_for_list.async_get_server_names()
+                    await api_client_for_list.servers.async_get_server_names()
                 )  # Returns List[str]
                 _LOGGER.debug(
                     "Fetched server names for options flow of BSM %s: %s",
@@ -307,7 +308,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 self._discovered_servers = []
             finally:
                 if api_client_for_list:  # Close client if created just for this step
-                    await api_client_for_list.close()
+                    await self._close_api_client_if_created()
 
         if (
             user_input is not None and not errors
@@ -343,7 +344,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
                 for server_name_to_remove in servers_to_disassociate:
                     server_device_identifier_value = (
-                        f"{server_name_to_remove}_{manager_url}"
+                        f"{manager_url}_{server_name_to_remove}"
                     )
                     device_id_tuple = (DOMAIN, server_device_identifier_value)
 
@@ -352,7 +353,8 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                     if (
                         device_entry
-                        and self.config_entry.entry_id in device_entry.config_entries
+                        and self.config_entry.entry_id
+                        in device_config_entry_ids(device_entry)
                     ):
                         _LOGGER.info(
                             "Disassociating device for deselected server '%s' (Device HA ID: %s) from config entry %s",
@@ -360,10 +362,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                             device_entry.id,
                             self.config_entry.entry_id,
                         )
-                        dev_reg.async_update_device(
-                            device_entry.id,
-                            remove_config_entry_id=self.config_entry.entry_id,
-                        )
+                        dev_reg.async_remove_device(device_entry.id)
                     elif device_entry:
                         _LOGGER.debug(
                             "Device for server '%s' found but not linked to this config entry.",
@@ -379,7 +378,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             # Create new options entry
             new_options = {
                 **current_options,
-                CONF_SERVER_NAMES: list(newly_selected_servers_set),
+                CONF_SERVER_NAMES: sorted(newly_selected_servers_set),
             }  # Store as list
             return self.async_create_entry(
                 title="", data=new_options
@@ -420,6 +419,11 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                 )
         description_placeholders["base_url"] = manager_display_name
 
+        if errors:
+            self._discovered_servers = (
+                None  # Retry discovery before accepting a later submission.
+            )
+
         return self.async_show_form(
             step_id="select_servers",
             data_schema=select_schema,
@@ -429,7 +433,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_update_server_interval(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle server polling interval update."""
         errors: Dict[str, str] = {}
         if user_input is not None:
@@ -443,7 +447,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                         errors[CONF_SERVER_SCAN_INTERVAL] = (
                             "invalid_server_scan_interval_range"
                         )
-                except ValueError:
+                except (ValueError, TypeError, OverflowError):
                     errors[CONF_SERVER_SCAN_INTERVAL] = (
                         "invalid_server_scan_interval_type"
                     )
@@ -477,7 +481,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_update_manager_interval(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle manager polling interval update."""
         errors: Dict[str, str] = {}
         if user_input is not None:
@@ -491,7 +495,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
                         errors[CONF_MANAGER_SCAN_INTERVAL] = (
                             "invalid_manager_scan_interval_range"
                         )
-                except ValueError:
+                except (ValueError, TypeError, OverflowError):
                     errors[CONF_MANAGER_SCAN_INTERVAL] = (
                         "invalid_manager_scan_interval_type"
                     )
@@ -530,3 +534,65 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
             self.config_entry.entry_id,
         )
         await self._close_api_client_if_created()
+
+    async def async_step_update_monitor_interval(
+        self, user_input=None
+    ) -> config_entries.ConfigFlowResult:
+        """Configure HTTP health/metrics fallback separately from live sampling."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    "monitor_scan_interval": int(user_input["monitor_scan_interval"]),
+                },
+            )
+        return self.async_show_form(
+            step_id="update_monitor_interval",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "monitor_scan_interval",
+                        default=self.config_entry.options.get(
+                            "monitor_scan_interval", 30
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600))
+                }
+            ),
+        )
+
+    async def async_step_update_event_filters(
+        self, user_input=None
+    ) -> config_entries.ConfigFlowResult:
+        """Filter HA event forwarding without filtering state reconciliation."""
+        if user_input is not None:
+            names = [
+                name.strip()
+                for name in user_input.get("event_names", "").split(",")
+                if name.strip()
+            ]
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    "forward_events": user_input["forward_events"],
+                    "event_names": list(dict.fromkeys(names)),
+                },
+            )
+        return self.async_show_form(
+            step_id="update_event_filters",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "forward_events",
+                        default=self.config_entry.options.get("forward_events", True),
+                    ): bool,
+                    vol.Optional(
+                        "event_names",
+                        default=", ".join(
+                            self.config_entry.options.get("event_names", [])
+                        ),
+                    ): str,
+                }
+            ),
+        )

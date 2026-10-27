@@ -1,0 +1,24 @@
+{
+  "name": "bsm-home-assistant-cards",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node frontend/scripts/build.mjs && node scripts/build-cards.mjs",
+    "check:build": "node frontend/scripts/build.mjs --check && node scripts/build-cards.mjs --check",
+    "test": "playwright test && npm run test:unit",
+    "format": "prettier --write frontend package.json playwright.config.js",
+    "format:check": "prettier --check frontend package.json playwright.config.js",
+    "test:unit": "node --test frontend/test/*.test.js"
+  },
+  "dependencies": {
+    "lit": "^3.3.1",
+    "@bedrock-server-manager/api-client": "0.1.0",
+    "@bedrock-server-manager/runtime": "0.1.0",
+    "@bedrock-server-manager/storage": "0.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "esbuild": "^0.25.10",
+    "prettier": "^3.6.2"
+  }
+}

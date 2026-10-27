@@ -1,49 +1,310 @@
-# custom_components/bedrock_server_manager/coordinator.py
-"""DataUpdateCoordinator for the Bedrock Server Manager integration."""
+"""Fetch typed SDK contracts and expose JSON-compatible Home Assistant state."""
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Mapping
 from datetime import timedelta
+from time import time
 from typing import Any
 
-import async_timeout  # For explicit timeout on asyncio.gather
-from bsm_api_client import (
-    APIError,
-    AuthError,
-    BedrockServerManagerApi,
-    CannotConnectError,
-    ServerNotFoundError,
-)
-from bsm_api_client.models import (
-    ActionResponse,
-    AddonListResponse,
-    AllowlistGetResponse,
-    AppInfoResponse,
-    ContentListResponse,
-    PermissionsGetResponse,
-    PlayerListResponse,
-    PluginStatusesResponse,
-    PropertiesGetResponse,
-    ServerProcessInfoResponse,
-    ServerSettingsResponse,
-
-)
+from bsm_api_client import AuthError, BedrockServerManagerApi
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import (  # Standard HA exception for auth issues
-    ConfigEntryAuthFailed,
-)
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from pydantic import BaseModel
 
 from .const import DOMAIN
+from .state import ResourceState
 
 _LOGGER = logging.getLogger(__name__)
-
-# Define a minimum sensible timeout for API calls if scan_interval is very short
-MIN_API_TIMEOUT = 180  # seconds
+MIN_API_TIMEOUT = 180
 
 
-class MinecraftBedrockCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching data from the Minecraft Server Manager API for a specific server."""
+def json_data(value: Any) -> Any:
+    """Serialize nested contracts at the HA entity and frontend boundary."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {key: json_data(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_data(item) for item in value]
+    return value
+
+
+class BsmCoordinator(DataUpdateCoordinator):
+    """Preserve good data on partial failures and guard concurrent live updates."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: BedrockServerManagerApi,
+        name: str,
+        scan_interval: int,
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
+        self.manager_device_id = (
+            hass.data.get(DOMAIN, {})
+            .get(config_entry.entry_id, {})
+            .get("manager_device_id")
+            if config_entry
+            else None
+        )
+        self.api = api
+        self.state = ResourceState()
+        self.defaults: dict[str, Any] = {}
+        self._push_generation: dict[str, int] = {}
+        self.resource_revisions: dict[str, int] = {}
+        self.unavailable_resources: set[str] = set()
+        self.unsupported_resources: set[str] = set()
+        self.forbidden_resources: set[str] = set()
+        self.resource_errors: dict[str, dict[str, Any]] = {}
+        self.resource_updated_at: dict[str, float] = {}
+        self._requested_resources: set[str] | None = None
+        self._full_refresh_pending = False
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=config_entry,
+            name=name,
+            update_interval=timedelta(seconds=scan_interval),
+        )
+
+    def invalidate(
+        self, stamp: dict[str, Any], resources: set[str] | None = None
+    ) -> bool:
+        """Discard in-flight HTTP data when an accepted mutation event arrives."""
+        accepted = self.state.invalidate(stamp)
+        if accepted:
+            for resource in resources or ():
+                self.resource_revisions[resource] = (
+                    self.resource_revisions.get(resource, 0) + 1
+                )
+            if resources is None:
+                self._requested_resources = None
+                self._full_refresh_pending = True
+            elif self.data is not None and not self._full_refresh_pending:
+                self._requested_resources = (
+                    self._requested_resources or set()
+                ) | resources
+        return accepted
+
+    def _publish_push(self, data: dict[str, Any]) -> None:
+        """Publish live data without postponing HTTP polls or cancelling retries."""
+        self.data = data
+        self.last_update_success = True
+        self.async_update_listeners()
+
+    def schedule_refresh(self) -> None:
+        """Schedule through the entry owner when available, including mutation bursts."""
+        runtime = getattr(self.api, "runtime", None)
+        if runtime is not None:
+            runtime.schedule_refresh(self)
+        else:
+            self.hass.async_create_task(self.async_request_refresh())
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Describe freshness and safe failure details for every coordinator."""
+        return {
+            "unavailable_resources": sorted(self.unavailable_resources),
+            "unsupported_resources": sorted(self.unsupported_resources),
+            "forbidden_resources": sorted(self.forbidden_resources),
+            "resource_updated_at": dict(self.resource_updated_at),
+            "resource_errors": dict(self.resource_errors),
+        }
+
+    def _record_error(self, key: str, error: Exception) -> None:
+        """Keep error types and HTTP status without retaining credentials or payloads."""
+        causes: list[str] = []
+        cause = error.__cause__
+        while cause is not None and len(causes) < 4:
+            causes.append(type(cause).__name__)
+            cause = cause.__cause__
+        self.resource_errors[key] = {
+            "type": type(error).__name__,
+            "status_code": getattr(error, "status_code", None),
+            "causes": causes,
+            "occurred_at": time(),
+        }
+        _LOGGER.debug("BSM resource %s failed: %s", key, self.resource_errors[key])
+
+    def supports(self, operation_id: str) -> bool:
+        """Use discovered capabilities when available, otherwise shipped support."""
+        if getattr(self.api, "schema", None) is None:
+            return True
+        capabilities = getattr(self.api, "capabilities", None)
+        return capabilities is None or capabilities.has(operation_id)
+
+    def resource_metadata(self, resource: str | None) -> dict[str, Any]:
+        """Describe unsupported, unavailable and retained data independently."""
+        updated = self.resource_updated_at.get(resource or "")
+        state = (
+            "forbidden"
+            if resource in self.forbidden_resources
+            else (
+                "unsupported"
+                if resource in self.unsupported_resources
+                else (
+                    "stale"
+                    if updated
+                    and (
+                        resource in self.unavailable_resources
+                        or not self.last_update_success
+                    )
+                    else (
+                        "unavailable"
+                        if resource in self.unavailable_resources
+                        or not self.last_update_success
+                        else "current" if updated else "unknown"
+                    )
+                )
+            )
+        )
+        return {
+            "bsm_resource_state": state,
+            "bsm_updated_at": updated,
+            "bsm_last_error": self.resource_errors.get(resource or ""),
+        }
+
+    async def _fetch(
+        self,
+        calls: Mapping[str, Awaitable[Any]],
+        fields: dict[str, str],
+        critical: str | None = None,
+    ) -> dict:
+        generation = self.state.generation
+        push_generation = self._push_generation.copy()
+        try:
+            async with asyncio.timeout(MIN_API_TIMEOUT):
+                results = await asyncio.gather(*calls.values(), return_exceptions=True)
+        except TimeoutError as error:
+            self.unavailable_resources.update(calls)
+            for key in calls:
+                self._record_error(key, error)
+            raise UpdateFailed("Timed out communicating with BSM") from error
+        # Expired credentials trigger reauthentication; forbidden resources do not.
+        for key, result in zip(calls, results):
+            if isinstance(result, AuthError) and result.status_code != 403:
+                self._record_error(key, result)
+                raise ConfigEntryAuthFailed(str(result)) from result
+        data = {**self.defaults, **(self.data or {})}
+        if generation != self.state.generation:
+            return data
+        successes, failures = self._merge_results(
+            data, calls, results, fields, critical, push_generation
+        )
+        if not successes:
+            if failures and not set(failures) <= self.forbidden_resources:
+                raise UpdateFailed(
+                    "No BSM data available: "
+                    + ", ".join(
+                        f"{key} ({self.resource_errors.get(key, {}).get('type', 'unknown')}, HTTP {self.resource_errors.get(key, {}).get('status_code')})"
+                        for key in failures
+                    )
+                )
+            return data
+        data.update(status="success", message="Data updated")
+        if failures:
+            _LOGGER.debug(
+                "Keeping previous %s data after partial fetch failure: %s",
+                self.name,
+                ", ".join(failures),
+            )
+        return data
+
+    def _merge_results(
+        self,
+        data: dict,
+        calls: Mapping[str, Awaitable[Any]],
+        results: list[Any],
+        fields: dict[str, str],
+        critical: str | None,
+        push_generation: dict[str, int],
+    ) -> tuple[int, list[str]]:
+        """Merge successful resources while keeping partial failures isolated."""
+        successes = 0
+        failures = []
+        for key, result in zip(calls, results):
+            if isinstance(result, Exception):
+                self._record_error(key, result)
+                if isinstance(result, AuthError) and result.status_code == 403:
+                    self.forbidden_resources.add(key)
+                    self.unavailable_resources.add(key)
+                    failures.append(key)
+                    continue
+                self.unavailable_resources.add(key)
+                if key == critical:
+                    raise UpdateFailed(str(result)) from result
+                failures.append(key)
+                continue
+            if push_generation.get(key, 0) != self._push_generation.get(key, 0):
+                continue
+            if self._apply_result(data, key, result, fields):
+                successes += 1
+        return successes, failures
+
+    def _apply_result(
+        self, data: dict, key: str, result: Any, fields: dict[str, str]
+    ) -> bool:
+        """Merge an accepted typed response into its independent resource."""
+        payload = json_data(result)
+        if key == "diagnostics":
+            sections = {
+                section.get("data", {}).get("kind"): section
+                for section in payload.get("sections", [])
+                if isinstance(section.get("data"), dict)
+            }
+            events = sections.get("events", {})
+            transport = sections.get("transport", {})
+            payload = {
+                "issue_count": (
+                    len(payload.get("summary", {}).get("findings", []))
+                    if payload.get("summary", {}).get("status") in {"ok", "degraded"}
+                    else None
+                ),
+                "event_pending_workers": (
+                    events.get("data", {}).get("activity", {}).get("pending_workers")
+                    if not events.get("stale")
+                    and events.get("status") not in {"unknown", "unavailable"}
+                    else None
+                ),
+                "delivery_failures": (
+                    transport.get("data", {}).get("failed_sends")
+                    if not transport.get("stale")
+                    and transport.get("status") not in {"unknown", "unavailable"}
+                    else None
+                ),
+            }
+        stamp = payload
+        if key == "metrics" and isinstance(payload.get("latest"), dict):
+            latest = payload["latest"]
+            if latest.get("epoch") is not None or latest.get("revision") is not None:
+                stamp = latest
+        if not self.state.accept(key, stamp):
+            return False
+        previous = data.get(key)
+        if key == "summary":
+            data.update(
+                server_status=payload["status"],
+                online_players=payload.get("players") or [],
+                player_count=payload.get("player_count") or 0,
+                players_available=payload.get("players_available", True),
+                version=payload["version"],
+            )
+        else:
+            value = payload.get(fields[key]) if fields[key] else payload
+            data[key] = value if value is not None else self.defaults.get(key)
+        if data.get(key) != previous:
+            self.resource_revisions[key] = self.resource_revisions.get(key, 0) + 1
+        self.forbidden_resources.discard(key)
+        self.resource_errors.pop(key, None)
+        self.unavailable_resources.discard(key)
+        self.resource_updated_at[key] = time()
+        return True
+
+
+class MinecraftBedrockCoordinator(BsmCoordinator):
+    """Coordinate server configuration, access control, backups and process metrics."""
 
     def __init__(
         self,
@@ -51,684 +312,272 @@ class MinecraftBedrockCoordinator(DataUpdateCoordinator):
         api_client: BedrockServerManagerApi,
         server_name: str,
         scan_interval: int,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
-        self.api = api_client
-        self.server_name = server_name
-        self._api_call_timeout = MIN_API_TIMEOUT
-
         super().__init__(
             hass,
-            _LOGGER,
-            name=f"{DOMAIN} Server Coordinator ({server_name})",
-            update_interval=timedelta(seconds=scan_interval),
-        )
-        _LOGGER.debug(
-            "Initialized MinecraftBedrockCoordinator for '%s' with update interval %ds (API timeout %ds)",
-            server_name,
+            api_client,
+            f"{DOMAIN} Server ({server_name})",
             scan_interval,
-            self._api_call_timeout,
+            config_entry,
         )
-
-    def update_process_info(self, new_process_info: dict) -> None:
-        """Update process_info directly from a websocket message to save an API call."""
-        if not self.data:
-            self.data = {}
-
-        # Update metrics directly in memory
-        self.data["process_info"] = new_process_info
-
-        # Force status message to success when we get WS updates
-        if new_process_info and new_process_info.get("pid"):
-            self.data["status"] = "success"
-            self.data["message"] = "Status updated via WebSocket"
-        elif new_process_info is None:
-            self.data["status"] = "success"
-            self.data["message"] = "Server stopped (via WebSocket)"
-
-        _LOGGER.debug(f"Updated process_info for {self.server_name} via websocket")
-        self.async_set_updated_data(self.data)
-
-    def update_from_event(self, topic: str, data: dict) -> None:
-        """Update state based on event payload directly in memory."""
-        if not self.data:
-            self.data = {}
-
-        if topic == "event:after_server_stop":
-            # Server stopped successfully
-            result = data.get("result", {})
-            if result.get("status") == "success":
-                self.data["process_info"] = None
-                self.data["status"] = "success"
-                self.data["message"] = "Server stopped (via WebSocket event)"
-
-        elif topic == "event:after_server_start":
-            # Server started successfully
-            result = data.get("result", {})
-            if result.get("status") == "success":
-                # We don't have the full process info here yet, but we know it's on
-                # We can mock a process_info so that the switch toggles to "on" immediately
-                # The resource monitor update will soon follow to populate full stats
-                if not self.data.get("process_info"):
-                    self.data["process_info"] = {
-                        "pid": "started",
-                        "memory_mb": 0.0,
-                        "cpu_percent": 0.0,
-                        "uptime": "0:00:00",
-                    }
-                self.data["status"] = "success"
-                self.data["message"] = "Server started (via WebSocket event)"
-
-        elif topic == "event:after_properties_change":
-            result = data.get("result", {})
-            if result.get("status") == "success":
-                properties_to_update = data.get("properties_to_update", {})
-                if properties_to_update:
-                    if "properties" not in self.data:
-                        self.data["properties"] = {}
-                    self.data["properties"].update(properties_to_update)
-
-        elif topic == "event:after_permission_change":
-            result = data.get("result", {})
-            if result.get("status") == "success":
-                xuid = data.get("xuid")
-                permission = data.get("permission")
-                if xuid and permission and "server_permissions" in self.data:
-                    # Update or add the permission in the list
-                    found = False
-                    for perm_obj in self.data["server_permissions"]:
-                        if perm_obj.get("xuid") == xuid:
-                            perm_obj["permission"] = permission
-                            found = True
-                            break
-                    if not found:
-                        self.data["server_permissions"].append(
-                            {"xuid": xuid, "permission": permission}
-                        )
-
-        elif topic == "event:after_allowlist_change":
-            result = data.get("result", {})
-            if result.get("status") == "success":
-                if "allowlist" not in self.data:
-                    self.data["allowlist"] = []
-
-                # Handle removals
-                if "details" in result and "removed" in result["details"]:
-                    removed_names = result["details"]["removed"]
-                    self.data["allowlist"] = [
-                        p
-                        for p in self.data["allowlist"]
-                        if p.get("name") not in removed_names
-                    ]
-
-                # Handle additions
-                if "new_players_data" in data:
-                    new_players = data["new_players_data"]
-                    for new_player in new_players:
-                        # Avoid duplicates
-                        if not any(
-                            p.get("name") == new_player.get("name")
-                            for p in self.data["allowlist"]
-                        ):
-                            self.data["allowlist"].append(new_player)
-
-        _LOGGER.debug(
-            f"Updated from event {topic} for {self.server_name} via websocket"
-        )
-        self.async_set_updated_data(self.data)
-
-    async def _async_update_data(self) -> dict:  # noqa: C901
-        _LOGGER.debug("Coordinator: Updating data for server '%s'", self.server_name)
-        coordinator_data: dict[str, Any] = {
-            "status": "error",
-            "message": "Update data collection failed",
+        self.server_name = server_name
+        self.defaults = {
             "process_info": None,
+            "server_settings": {},
             "allowlist": [],
             "properties": {},
             "server_permissions": [],
+            "server_addons": {},
             "world_backups": [],
             "allowlist_backups": [],
             "permissions_backups": [],
             "properties_backups": [],
-            "server_addons": None,
-            "server_settings": None,
             "online_players": [],
             "server_bans": [],
             "server_status": "UNKNOWN",
             "player_count": 0,
         }
 
-        try:
-            async with async_timeout.timeout(self._api_call_timeout):
-                results = await asyncio.gather(
-                    self.api.async_get_server_process_info(self.server_name),
-                    self.api.async_get_server_settings(self.server_name),
-                    self.api.async_get_server_allowlist(self.server_name),
-                    self.api.async_get_server_properties(self.server_name),
-                    self.api.async_get_server_permissions_data(self.server_name),
-                    self.api.async_list_server_backups(self.server_name, "world"),
-                    self.api.async_list_server_backups(self.server_name, "allowlist"),
-                    self.api.async_list_server_backups(self.server_name, "permissions"),
-                    self.api.async_list_server_backups(self.server_name, "properties"),
-                    self.api.async_get_server_addons(self.server_name),
-                    self.api.async_get_server_summary(self.server_name),
-                    self.api.async_get_server_bans(self.server_name),
-                    return_exceptions=True,
-                )
+    def update_process_info(self, payload: dict[str, Any]) -> None:
+        """Apply a revisioned process snapshot without inventing process values."""
+        if not self.state.accept("process_info", payload):
+            return
+        self.resource_errors.pop("process_info", None)
+        self.unavailable_resources.discard("process_info")
+        self.forbidden_resources.discard("process_info")
+        self.resource_updated_at["process_info"] = time()
+        # Prevent an HTTP poll started before this push from overwriting it.
+        for key in ("process_info", "summary"):
+            self._push_generation[key] = self._push_generation.get(key, 0) + 1
+        data = {
+            **self.defaults,
+            **(self.data or {}),
+            "process_info": payload.get("process_info"),
+            "status": "success",
+        }
+        process = data["process_info"]
+        if process and process.get("pid"):
+            data["server_status"] = "RUNNING"
+        elif data["server_status"] == "RUNNING":
+            data["server_status"] = "STOPPED"
+        self._publish_push(data)
 
-            (
-                process_info_result,
-                settings_result,
-                allowlist_result,
-                properties_result,
-                permissions_result,
-                world_backups_result,
-                allowlist_backups_result,
-                permissions_backups_result,
-                properties_backups_result,
-                server_addons_result,
-                server_summary_result,
-                server_bans_result,
-            ) = results
-
-            fetch_errors_details = []
-
-            status_info_handled_as_offline = False
-
-            # --- Process Status Info (Considered critical for the coordinator's success) ---
-            if isinstance(process_info_result, Exception):
-                if isinstance(process_info_result, APIError):
-                    msg = getattr(
-                        process_info_result, "api_message", str(process_info_result)
-                    ).lower()
-                    if (
-                        "not found or information is inaccessible" in msg
-                        and "server process" in msg
-                    ) or ("server process" in msg and "not running" in msg):
-                        _LOGGER.info(
-                            "Server '%s' status_info resulted in APIError but message indicates process not running/inaccessible: '%s'. "
-                            "Treating as server offline.",
-                            self.server_name,
-                            getattr(
-                                process_info_result,
-                                "api_message",
-                                str(process_info_result),
-                            ),
-                        )
-                        coordinator_data["process_info"] = None
-                        coordinator_data["status"] = "success"
-                        coordinator_data["message"] = getattr(
-                            process_info_result,
-                            "api_message",
-                            f"Server process '{self.server_name}' not running or info inaccessible.",
-                        )
-                        status_info_handled_as_offline = True
-                    else:
-                        _LOGGER.warning(
-                            "Unhandled APIError for status_info for '%s', passing to critical handler.",
-                            self.server_name,
-                        )
-                        self._handle_critical_exception(
-                            "status_info", process_info_result
-                        )
-                else:
-                    _LOGGER.warning(
-                        "Non-APIError exception for status_info for '%s', passing to critical handler.",
-                        self.server_name,
-                    )
-                    self._handle_critical_exception("status_info", process_info_result)
-
-            elif isinstance(process_info_result, ServerProcessInfoResponse):
-                coordinator_data["process_info"] = process_info_result.process_info
-                coordinator_data["status"] = "success"
-                coordinator_data["message"] = (
-                    process_info_result.message or "Status fetched successfully"
-                )
-                if (
-                    coordinator_data["process_info"] is None
-                    and coordinator_data["message"]
-                    and isinstance(coordinator_data["message"], str)
-                    and "not running" in coordinator_data["message"].lower()
-                ):
-                    _LOGGER.debug(
-                        "Server '%s' reported as not running by status_info (API success response).",
-                        self.server_name,
-                    )
-            elif not status_info_handled_as_offline:
-                _LOGGER.error(
-                    "Invalid or unexpected API response structure for status_info for '%s': %s",
-                    self.server_name,
-                    process_info_result,
-                )
-                raise UpdateFailed(
-                    f"Invalid response structure for critical status_info for server '{self.server_name}'"
-                )
-
-            if isinstance(settings_result, Exception):
-                fetch_errors_details.append(
-                    f"Settings: {type(settings_result).__name__} ({settings_result})"
-                )
-            elif isinstance(settings_result, ServerSettingsResponse):
-                coordinator_data["server_settings"] = settings_result.settings or {}
-                server_info = coordinator_data["server_settings"].get("server_info", {})
-                if "installed_version" in server_info:
-                    coordinator_data["version"] = server_info["installed_version"]
-                elif "installed_version" in coordinator_data["server_settings"]:
-                    coordinator_data["version"] = coordinator_data["server_settings"][
-                        "installed_version"
-                    ]
-                elif "version" in coordinator_data["server_settings"]:
-                    coordinator_data["version"] = coordinator_data["server_settings"][
-                        "version"
-                    ]
-            else:
-                fetch_errors_details.append(
-                    f"Settings: Invalid response ({settings_result})"
-                )
-
-            # --- Process Non-Critical Data Points ---
-            if isinstance(allowlist_result, Exception):
-                fetch_errors_details.append(
-                    f"Allowlist: {type(allowlist_result).__name__} ({allowlist_result})"
-                )
-            elif isinstance(allowlist_result, AllowlistGetResponse):
-                coordinator_data["allowlist"] = allowlist_result.players or []
-            else:
-                fetch_errors_details.append(
-                    f"Allowlist: Invalid response ({allowlist_result})"
-                )
-
-            if isinstance(properties_result, Exception):
-                fetch_errors_details.append(
-                    f"Properties: {type(properties_result).__name__} ({properties_result})"
-                )
-            elif isinstance(properties_result, PropertiesGetResponse):
-                coordinator_data["properties"] = properties_result.properties or {}
-            else:
-                fetch_errors_details.append(
-                    f"Properties: Invalid response ({properties_result})"
-                )
-
-            if isinstance(permissions_result, Exception):
-                fetch_errors_details.append(
-                    f"Permissions: {type(permissions_result).__name__} ({permissions_result})"
-                )
-            elif isinstance(permissions_result, PermissionsGetResponse):
-                coordinator_data["server_permissions"] = (
-                    permissions_result.permissions or []
-                )
-            else:
-                fetch_errors_details.append(
-                    f"Permissions: Invalid response ({permissions_result})"
-                )
-
-            if isinstance(world_backups_result, Exception):
-                fetch_errors_details.append(
-                    f"WorldBackups: {type(world_backups_result).__name__} ({world_backups_result})"
-                )
-            elif isinstance(world_backups_result, ActionResponse):
-                coordinator_data["world_backups"] = world_backups_result.backups or []
-            else:
-                fetch_errors_details.append(
-                    f"WorldBackups: Invalid response ({world_backups_result})"
-                )
-
-            if isinstance(allowlist_backups_result, Exception):
-                fetch_errors_details.append(
-                    f"AllowlistBackups: {type(allowlist_backups_result).__name__} ({allowlist_backups_result})"
-                )
-            elif isinstance(allowlist_backups_result, ActionResponse):
-                coordinator_data["allowlist_backups"] = (
-                    allowlist_backups_result.backups or []
-                )
-            else:
-                fetch_errors_details.append(
-                    f"AllowlistBackups: Invalid response ({allowlist_backups_result})"
-                )
-
-            if isinstance(permissions_backups_result, Exception):
-                fetch_errors_details.append(
-                    f"PermissionsBackups: {type(permissions_backups_result).__name__} ({permissions_backups_result})"
-                )
-            elif isinstance(permissions_backups_result, ActionResponse):
-                coordinator_data["permissions_backups"] = (
-                    permissions_backups_result.backups or []
-                )
-            else:
-                fetch_errors_details.append(
-                    f"PermissionsBackups: Invalid response ({permissions_backups_result})"
-                )
-
-            if isinstance(properties_backups_result, Exception):
-                fetch_errors_details.append(
-                    f"PropertiesBackups: {type(properties_backups_result).__name__} ({properties_backups_result})"
-                )
-            elif isinstance(properties_backups_result, ActionResponse):
-                coordinator_data["properties_backups"] = (
-                    properties_backups_result.backups or []
-                )
-            else:
-                fetch_errors_details.append(
-                    f"PropertiesBackups: Invalid response ({properties_backups_result})"
-                )
-
-            if isinstance(server_addons_result, Exception):
-                fetch_errors_details.append(
-                    f"ServerAddons: {type(server_addons_result).__name__} ({server_addons_result})"
-                )
-            elif isinstance(server_addons_result, AddonListResponse):
-                coordinator_data["server_addons"] = server_addons_result.addons
-            else:
-                fetch_errors_details.append(
-                    f"ServerAddons: Invalid response ({server_addons_result})"
-                )
-
-            if isinstance(server_summary_result, Exception):
-                fetch_errors_details.append(
-                    f"ServerSummary: {type(server_summary_result).__name__} ({server_summary_result})"
-                )
-            elif hasattr(server_summary_result, "status"):   # It's a ServerSchemaResponse
-                coordinator_data["server_status"] = getattr(server_summary_result, "status", "UNKNOWN")
-                coordinator_data["online_players"] = getattr(server_summary_result, "players", []) or []
-                coordinator_data["player_count"] = getattr(server_summary_result, "player_count", 0)
-
-                # Update version dynamically from summary if available
-                summary_version = getattr(server_summary_result, "version", None)
-                if summary_version:
-                    coordinator_data["version"] = summary_version
-            else:
-                fetch_errors_details.append(
-                    f"ServerSummary: Invalid response ({server_summary_result})"
-                )
-
-            if isinstance(server_bans_result, Exception):
-                fetch_errors_details.append(
-                    f"ServerBans: {type(server_bans_result).__name__} ({server_bans_result})"
-                )
-            elif isinstance(server_bans_result, dict):
-                if "bans" in server_bans_result:
-                    coordinator_data["server_bans"] = server_bans_result["bans"] or []
-                elif "players" in server_bans_result:
-                    coordinator_data["server_bans"] = (
-                        server_bans_result["players"] or []
-                    )
-                else:
-                    fetch_errors_details.append(
-                        f"ServerBans: Invalid response format ({server_bans_result})"
-                    )
-            elif hasattr(server_bans_result, "players"):
-                coordinator_data["server_bans"] = server_bans_result.players or []
-            elif getattr(server_bans_result, "bans", None) is not None:
-                coordinator_data["server_bans"] = server_bans_result.bans or []
-            elif isinstance(server_bans_result, list):
-                coordinator_data["server_bans"] = server_bans_result
-            else:
-                fetch_errors_details.append(
-                    f"ServerBans: Invalid response ({server_bans_result})"
-                )
-
-            if fetch_errors_details:
-                _LOGGER.warning(
-                    "Partial data fetch failure for server '%s': %s",
-                    self.server_name,
-                    "; ".join(fetch_errors_details),
-                )
-                if coordinator_data["status"] == "success":
-                    coordinator_data[
-                        "message"
-                    ] += f". Partial failures on other items: {len(fetch_errors_details)}."
-                else:
-                    coordinator_data["status"] = "partial_error"
-                    coordinator_data["message"] = (
-                        f"Failed some non-critical data points: {'; '.join(fetch_errors_details)}"
-                    )
-
-            _LOGGER.debug(
-                "Coordinator update processed for server '%s'. Overall Status: %s, Message: %s, process_info is %s.",
-                self.server_name,
-                coordinator_data["status"],
-                coordinator_data["message"],
-                "present" if coordinator_data.get("process_info") else "None",
-            )
-            return coordinator_data
-
-        except (
-            ConfigEntryAuthFailed,
-            UpdateFailed,
-        ) as e:
-            _LOGGER.log(
-                (
-                    logging.ERROR
-                    if isinstance(e, ConfigEntryAuthFailed)
-                    else logging.WARNING
-                ),
-                "Update for server '%s' failed critically: %s",
-                self.server_name,
-                e,
-            )
-            raise
-        except asyncio.TimeoutError as err:
-            _LOGGER.warning(
-                "Timeout fetching data for server '%s': %s", self.server_name, err
-            )
-            raise UpdateFailed(
-                f"Timeout communicating with API for server {self.server_name}"
-            ) from err
-        except Exception as err:
-            _LOGGER.exception(
-                "Unexpected error fetching data for server '%s'", self.server_name
-            )
-            raise UpdateFailed(
-                f"Unexpected error updating server {self.server_name}: {err}"
-            ) from err
-
-    def _handle_critical_exception(self, data_key: str, error: Exception):
-        if isinstance(error, AuthError):
-            _LOGGER.error(
-                "Auth error fetching %s for %s: %s", data_key, self.server_name, error
-            )
-            raise ConfigEntryAuthFailed(
-                f"Auth error for {data_key}: {error.api_message or error}"
-            ) from error
-        if isinstance(error, ServerNotFoundError):
-            _LOGGER.error(
-                "Server %s not found when fetching %s: %s",
-                self.server_name,
-                data_key,
-                error,
-            )
-            raise UpdateFailed(
-                f"Server not found for {data_key}: {error.api_message or error}"
-            ) from error
-        if isinstance(error, (APIError, CannotConnectError)):
-            _LOGGER.error(
-                "API/Connection error fetching %s for %s: %s",
-                data_key,
-                self.server_name,
-                error,
-            )
-            raise UpdateFailed(
-                f"API/Connection error for {data_key}: {error.api_message or error}"
-            ) from error
-
-        _LOGGER.exception(
-            "Unexpected error fetching %s for %s", data_key, self.server_name
-        )
-        raise UpdateFailed(f"Unexpected error for {data_key}: {error}") from error
+    async def _async_update_data(self) -> dict:
+        servers, content, name = self.api.servers, self.api.content, self.server_name
+        methods = {
+            "process_info": servers.async_get_server_process_info,
+            "server_settings": servers.async_get_server_settings,
+            "allowlist": servers.async_get_server_allowlist,
+            "properties": servers.async_get_server_properties,
+            "server_permissions": servers.async_get_server_permissions_data,
+            "server_addons": content.async_get_server_addons,
+            "summary": servers.async_get_server_summary,
+            **(
+                {"server_bans": servers.async_get_server_bans}
+                if self.supports("get_server_bans")
+                else {}
+            ),
+        }
+        if not self.supports("get_server_bans"):
+            self.unsupported_resources.add("server_bans")
+        else:
+            self.unsupported_resources.discard("server_bans")
+        requested = self._requested_resources
+        self._requested_resources = None
+        self._full_refresh_pending = False
+        calls = {
+            key: method(name)
+            for key, method in methods.items()
+            if requested is None
+            or key in requested
+            or key in self.unavailable_resources
+        }
+        fields = {
+            "process_info": "process_info",
+            "server_settings": "settings",
+            "allowlist": "players",
+            "properties": "properties",
+            "server_permissions": "permissions",
+            "server_addons": "addons",
+            "server_bans": "bans",
+        }
+        for kind in ("world", "allowlist", "permissions", "properties"):
+            key = f"{kind}_backups"
+            if (
+                requested is None
+                or key in requested
+                or key in self.unavailable_resources
+            ):
+                calls[key] = content.async_list_server_backups(name, kind)
+            fields[key] = "backups"
+        return await self._fetch(calls, fields, critical="process_info")
 
 
-class ManagerDataCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching global data from the Bedrock Server Manager API."""
+class ManagerDataCoordinator(BsmCoordinator):
+    """Coordinate manager information, player lists, content and plugin statuses."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         api_client: BedrockServerManagerApi,
         scan_interval: int,
-    ):
-        self.api = api_client
-        self._api_call_timeout = max(MIN_API_TIMEOUT, scan_interval - 3)
-
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
         super().__init__(
-            hass,
-            _LOGGER,
-            name=f"{DOMAIN} Manager Data Coordinator",
-            update_interval=timedelta(seconds=scan_interval),
+            hass, api_client, f"{DOMAIN} Manager", scan_interval, config_entry
         )
-        _LOGGER.debug(
-            "Initialized ManagerDataCoordinator with update interval %ds (API timeout %ds)",
-            scan_interval,
-            self._api_call_timeout,
-        )
-
-    async def _async_update_data(self) -> dict:  # noqa: C901
-        _LOGGER.debug("Manager Coordinator: Updating global data.")
-        manager_data: dict[str, Any] = {
-            "status": "error",
-            "message": "Manager data update failed",
-            "info": None,
+        self.defaults = {
+            "application_settings": {},
+            "info": {},
             "global_players": [],
             "available_worlds": [],
             "available_addons": [],
-            "plugins_status": None,
+            "plugins_status": {},
         }
 
-        fetch_errors_details = []
-
-        try:
-            async with async_timeout.timeout(self._api_call_timeout):
-                results = await asyncio.gather(
-                    self.api.async_get_info(),
-                    self.api.async_get_players(),
-                    self.api.async_get_content_worlds(),
-                    self.api.async_get_content_addons(),
-                    self.api.async_get_plugin_statuses(),
-                    return_exceptions=True,
+    async def _async_update_data(self) -> dict:
+        discovery = getattr(self.api, "discovery", None)
+        if discovery is not None and not getattr(self, "_discovered", False):
+            try:
+                await discovery.discover(force=True)
+                self._discovered = True
+            except AuthError as error:
+                if error.status_code != 403:
+                    raise ConfigEntryAuthFailed(str(error)) from error
+            except Exception:
+                _LOGGER.debug(
+                    "Runtime API discovery unavailable; using shipped contracts"
                 )
-
-            (
-                info_result,
-                players_result,
-                worlds_result,
-                addons_result,
-                plugins_status_result,
-            ) = results
-            at_least_one_success = False
-
-            if isinstance(info_result, Exception):
-                fetch_errors_details.append(
-                    f"Info: {type(info_result).__name__} ({info_result})"
-                )
-            elif isinstance(info_result, AppInfoResponse):
-                manager_data["info"] = info_result.info
-                at_least_one_success = True
-            else:
-                fetch_errors_details.append(f"Info: Invalid response ({info_result})")
-
-            if isinstance(players_result, Exception):
-                self._handle_exception_for_manager_data(
-                    "global_players", players_result, fetch_errors_details
-                )
-            elif isinstance(players_result, PlayerListResponse):
-                manager_data["global_players"] = players_result.players or []
-                at_least_one_success = True
-            else:
-                fetch_errors_details.append(
-                    f"GlobalPlayers: Invalid response ({players_result})"
-                )
-
-            if isinstance(worlds_result, Exception):
-                self._handle_exception_for_manager_data(
-                    "available_worlds", worlds_result, fetch_errors_details
-                )
-            elif isinstance(worlds_result, ContentListResponse):
-                manager_data["available_worlds"] = worlds_result.files or []
-                at_least_one_success = True
-            else:
-                fetch_errors_details.append(
-                    f"AvailableWorlds: Invalid response ({worlds_result})"
-                )
-
-            if isinstance(addons_result, Exception):
-                self._handle_exception_for_manager_data(
-                    "available_addons", addons_result, fetch_errors_details
-                )
-            elif isinstance(addons_result, ContentListResponse):
-                manager_data["available_addons"] = addons_result.files or []
-                at_least_one_success = True
-            else:
-                fetch_errors_details.append(
-                    f"AvailableAddons: Invalid response ({addons_result})"
-                )
-
-            if isinstance(plugins_status_result, Exception):
-                self._handle_exception_for_manager_data(
-                    "plugins_status", plugins_status_result, fetch_errors_details
-                )
-            elif isinstance(plugins_status_result, PluginStatusesResponse):
-                manager_data["plugins_status"] = plugins_status_result.plugins or {}
-                at_least_one_success = True
-            else:
-                fetch_errors_details.append(
-                    f"PluginsStatus: Invalid response ({plugins_status_result})"
-                )
-
-            if at_least_one_success:
-                manager_data["status"] = "success"
-                manager_data["message"] = "Manager data fetched."
-                if fetch_errors_details:
-                    _LOGGER.warning(
-                        "Partial data fetch failure for manager data: %s",
-                        "; ".join(fetch_errors_details),
-                    )
-                    manager_data[
-                        "message"
-                    ] += f" (Partial failures: {len(fetch_errors_details)} items)"
-            else:
-                final_error_summary = (
-                    "; ".join(fetch_errors_details) or "Unknown reasons"
-                )
-                manager_data["message"] = (
-                    f"Failed to fetch any manager data: {final_error_summary}"
-                )
-                _LOGGER.error(manager_data["message"])
-                raise UpdateFailed(manager_data["message"])
-
-            _LOGGER.debug(
-                "Manager coordinator update processed. Status: %s",
-                manager_data["status"],
-            )
-            return manager_data
-
-        except ConfigEntryAuthFailed:
-            _LOGGER.error("Authentication failure during manager data update.")
-            raise
-        except UpdateFailed:
-            _LOGGER.warning("Update failed for manager data coordinator.")
-            raise
-        except asyncio.TimeoutError as err:
-            _LOGGER.warning("Timeout fetching manager data: %s", err)
-            raise UpdateFailed(
-                f"Timeout communicating with API for manager data"
-            ) from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching manager data")
-            raise UpdateFailed(
-                f"Unexpected error fetching manager data: {err}"
-            ) from err
-
-    def _handle_exception_for_manager_data(
-        self, data_key: str, error: Exception, error_list: list
-    ):
-        if isinstance(error, AuthError):
-            _LOGGER.error("Auth error fetching %s for manager: %s", data_key, error)
-            raise ConfigEntryAuthFailed(
-                f"Auth error for {data_key}: {error.api_message or error}"
-            ) from error
-
-        _LOGGER.warning(
-            "Error fetching %s for manager: %s (%s)",
-            data_key,
-            type(error).__name__,
-            error,
+        if not self.supports("get_settings"):
+            self.unsupported_resources.add("application_settings")
+        else:
+            self.unsupported_resources.discard("application_settings")
+        old_version = (self.data or {}).get("info", {}).get("app_version")
+        data = await self._fetch(
+            {
+                **(
+                    {
+                        "application_settings": self.api.application.async_get_all_settings()
+                    }
+                    if hasattr(self.api.application, "async_get_all_settings")
+                    and self.supports("get_settings")
+                    else {}
+                ),
+                "info": self.api.application.async_get_info(),
+                "global_players": self.api.players.async_get_players(),
+                "available_worlds": self.api.content.async_get_content_worlds(),
+                "available_addons": self.api.content.async_get_content_addons(),
+                "plugins_status": self.api.plugins.async_get_plugin_statuses(),
+            },
+            {
+                "application_settings": "settings",
+                "info": "info",
+                "global_players": "players",
+                "available_worlds": "files",
+                "available_addons": "files",
+                "plugins_status": "plugins",
+            },
         )
-        error_list.append(f"{data_key}: {type(error).__name__}")
+        new_version = data.get("info", {}).get("app_version")
+        if old_version and new_version and old_version != new_version:
+            self._discovered = False
+        return data
+
+
+class ApplicationMonitorCoordinator(BsmCoordinator):
+    """Live application/host observations with a bounded HTTP fallback poll."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_client: BedrockServerManagerApi,
+        scan_interval: int = 30,
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
+        super().__init__(
+            hass,
+            api_client,
+            f"{DOMAIN} Application Monitor",
+            scan_interval,
+            config_entry,
+        )
+        self.defaults = {"metrics": {}, "health": {}}
+        self.diagnostic_consumers = 0
+        self.websocket_connected = False
+        self.http_connected = False
+
+    def set_websocket_connected(self, connected: bool) -> None:
+        """Notify connection entities without changing HTTP availability."""
+        self.websocket_connected = connected
+        self.async_update_listeners()
+
+    def update_metrics(self, payload: dict[str, Any]) -> None:
+        """Store the latest live sample; history belongs in HA's recorder."""
+        if not self.state.accept("metrics", payload):
+            return
+        self._push_generation["metrics"] = self._push_generation.get("metrics", 0) + 1
+        self.resource_errors.pop("metrics", None)
+        self.forbidden_resources.discard("metrics")
+        self.unavailable_resources.discard("metrics")
+        self.resource_updated_at["metrics"] = time()
+        self._publish_push(
+            {
+                **self.defaults,
+                **(self.data or {}),
+                "metrics": payload,
+                "status": "success",
+            }
+        )
+
+    async def _async_update_data(self) -> dict:
+        for resource, operation in (
+            ("metrics", "get_application_metrics"),
+            ("health", "get_application_health"),
+        ):
+            if self.supports(operation):
+                self.unsupported_resources.discard(resource)
+            else:
+                self.unsupported_resources.add(resource)
+        if self.diagnostic_consumers and not self.supports(
+            "get_application_diagnostics"
+        ):
+            self.unsupported_resources.add("diagnostics")
+        else:
+            self.unsupported_resources.discard("diagnostics")
+        if {"metrics", "health"} <= self.unsupported_resources:
+            self.http_connected = False
+            return {**self.defaults, **(self.data or {})}
+        try:
+            data = await self._fetch(
+                {
+                    **(
+                        {
+                            "metrics": self.api.application.async_get_application_metrics()
+                        }
+                        if self.supports("get_application_metrics")
+                        else {}
+                    ),
+                    **(
+                        {"health": self.api.application.async_get_application_health()}
+                        if self.supports("get_application_health")
+                        else {}
+                    ),
+                    **(
+                        {
+                            "diagnostics": self.api.discovery.call(
+                                "get_application_diagnostics", authenticated=True
+                            )
+                        }
+                        if self.diagnostic_consumers
+                        and self.supports("get_application_diagnostics")
+                        else {}
+                    ),
+                },
+                {"metrics": "latest", "health": "", "diagnostics": ""},
+            )
+        except (UpdateFailed, ConfigEntryAuthFailed):
+            self.http_connected = False
+            raise
+        self.http_connected = True
+        return data

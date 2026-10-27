@@ -1,0 +1,8 @@
+bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@dev#subdirectory=packages/bsm-api-client
+homeassistant==2026.10.1
+pytest>=9.1.1,<10
+pytest-asyncio>=1.4,<2
+black==26.10.1
+isort==9.0.2
+flake8==7.4.1
+mypy==2.4.0

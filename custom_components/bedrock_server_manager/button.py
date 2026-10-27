@@ -5,31 +5,26 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from bsm_api_client import (
-    APIError,
-    AuthError,
     BedrockServerManagerApi,
-    CannotConnectError,
-    ServerNotFoundError,
-    ServerNotRunningError,
 )
+from bsm_api_client.models import BackupActionPayload
 from homeassistant.components.button import (
     ButtonDeviceClass,
     ButtonEntity,
     ButtonEntityDescription,
 )
-from homeassistant.components.persistent_notification import (
-    async_create as async_create_notification,
-)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .action_common import _base_api_call_handler
+from .attributes import VOLATILE_ATTRIBUTES, entity_attributes
 from .const import ATTR_INSTALLED_VERSION, CONF_BASE_URL, DOMAIN
 from .coordinator import ManagerDataCoordinator, MinecraftBedrockCoordinator
+from .reconcile import refresh_after_action
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -182,7 +177,7 @@ async def async_setup_entry(  # noqa: C901
         # Get static version for initial DeviceInfo
         installed_version_static = server_entry_data.get(ATTR_INSTALLED_VERSION)
 
-        if coordinator.last_update_success and coordinator.data is not None:
+        if coordinator is not None:
             for description in SERVER_BUTTON_DESCRIPTIONS:
                 entities_to_add.append(
                     MinecraftServerButton(
@@ -218,6 +213,8 @@ class MinecraftServerButton(
 ):
     """Representation of a button entity for a specific Minecraft server action."""
 
+    _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
 
     def __init__(
@@ -232,6 +229,9 @@ class MinecraftServerButton(
         """Initialize the server button."""
         super().__init__(coordinator)  # Initialize CoordinatorEntity
         self.entity_description = description
+        self._attr_extra_state_attributes = entity_attributes(
+            "server", description.key, manager_identifier[1], server_name=server_name
+        )
         self._server_name = (
             server_name  # Store the server name (e.g., "s1", "my_world")
         )
@@ -254,7 +254,11 @@ class MinecraftServerButton(
             self._attr_unique_id,
         )
 
-        config_entry_data = coordinator.config_entry.data
+        config_entry_data = (
+            coordinator.config_entry.data
+            if coordinator.config_entry
+            else {CONF_BASE_URL: manager_identifier[1]}
+        )
         safe_config_url = config_entry_data.get(CONF_BASE_URL)
 
         # Construct the model string
@@ -287,7 +291,11 @@ class MinecraftServerButton(
             )
             or installed_version_static
             or "Unknown",
-            via_device=manager_identifier,  # Link this server device TO the BSM manager device
+            **(
+                {"via_device_id": coordinator.manager_device_id}
+                if coordinator.manager_device_id
+                else {}
+            ),  # Link this server device TO the BSM manager device
             configuration_url=safe_config_url,  # URL to the BSM manager interface (where this server is managed)
         )
 
@@ -302,122 +310,26 @@ class MinecraftServerButton(
             and bool(self.coordinator.data)
         )
 
-    async def async_press(self) -> None:  # noqa: C901
-        """Handle the button press."""
-        action_key = self.entity_description.key
-        api: BedrockServerManagerApi = (
-            self.coordinator.api
-        )  # Get API client from coordinator
-
-        _LOGGER.info(
-            "Button '%s' pressed for server '%s' (Manager: %s). Action: %s",
-            self.entity_description.name,
-            self._server_name,
-            self._manager_host_port_id,
-            action_key,
+    async def async_press(self) -> None:
+        """Return API acknowledgement; task completion arrives through live updates."""
+        api, name = self.coordinator.api, self._server_name
+        methods = {
+            "restart_server": lambda: api.servers.async_restart_server(name),
+            "update_server": lambda: api.servers.async_update_server(name),
+            "trigger_server_backup_all": lambda: api.content.async_trigger_server_backup(
+                name, BackupActionPayload(backup_type="all")
+            ),
+            "export_server_world": lambda: api.content.async_export_server_world(name),
+            "prune_server_backups": lambda: api.content.async_prune_server_backups(
+                name
+            ),
+        }
+        await _base_api_call_handler(
+            methods[self.entity_description.key](),
+            str(self.entity_description.name or self.entity_description.key),
+            name,
         )
-
-        api_call_coro: Optional[Any] = None  # To store the coroutine for the API call
-        success_notification_message = f"Action '{self.entity_description.name}' for server '{self._server_name}' initiated successfully."
-        failure_message_prefix = f"Failed action '{self.entity_description.name}' for server '{self._server_name}'"
-
-        try:
-            if action_key == "restart_server":
-                api_call_coro = api.async_restart_server(self._server_name)
-            elif action_key == "update_server":
-                api_call_coro = api.async_update_server(self._server_name)
-                success_notification_message = (
-                    f"Update check initiated for server '{self._server_name}'."
-                )
-            elif action_key == "trigger_server_backup_all":
-                api_call_coro = api.async_trigger_server_backup(
-                    self._server_name, backup_type="all"
-                )
-                success_notification_message = (
-                    f"Full backup initiated for server '{self._server_name}'."
-                )
-            elif action_key == "export_server_world":
-                api_call_coro = api.async_export_server_world(self._server_name)
-                success_notification_message = (
-                    f"World export initiated for server '{self._server_name}'."
-                )
-            elif action_key == "prune_server_backups":
-                api_call_coro = api.async_prune_server_backups(
-                    self._server_name, keep=None
-                )  # Uses BSM default for keep
-                success_notification_message = (
-                    f"Backup pruning initiated for server '{self._server_name}'."
-                )
-            else:
-                _LOGGER.error(
-                    "Unhandled server button action key: '%s' for server '%s'",
-                    action_key,
-                    self._server_name,
-                )
-                raise HomeAssistantError(f"Unknown server button action: {action_key}")
-
-            if api_call_coro:
-                response = await api_call_coro
-                _LOGGER.debug(
-                    "API response for action '%s' on server '%s': %s",
-                    action_key,
-                    self._server_name,
-                    response,
-                )
-                _LOGGER.info(success_notification_message)
-                # Create a persistent notification for success
-                async_create_notification(
-                    self.hass,
-                    success_notification_message,
-                    title=f"BSM Server Action: {self.entity_description.name}",
-                )
-
-                # Refresh coordinator for actions that change server state or data
-                if action_key in [
-                    "restart_server",
-                    "update_server",
-                    "trigger_server_backup_all",
-                    "prune_server_backups",
-                    "export_server_world",
-                ]:
-                    await self.coordinator.async_request_refresh()
-
-        except (
-            AuthError,
-            CannotConnectError,
-            ServerNotFoundError,
-            ServerNotRunningError,
-            APIError,
-        ) as err:
-            err_msg_detail = (
-                err.api_message
-                if hasattr(err, "api_message") and err.api_message
-                else str(err)
-            )
-            full_err_msg = (
-                f"{failure_message_prefix}: {err_msg_detail} ({type(err).__name__})"
-            )
-            _LOGGER.error(full_err_msg)
-            async_create_notification(
-                self.hass,
-                full_err_msg,
-                title=f"BSM Action Failed: {self.entity_description.name}",
-                notification_id=f"bsm_action_fail_{self.unique_id}",
-            )
-            # Re-raise as HomeAssistantError to signal failure to HA UI if appropriate
-            raise HomeAssistantError(full_err_msg) from err
-        except Exception as err:  # Catch-all for truly unexpected issues
-            _LOGGER.exception(
-                "%s: Unexpected error", failure_message_prefix
-            )  # .exception logs traceback
-            full_err_msg = f"{failure_message_prefix}: An unexpected error occurred ({type(err).__name__}). Check logs."
-            async_create_notification(
-                self.hass,
-                full_err_msg,
-                title=f"BSM Action Failed: {self.entity_description.name}",
-                notification_id=f"bsm_action_fail_{self.unique_id}",
-            )
-            raise HomeAssistantError(full_err_msg) from err
+        refresh_after_action(self.coordinator)
 
 
 class MinecraftManagerButton(
@@ -425,6 +337,8 @@ class MinecraftManagerButton(
 ):  # Does not need CoordinatorEntity if not reading state from it
     """Representation of a button entity for a global BSM manager action."""
 
+    _attr_device_info: dr.DeviceInfo
+    _unrecorded_attributes = VOLATILE_ATTRIBUTES
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -440,6 +354,9 @@ class MinecraftManagerButton(
     ) -> None:
         """Initialize the manager button."""
         self.entity_description = description
+        self._attr_extra_state_attributes = entity_attributes(
+            "manager", description.key, manager_identifier[1]
+        )
         self._config_entry_id = (
             config_entry_id  # Store for retrieving API client if not passed directly
         )
@@ -464,83 +381,15 @@ class MinecraftManagerButton(
             self._attr_unique_id,
         )
 
-    async def async_press(self) -> None:  # noqa: C901
-        """Handle the button press for a manager-level action."""
-        action_key = self.entity_description.key
-        _LOGGER.info(
-            "Button '%s' pressed for BSM manager '%s'. Action: %s",
-            self.entity_description.name,
+    async def async_press(self) -> None:
+        """Use shared action errors and refresh without creating success notifications."""
+        methods = {
+            "scan_players": self._api.players.async_scan_players,
+            "reload_plugins": self._api.plugins.async_reload_plugins,
+        }
+        await _base_api_call_handler(
+            methods[self.entity_description.key](),
+            str(self.entity_description.name or self.entity_description.key),
             self._manager_host_port_id,
-            action_key,
         )
-
-        api_call_coro: Optional[Any] = None
-        success_notification_message = f"Global BSM action '{self.entity_description.name}' initiated successfully."
-        failure_message_prefix = (
-            f"Failed global BSM action '{self.entity_description.name}'"
-        )
-
-        try:
-            if action_key == "scan_players":
-                api_call_coro = self._api.async_scan_players()
-            elif action_key == "reload_plugins":
-                api_call_coro = self._api.async_reload_plugins()
-                success_notification_message = "Plugin reload initiated successfully."
-            else:
-                _LOGGER.error("Unhandled manager button action key: '%s'", action_key)
-                raise HomeAssistantError(f"Unknown manager button action: {action_key}")
-
-            if api_call_coro:
-                response = await api_call_coro
-                _LOGGER.debug(
-                    "API response for global action '%s': %s", action_key, response
-                )
-                _LOGGER.info(success_notification_message)
-                async_create_notification(
-                    self.hass,
-                    success_notification_message,
-                    title=f"BSM Manager Action: {self.entity_description.name}",
-                )
-
-                # Refresh manager coordinator if the action might have changed its data
-                if (
-                    action_key in ["scan_players", "reload_plugins"]
-                    and self._manager_coordinator
-                ):
-                    _LOGGER.debug(
-                        "Requesting refresh of ManagerDataCoordinator after action '%s'.",
-                        action_key,
-                    )
-                    await self._manager_coordinator.async_request_refresh()
-
-        except (
-            AuthError,
-            CannotConnectError,
-            APIError,
-        ) as err:  # Covers most client errors
-            err_msg_detail = (
-                err.api_message
-                if hasattr(err, "api_message") and err.api_message
-                else str(err)
-            )
-            full_err_msg = (
-                f"{failure_message_prefix}: {err_msg_detail} ({type(err).__name__})"
-            )
-            _LOGGER.error(full_err_msg)
-            async_create_notification(
-                self.hass,
-                full_err_msg,
-                title=f"BSM Action Failed: {self.entity_description.name}",
-                notification_id=f"bsm_action_fail_{self.unique_id}",
-            )
-            raise HomeAssistantError(full_err_msg) from err
-        except Exception as err:  # Catch-all
-            _LOGGER.exception("%s: Unexpected error", failure_message_prefix)
-            full_err_msg = f"{failure_message_prefix}: An unexpected error occurred ({type(err).__name__}). Check logs."
-            async_create_notification(
-                self.hass,
-                full_err_msg,
-                title=f"BSM Action Failed: {self.entity_description.name}",
-                notification_id=f"bsm_action_fail_{self.unique_id}",
-            )
-            raise HomeAssistantError(full_err_msg) from err
+        refresh_after_action(self._manager_coordinator)

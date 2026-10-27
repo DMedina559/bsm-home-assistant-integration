@@ -179,3 +179,7 @@ data
 
 
 *Zone.Identifier
+
+node_modules/
+playwright-report/
+test-results/
