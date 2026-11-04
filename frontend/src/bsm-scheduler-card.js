@@ -20,13 +20,29 @@ class SchedulerCard extends InspectorCard {
     this.configuration = {
       task: "backup",
       server_name: "",
-      enabled: true,
+      enabled: false,
       time: "03:00",
-      timezone: "UTC",
+      timezone: "",
       weekdays: [0, 1, 2, 3, 4, 5, 6],
       catch_up: true,
       stagger_minutes: 15,
     };
+    this._baseline = this.formSnapshot();
+  }
+  formSnapshot() {
+    return JSON.stringify([this.scheduleId, this.configuration, this.options]);
+  }
+  loadEntry(entry) {
+    if (
+      this.formSnapshot() !== this._baseline &&
+      !window.confirm("Discard unsaved schedule changes?")
+    )
+      return;
+    this.scheduleId = entry.schedule_id;
+    const { options, ...configuration } = entry.configuration;
+    this.configuration = { ...configuration };
+    this.options = JSON.stringify(options || {}, null, 2);
+    this._baseline = this.formSnapshot();
   }
   selectedChanged() {
     super.selectedChanged();
@@ -41,7 +57,7 @@ class SchedulerCard extends InspectorCard {
     if (
       success &&
       generation === this._generation &&
-      ["save_schedule", "delete_schedule"].includes(service)
+      ["save_schedule", "delete_schedule", "control_schedule"].includes(service)
     )
       await this.read("list_schedules");
     return success;
@@ -49,14 +65,20 @@ class SchedulerCard extends InspectorCard {
   async save() {
     try {
       const options = JSON.parse(this.options);
-      await this.action(
+      const { timezone, ...configuration } = this.configuration;
+      const saved = await this.action(
         "save_schedule",
         {
           schedule_id: this.scheduleId,
-          configuration: { ...this.configuration, options },
+          configuration: {
+            ...configuration,
+            ...(timezone.trim() ? { timezone: timezone.trim() } : {}),
+            options,
+          },
         },
         "Schedule saved.",
       );
+      if (saved) this._baseline = this.formSnapshot();
     } catch (error) {
       this.error = error.message;
     }
@@ -70,8 +92,10 @@ class SchedulerCard extends InspectorCard {
     return this.frame(
       html`${this.readNotice()}${this.readButton("Refresh schedules", "list_schedules")}
         <p class="muted">
-          Schedules run on the BSM host. Use an IANA timezone such as
-          America/Los_Angeles; daylight saving changes apply automatically.
+          Leave timezone blank for the application default. Leave timezone blank
+          for the application default. Schedules run on the BSM host. Use an
+          IANA timezone such as America/Los_Angeles; daylight saving changes
+          apply automatically.
         </p>
         ${
           this.result
@@ -95,20 +119,14 @@ class SchedulerCard extends InspectorCard {
                         ${entry.next_run_at ? new Date(entry.next_run_at).toLocaleString() : "Not scheduled"}
                         · ${entry.last_status || "Not run"}</small
                       >
+                      ${entry.next_attempt_at ? html`<small>Next attempt: ${new Date(entry.next_attempt_at).toLocaleString()}</small>` : ""}
+                      ${entry.blocked_reason ? html`<small>${entry.blocked_reason}</small>` : ""}
+                      ${entry.retry_exhausted ? html`<p class="error">Automatic retries exhausted.</p>` : ""}
                       <div class="actions">
+                        ${[["run_now", "Run now"], [entry.configuration.enabled ? "pause" : "resume", entry.configuration.enabled ? "Pause" : "Resume"], ...(["failed", "interrupted", "deferred"].includes(entry.last_status) ? [["retry", "Retry now"]] : [])].map(([action, label]) => html`<button ?disabled=${disabled || (["run_now", "retry"].includes(action) && !entry.available)} @click=${() => this.action("control_schedule", { schedule_id: entry.schedule_id, action, ...(entry.revision ? { revision: entry.revision } : {}) }, "Schedule action accepted.", { confirm: action === "run_now" || action === "retry" ? `${label} for ${entry.schedule_id}?` : null })}>${label}</button>`)}
                         <button
                           ?disabled=${disabled}
-                          @click=${() => {
-                            this.scheduleId = entry.schedule_id;
-                            const { options, ...configuration } =
-                              entry.configuration;
-                            this.configuration = { ...configuration };
-                            this.options = JSON.stringify(
-                              options || {},
-                              null,
-                              2,
-                            );
-                          }}
+                          @click=${() => this.loadEntry(entry)}
                         >
                           Edit</button
                         ><button

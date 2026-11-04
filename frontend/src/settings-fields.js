@@ -7,6 +7,7 @@ const number = (description, min = 0, max, step = 1, unit) => ({
   unit,
 });
 export const settingGroups = {
+  scheduler: "Scheduler",
   general: "General",
   backups: "Backups",
   paths: "Storage locations",
@@ -32,6 +33,18 @@ export const settingGroupHelp = {
   custom: "Additional settings used by your extensions.",
 };
 const fields = {
+  "scheduler.max_concurrent_servers": number(
+    "Maximum server workers. Takes effect after restarting BSM.",
+    1,
+    32,
+  ),
+  "scheduler.poll_interval_seconds": number(
+    "Scheduler polling interval. Controls wake the scheduler immediately. Takes effect after restarting BSM.",
+    1,
+    60,
+    1,
+    "seconds",
+  ),
   "general.timezone": {
     type: "string",
     label: "Application timezone",

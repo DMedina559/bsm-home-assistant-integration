@@ -294,6 +294,17 @@ ACTIONS.update(
         "list_schedules": OperationalAction(
             "list_schedules", optional_strings("server_name")
         ),
+        "control_schedule": OperationalAction(
+            "control_schedule",
+            {
+                vol.Required("schedule_id"): cv.string,
+                vol.Required("action"): vol.In(["run_now", "pause", "resume", "retry"]),
+                vol.Optional("revision"): cv.string,
+            },
+            ("schedule_id",),
+            mutation=True,
+            body=True,
+        ),
         "save_schedule": OperationalAction(
             "save_schedule",
             {

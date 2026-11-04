@@ -252,3 +252,25 @@ def test_service_targets_follow_home_assistant_entity_filter_contract():
             continue
         assert "device" not in target, name
         TargetSelector.CONFIG_SCHEMA(target)
+
+
+@pytest.mark.asyncio
+async def test_schedule_controls_forward_revision_and_explicit_action():
+    api = SimpleNamespace(
+        discovery=SimpleNamespace(
+            discover=AsyncMock(return_value={"control_schedule": object()}),
+            call=AsyncMock(return_value={"status": "success"}),
+        )
+    )
+    await _execute(
+        api,
+        ACTIONS["control_schedule"],
+        {"schedule_id": "nightly", "action": "pause", "revision": "current"},
+        None,
+    )
+    api.discovery.call.assert_awaited_once_with(
+        "control_schedule",
+        authenticated=True,
+        path_params={"schedule_id": "nightly"},
+        json_data={"action": "pause", "revision": "current"},
+    )
