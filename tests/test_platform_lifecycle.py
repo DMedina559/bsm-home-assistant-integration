@@ -127,6 +127,19 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         assert manager_device.sw_version == "4"
         assert manager_device.model == "Linux"
 
+        # A manager whose first info request failed must recover without re-adding it.
+        dr.async_get(hass).async_update_device(
+            manager_device.id, model="Unknown OS", sw_version="Unknown"
+        )
+        runtime = hass.data[DOMAIN][entry.entry_id]
+        runtime.update(manager_os_type="unknown", manager_app_version="Unknown")
+        await runtime["manager_coordinator"].async_refresh()
+        recovered = dr.async_get(hass).async_get(manager_device.id)
+        assert recovered.model == "Linux"
+        assert recovered.sw_version == "4"
+        assert runtime["manager_os_type"] == "linux"
+        assert runtime["manager_app_version"] == "4"
+
         registry = er.async_get(hass)
         owned = [
             entity

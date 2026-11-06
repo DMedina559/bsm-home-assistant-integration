@@ -11,6 +11,7 @@ from bsm_api_client import AuthError, BedrockServerManagerApi
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from pydantic import BaseModel
 
@@ -538,7 +539,31 @@ class ManagerDataCoordinator(BsmCoordinator):
         new_version = data.get("info", {}).get("app_version")
         if old_version and new_version and old_version != new_version:
             self._discovered = False
+        self._sync_manager_metadata(data)
         return data
+
+    def _sync_manager_metadata(self, data: dict) -> None:
+        """Recover device and diagnostic metadata when the info resource recovers."""
+        if self.config_entry is None or "info" in self.unavailable_resources:
+            return
+        info = data.get("info") or {}
+        version, os_type = info.get("app_version"), info.get("os_type")
+        if not version or not os_type:
+            return
+        runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        if runtime is None:
+            return
+        runtime.update(manager_app_version=version, manager_os_type=os_type.lower())
+        device_id = runtime.get("manager_device_id")
+        if device_id is None:
+            return
+        registry = dr.async_get(self.hass)
+        device = registry.async_get(device_id)
+        model = os_type.capitalize()
+        if isinstance(device, dr.DeviceEntry) and (
+            device.sw_version != version or device.model != model
+        ):
+            registry.async_update_device(device_id, sw_version=version, model=model)
 
 
 class ApplicationMonitorCoordinator(BsmCoordinator):

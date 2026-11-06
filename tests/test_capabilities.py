@@ -183,3 +183,61 @@ def test_capability_summary_contains_no_credentials():
     ]
     assert result["server_permissions"] == ["servers:read"]
     assert "token" not in result
+
+
+@pytest.mark.parametrize("permissions", [None, set(), {"servers:read"}])
+def test_public_info_does_not_require_integration_token_support(permissions):
+    grants = access()
+    grants.permissions = permissions
+    grants.operations["get_system_info"] = {
+        "x-bsm-access": {
+            "classification": "public",
+            "authentication": "none",
+            "integration_tokens": "unsupported",
+            "required_permissions": [],
+            "additional_checks": [],
+            "resource_scope": "global",
+        }
+    }
+    assert grants.operation("get_system_info")["state"] == "allowed"
+    assert grants.operation("interactive_only")["state"] == "denied"
+
+
+@pytest.mark.asyncio
+async def test_token_client_can_fetch_flat_public_info_after_discovery():
+    import httpx
+
+    grants = access()
+    grants.permissions = set()
+    grants.operations["get_system_info"] = {
+        "x-bsm-access": {
+            "classification": "public",
+            "authentication": "none",
+            "integration_tokens": "unsupported",
+            "required_permissions": [],
+            "additional_checks": [],
+        }
+    }
+    info = {
+        "app_version": "4.1.0b1",
+        "os_type": "Linux",
+        "splash_text": "Test",
+        "timezone": "UTC",
+    }
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        assert request.url.path == "/api/info"
+        assert "authorization" not in request.headers
+        return httpx.Response(200, json=info)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        async with BsmApiClient(
+            "http://manager", jwt_token="bsm_it_test", http_client=http
+        ) as client:
+            client.ha_access = grants
+            result = await client.application.async_get_info()
+            assert result.app_version == info["app_version"]
+            assert result.os_type == info["os_type"]
+            assert len(requests) == 1

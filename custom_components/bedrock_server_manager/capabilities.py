@@ -166,6 +166,12 @@ class AccessCapabilities:
             "missing_permissions": [],
             "additional_checks": checks,
         }
+        # Public endpoints do not require this credential type to be supported.
+        if (
+            access.get("classification") == "public"
+            and access.get("authentication") == "none"
+        ):
+            return {**result, "state": "conditional" if checks else "allowed"}
         if self.integration_token and access.get("integration_tokens") == "unsupported":
             return {
                 **result,
@@ -183,15 +189,16 @@ class AccessCapabilities:
         missing |= server_result
         if missing:
             return {**result, "state": "denied", "missing_permissions": sorted(missing)}
-        classification = access.get("classification")
-        state = (
-            "conditional"
-            if checks or classification in {"contextual", "legacy-role", "unknown"}
-            else "allowed"
+        return {**result, "state": self._granted_state(access, server_name)}
+
+    @staticmethod
+    def _granted_state(access: dict, server_name: str | None) -> str:
+        conditional = (
+            access.get("additional_checks")
+            or access.get("classification") in {"contextual", "legacy-role", "unknown"}
+            or (access.get("resource_scope") == "server" and server_name is None)
         )
-        if access.get("resource_scope") == "server" and server_name is None:
-            state = "conditional"
-        return {**result, "state": state}
+        return "conditional" if conditional else "allowed"
 
     def _server_access(
         self, access: dict, required: set[str], server_name: str | None
