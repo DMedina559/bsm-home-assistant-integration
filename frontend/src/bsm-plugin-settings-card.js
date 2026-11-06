@@ -337,7 +337,7 @@ class PluginSettingsCard extends BsmCard {
                     Check for updates</button
                   ><button
                     class="primary"
-                    ?disabled=${!this.available || this.loading || this.busy || !this.draft.dirty || this.draft.conflicts.length > 0 || Boolean(this.error)}
+                    ?disabled=${!this.available || this.loading || this.busy || this.actionDenied("update_plugin_settings") || !this.draft.dirty || this.draft.conflicts.length > 0 || Boolean(this.error)}
                     @click=${this.save}
                   >
                     Save settings

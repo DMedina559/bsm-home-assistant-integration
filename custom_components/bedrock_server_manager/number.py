@@ -88,6 +88,7 @@ class SettingNumber(CoordinatorEntity[ManagerDataCoordinator], NumberEntity):
     def available(self) -> bool:
         return (
             super().available
+            and self.coordinator.allows_operation("set_setting")
             and "application_settings" not in self.coordinator.unavailable_resources
             and self.native_value is not None
         )

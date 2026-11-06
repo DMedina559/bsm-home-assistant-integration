@@ -12,13 +12,19 @@ from bsm_api_client import (
     CannotConnectError,
 )
 from homeassistant import config_entries
-from homeassistant.const import (  # CONF_SCAN_INTERVAL, # This is used as a key, defined below
-    CONF_PASSWORD,
-    CONF_USERNAME,
-)
+from homeassistant.const import CONF_USERNAME
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .auth import (
+    CREDENTIALS_SCHEMA,
+    MFA_SCHEMA,
+    CredentialError,
+    auth_error_key,
+    create_api_client,
+    credential_updates,
+    validate_credentials,
+)
 
 # --- IMPORT FROM LOCAL CONSTANTS ---
 from .const import CONF_VERIFY_SSL  # Make sure this is in your const.py
@@ -36,14 +42,7 @@ from .utils import device_config_entry_ids
 _LOGGER = logging.getLogger(__name__)
 
 # --- Schemas ---
-STEP_CREDENTIALS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): selector.TextSelector(
-            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
-        ),
-    }
-)
+STEP_CREDENTIALS_SCHEMA = CREDENTIALS_SCHEMA
 STEP_SERVER_POLLING_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SERVER_SCAN_INTERVAL): selector.NumberSelector(
@@ -77,6 +76,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         """Initialize BSM options flow."""
+        self._pending_credentials: dict[str, Any] = {}
         self._discovered_servers: Optional[List[str]] = None
         self._api_client_instance: Optional[BedrockServerManagerApi] = None
 
@@ -90,21 +90,7 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         current_data = self.config_entry.data
         effective_data = {**current_data, **(data_override or {})}
 
-        url = effective_data[CONF_BASE_URL]
-        username = effective_data[CONF_USERNAME]  # Assumed to always exist
-        password = effective_data[CONF_PASSWORD]  # Assumed to always exist
-        verify_ssl = effective_data.get(CONF_VERIFY_SSL, True)  # Use verify_ssl
-
-        # Borrow HA's session; close only the SDK-owned HTTP transport.
-        session = async_get_clientsession(self.hass, verify_ssl=verify_ssl)
-
-        api_client = BedrockServerManagerApi(
-            base_url=url,
-            username=username,
-            password=password,
-            session=session,
-            verify_ssl=verify_ssl,  # Pass to API client if it supports/needs it
-        )
+        api_client = create_api_client(self.hass, effective_data)
         if not data_override:  # Store if it's using the main config for multiple steps
             self._api_client_instance = api_client
         return api_client
@@ -138,94 +124,76 @@ class BSMOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_update_credentials(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input=None
     ) -> config_entries.ConfigFlowResult:
-        """Handle updating credentials."""
-        errors: Dict[str, str] = {}
-        description_placeholders: Optional[Dict[str, str]] = None
-        manager_display_name = self._get_manager_display_name()
-
+        """Validate a replacement login before updating the loaded entry."""
         if user_input is not None:
-            # Validate updated credentials with the existing base URL and TLS options.
-            validation_data = {
+            data = {
                 CONF_BASE_URL: self.config_entry.data[CONF_BASE_URL],
-                CONF_VERIFY_SSL: self.config_entry.data.get(
-                    CONF_VERIFY_SSL, True
-                ),  # Add verify_ssl
-                CONF_USERNAME: user_input[CONF_USERNAME],
-                CONF_PASSWORD: user_input[CONF_PASSWORD],
+                CONF_VERIFY_SSL: self.config_entry.data.get(CONF_VERIFY_SSL, True),
+                **user_input,
             }
-            temp_api_client = None
-            try:
-                temp_api_client = await self._get_api_client(
-                    data_override=validation_data
-                )
-                await temp_api_client.authenticate()
-                _LOGGER.info(
-                    "New credentials validated successfully for BSM: %s",
-                    self.config_entry.title,
-                )
-                # Persist the new credentials along with existing non-credential data
-                new_data = {**self.config_entry.data, **user_input}
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=new_data
-                )
-                return self.async_abort(reason="credentials_updated")
-            except AuthError as err:
-                _LOGGER.warning(
-                    "Failed to authenticate with new credentials for BSM %s: %s",
-                    self.config_entry.title,
-                    err.api_message or err,
-                )
-                errors["base"] = "invalid_auth"
-                description_placeholders = {
-                    "error_details": err.api_message or str(err)
-                }
-            except CannotConnectError as err:
-                _LOGGER.error(
-                    "Connection error validating new credentials for BSM %s: %s",
-                    self.config_entry.title,
-                    err.args[0] if err.args else err,
-                )
-                errors["base"] = "cannot_connect"
-                description_placeholders = {
-                    "error_details": err.args[0] if err.args else str(err)
-                }
-            except APIError as err:
-                _LOGGER.error(
-                    "API error validating new credentials for BSM %s: %s",
-                    self.config_entry.title,
-                    err.api_message or err,
-                )
-                errors["base"] = "api_error"
-                description_placeholders = {
-                    "error_details": err.api_message or str(err)
-                }
-            except Exception as err:  # pylint: disable=broad-except
-                _LOGGER.exception(
-                    "Unexpected error validating new credentials for BSM %s",
-                    self.config_entry.title,
-                )
-                errors["base"] = "unknown_error"
-                description_placeholders = {"error_details": str(err)}
-            finally:
-                if temp_api_client:
-                    await temp_api_client.close()
-
-        current_data = self.config_entry.data
-        schema_with_suggestions = self.add_suggested_values_to_schema(
-            STEP_CREDENTIALS_SCHEMA,
-            suggested_values={
-                CONF_USERNAME: current_data.get(CONF_USERNAME, ""),
-            },
-        )
+            return await self._async_update_credentials(
+                data, "update_credentials", CREDENTIALS_SCHEMA
+            )
         return self.async_show_form(
             step_id="update_credentials",
-            data_schema=schema_with_suggestions,
-            errors=errors,
-            description_placeholders=description_placeholders
-            or {"base_url": manager_display_name},
+            data_schema=self.add_suggested_values_to_schema(
+                CREDENTIALS_SCHEMA,
+                {
+                    "auth_type": self.config_entry.data.get("auth_type", "password"),
+                    CONF_USERNAME: self.config_entry.data.get(CONF_USERNAME, ""),
+                },
+            ),
+            description_placeholders={"base_url": self._get_manager_display_name()},
         )
+
+    async def _async_update_credentials(
+        self, data, step, schema, **proof
+    ) -> config_entries.ConfigFlowResult:
+        try:
+            result = await validate_credentials(self.hass, data, **proof)
+        except AuthError as error:
+            key = auth_error_key(error)
+            if key == "mfa_required" and step != "mfa":
+                self._pending_credentials = data
+                return await self.async_step_mfa()
+        except CredentialError as error:
+            key = str(error)
+        except CannotConnectError:
+            key = "cannot_connect"
+        except APIError:
+            key = "api_error"
+        except ValueError:
+            key = "invalid_url"
+        else:
+            self._pending_credentials = {}
+            await self._close_api_client_if_created()
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data={**self.config_entry.data, **credential_updates(result["data"])},
+            )
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return self.async_abort(reason="credentials_updated")
+        return self.async_show_form(
+            step_id=step,
+            data_schema=schema,
+            errors={"base": key},
+            description_placeholders={"base_url": self._get_manager_display_name()},
+        )
+
+    async def async_step_mfa(self, user_input=None) -> config_entries.ConfigFlowResult:
+        if not self._pending_credentials:
+            return self.async_abort(reason="reauth_failed")
+        if user_input is not None:
+            return await self._async_update_credentials(
+                self._pending_credentials,
+                "mfa",
+                MFA_SCHEMA,
+                otp=user_input["otp"].strip(),
+                remember_device=user_input.get("remember_device", True),
+            )
+        return self.async_show_form(step_id="mfa", data_schema=MFA_SCHEMA)
 
     async def async_step_select_servers(  # noqa: C901
         self, user_input: Optional[Dict[str, Any]] = None

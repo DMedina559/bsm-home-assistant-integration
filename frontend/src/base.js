@@ -284,7 +284,23 @@ export class BsmCard extends LitElement {
     this._subscribeTasks();
     return this.runtime.request(this.hass, service, data, target);
   }
+  capability(service) {
+    const state =
+      this.state ||
+      this.hass?.states?.[related(this.hass, this.selection, "status")];
+    return state?.attributes?.bsm_access?.actions?.[service] || "unknown";
+  }
+  actionDenied(service) {
+    return ["denied", "unsupported"].includes(this.capability(service));
+  }
   async action(service, data = {}, message = "Changes saved.", options = {}) {
+    if (this.actionDenied(service)) {
+      this.error =
+        this.capability(service) === "unsupported"
+          ? "This BSM instance does not support this action."
+          : "The BSM credential does not grant this action for the selected target.";
+      return false;
+    }
     if (this.busy || (!options.allowUnavailable && !this.available))
       return false;
     if (options.confirm && !options.confirmed) {
@@ -517,7 +533,8 @@ export class BsmCard extends LitElement {
   }
   button(title, service, data = {}, options = {}) {
     return html`<button
-      ?disabled=${this.busy || (!this.available && !options.allowUnavailable)}
+      ?disabled=${this.busy || this.actionDenied(service) || (!this.available && !options.allowUnavailable)}
+      title=${this.actionDenied(service) ? "Unavailable with the current BSM capabilities" : ""}
       @click=${() => this.action(service, data, options.message || "Changes saved.", options)}
     >
       ${title}

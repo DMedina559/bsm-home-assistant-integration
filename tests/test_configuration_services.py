@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from bsm_api_client.models import ServerSettingItemPayload, ServerSettingsResponse
+from bsm_api_client.models import GetAllServerSettingsResponse, ServerSettingItemPayload
 from homeassistant.core import ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
@@ -23,7 +23,7 @@ async def test_server_setting_retains_json_types_and_refreshes_target(hass, api)
     )
     coordinator.schedule_refresh = lambda: BsmCoordinator.schedule_refresh(coordinator)
     api.servers.async_set_server_setting = AsyncMock(
-        return_value=ServerSettingsResponse(
+        return_value=GetAllServerSettingsResponse(
             status="success", settings={"settings": {"autostart": True}}
         )
     )

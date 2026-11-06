@@ -1,4 +1,4 @@
-import{a as _}from"./shared-7NSZLO6S.js";import{b as c,f,g as n,j as m,k as v}from"./shared-3LOQBGQY.js";function p(o,t){return o?.$ref?.startsWith("#/")?o.$ref.slice(2).split("/").reduce((a,e)=>a?.[e],t)||o:o?.anyOf?p(o.anyOf.find(a=>a.type!=="null")||o,t):o||{}}var b=class extends v{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={scope:{state:!0},serverName:{state:!0},plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.scope="plugin",this.serverName="",this.plugin="",this.schema=null,this.loading=!1}reconnected(){super.reconnected(),this.loading=!1,this.plugin&&this.available&&this.load(this.plugin,!0)}input(t,a,e,s="text"){return n`<label
+import{a as _}from"./shared-IUOMJOKQ.js";import{b as c,f,g as n,j as m,k as v}from"./shared-GLIQ3H42.js";function p(o,t){return o?.$ref?.startsWith("#/")?o.$ref.slice(2).split("/").reduce((a,e)=>a?.[e],t)||o:o?.anyOf?p(o.anyOf.find(a=>a.type!=="null")||o,t):o||{}}var b=class extends v{static title="Plugin settings";static role="manager";static key="plugin_statuses";static properties={scope:{state:!0},serverName:{state:!0},plugin:{state:!0},schema:{state:!0},loading:{state:!0}};constructor(){super(),this.scope="plugin",this.serverName="",this.plugin="",this.schema=null,this.loading=!1}reconnected(){super.reconnected(),this.loading=!1,this.plugin&&this.available&&this.load(this.plugin,!0)}input(t,a,e,s="text"){return n`<label
       >${t}<input
         aria-label=${t}
         type=${s}
@@ -57,7 +57,7 @@ import{a as _}from"./shared-7NSZLO6S.js";import{b as c,f,g as n,j as m,k as v}fr
                     Check for updates</button
                   ><button
                     class="primary"
-                    ?disabled=${!this.available||this.loading||this.busy||!this.draft.dirty||this.draft.conflicts.length>0||!!this.error}
+                    ?disabled=${!this.available||this.loading||this.busy||this.actionDenied("update_plugin_settings")||!this.draft.dirty||this.draft.conflicts.length>0||!!this.error}
                     @click=${this.save}
                   >
                     Save settings

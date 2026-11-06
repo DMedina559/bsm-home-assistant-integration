@@ -4,12 +4,15 @@
     "step": {
       "user": {
         "title": "Connect to Bedrock Server Manager",
-        "description": "Enter the API connection details for your Bedrock Server Manager instance.",
+        "description": "Choose password or token authentication. Integration tokens are recommended for unattended use. Enter only the credentials for the selected method.",
         "data": {
           "base_url": "Base URL",
-          "username": "API Username",
-          "password": "API Password",
-          "verify_ssl": "Verify SSL"
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL",
+          "auth_type": "Authentication method",
+          "token": "Integration token or bearer token",
+          "remember_me": "Request a longer-lived session"
         }
       },
       "select_servers": {
@@ -21,30 +24,51 @@
       },
       "reauth_confirm": {
         "title": "Reconnect to Bedrock Server Manager",
-        "description": "Enter updated credentials for this manager. Your monitored servers and options will be preserved.",
+        "description": "Choose password or token authentication. Integration tokens are recommended for unattended use. Enter only the credentials for the selected method.",
         "data": {
-          "username": "API Username",
-          "password": "API Password"
+          "username": "Username",
+          "password": "Password",
+          "auth_type": "Authentication method",
+          "token": "Integration token or bearer token",
+          "remember_me": "Request a longer-lived session"
+        }
+      },
+      "mfa": {
+        "title": "Verify your BSM sign-in",
+        "description": "Enter an authenticator code or an unused recovery code. The code is never saved. Remembering this device allows password sign-in until the remembered-device credential expires.",
+        "data": {
+          "otp": "Authenticator or recovery code",
+          "remember_device": "Remember this Home Assistant device"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the Manager API at the specified URL. Check URL and ensure the Manager is running. Details: {error_details}",
-      "invalid_auth": "Invalid username or password. Please check your credentials. Details: {error_details}",
+      "cannot_connect": "Cannot connect to BSM. Check the URL, TLS settings, and network connection.",
+      "invalid_auth": "The credentials or token were rejected. Check them and try again.",
       "no_servers_found": "Successfully connected and authenticated, but the Manager reported no Minecraft server instances were found. You can still add the manager and select servers later via integration options.",
       "unknown_error": "An unexpected error occurred. Check Home Assistant logs for more details.",
       "unknown_validation_error": "An unexpected error occurred during validation. Check logs.",
-      "api_error": "An API error occurred while communicating with the BSM manager: {error_details}",
+      "api_error": "BSM could not complete the request. Check the manager logs.",
       "service_install_server_confirm_needed": "Server {server_name} already exists. To replace it, set 'overwrite: true' in the service call or use the 'delete_server' service first.",
       "service_no_target_provided": "No target (device, entity, or area) was provided for the service. Please specify a target.",
       "service_no_target_provided_manager": "This service requires targeting a Bedrock Server Manager instance, but no target was provided.",
       "service_invalid_input_api": "Invalid input provided to the BSM API: {details}",
       "service_invalid_value_client": "Invalid value provided for the service call: {details}",
-      "service_backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'."
+      "service_backup_config_file_required": "'File to Backup' is required when 'Backup Type' is 'config'.",
+      "token_required": "Enter a token for token authentication.",
+      "credentials_required": "Enter both a username and password for password authentication.",
+      "invalid_auth_type": "Choose password or token authentication.",
+      "invalid_url": "Enter a valid http:// or https:// URL without credentials, query parameters, or a fragment.",
+      "mfa_required": "Enter a valid authenticator code or unused recovery code.",
+      "passkey_required": "This account requires a passkey. Sign in to BSM in a browser and create an integration token for Home Assistant.",
+      "enrollment_required": "Complete the required MFA enrollment in BSM, then reconnect here.",
+      "recent_auth_required": "BSM requires recent interactive verification. Complete verification in BSM before retrying.",
+      "insufficient_permissions": "This credential cannot list servers. Grant servers:read and access to the servers you want to monitor."
     },
     "abort": {
       "already_configured": "A Manager instance for {base_url} is already configured.",
-      "reauth_successful": "Reauthentication was successful."
+      "reauth_successful": "Reauthentication was successful.",
+      "reauth_failed": "The pending login is no longer available. Start the connection flow again."
     }
   },
   "options": {
@@ -63,10 +87,13 @@
       },
       "update_credentials": {
         "title": "Update API Credentials",
-        "description": "Enter the new API username and password for the Bedrock Server Manager at {base_url}.",
+        "description": "Choose password or token authentication. Integration tokens are recommended for unattended use. Enter only the credentials for the selected method.",
         "data": {
-          "username": "New API Username",
-          "password": "New API Password"
+          "username": "Username",
+          "password": "Password",
+          "auth_type": "Authentication method",
+          "token": "Integration token or bearer token",
+          "remember_me": "Request a longer-lived session"
         }
       },
       "select_servers": {
@@ -104,19 +131,38 @@
           "forward_events": "Forward BSM events",
           "event_names": "Event names (comma-separated)"
         }
+      },
+      "mfa": {
+        "title": "Verify your BSM sign-in",
+        "description": "Enter an authenticator code or an unused recovery code. The code is never saved. Remembering this device allows password sign-in until the remembered-device credential expires.",
+        "data": {
+          "otp": "Authenticator or recovery code",
+          "remember_device": "Remember this Home Assistant device"
+        }
       }
     },
     "error": {
       "invalid_server_scan_interval_range": "Server update frequency must be between 10 and 3600 seconds.",
       "invalid_manager_scan_interval_range": "Manager data update frequency must be between 60 and 86400 seconds.",
-      "invalid_auth": "Authentication failed with the provided credentials. Please check username and password. Details: {error_details}",
-      "cannot_connect": "Failed to connect to the Manager API to validate credentials or fetch server list. Details: {error_details}",
+      "invalid_auth": "The credentials or token were rejected. Check them and try again.",
+      "cannot_connect": "Cannot connect to BSM. Check the URL, TLS settings, and network connection.",
       "fetch_servers_failed": "Failed to fetch the list of servers from the BSM manager. Check connection and BSM logs. Details: {error_details}",
-      "unknown_error": "An unexpected error occurred. Check Home Assistant logs."
+      "unknown_error": "An unexpected error occurred. Check Home Assistant logs.",
+      "api_error": "BSM could not complete the request. Check the manager logs.",
+      "token_required": "Enter a token for token authentication.",
+      "credentials_required": "Enter both a username and password for password authentication.",
+      "invalid_auth_type": "Choose password or token authentication.",
+      "invalid_url": "Enter a valid http:// or https:// URL without credentials, query parameters, or a fragment.",
+      "mfa_required": "Enter a valid authenticator code or unused recovery code.",
+      "passkey_required": "This account requires a passkey. Sign in to BSM in a browser and create an integration token for Home Assistant.",
+      "enrollment_required": "Complete the required MFA enrollment in BSM, then reconnect here.",
+      "recent_auth_required": "BSM requires recent interactive verification. Complete verification in BSM before retrying.",
+      "insufficient_permissions": "This credential cannot list servers. Grant servers:read and access to the servers you want to monitor."
     },
     "abort": {
       "credentials_updated": "Credentials updated successfully. The integration will now reload.",
-      "changes_successful": "Options updated successfully. The integration will now reload."
+      "changes_successful": "Options updated successfully. The integration will now reload.",
+      "reauth_failed": "The pending login is no longer available. Start the connection flow again."
     }
   },
   "entity": {
@@ -1151,6 +1197,24 @@
         "revision": {
           "name": "Revision"
         }
+      }
+    },
+    "get_capabilities": {
+      "name": "Get capabilities",
+      "description": "Refresh effective HTTP grants and per-server access, then report operation availability. Unknown and conditional results still require backend verification.",
+      "fields": {
+        "server_name": {
+          "name": "Server name",
+          "description": "Optional server to evaluate per-server grants."
+        }
+      }
+    }
+  },
+  "selector": {
+    "auth_type": {
+      "options": {
+        "password": "Username and password",
+        "token": "Integration or bearer token"
       }
     }
   }

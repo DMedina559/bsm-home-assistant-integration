@@ -19,7 +19,7 @@ class CommandCard extends BsmCard {
     return this.frame(
       html`${this.input("Command", this.command, (value) => (this.command = value))}<button
           class="primary"
-          ?disabled=${!this.available || this.busy || !this.command.trim()}
+          ?disabled=${!this.available || this.busy || this.actionDenied("send_command") || !this.command.trim()}
           @click=${this.send}
         >
           Send command

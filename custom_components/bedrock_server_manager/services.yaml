@@ -1588,3 +1588,17 @@ control_schedule:
       name: Revision
       selector:
         text: {}
+
+get_capabilities:
+  name: Get capabilities
+  description: Refresh effective HTTP grants and per-server access and report available, denied, conditional, unsupported, and unknown operations.
+  target:
+    entity:
+      domain: sensor
+      integration: bedrock_server_manager
+  fields:
+    server_name:
+      name: Server name
+      description: Optional server to evaluate per-server grants.
+      selector:
+        text: {}

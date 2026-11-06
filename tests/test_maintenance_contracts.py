@@ -110,16 +110,14 @@ async def test_scoped_settings_save_and_followup_keep_scope(hass, scope, server)
         api=SimpleNamespace(),
     )
     api = SimpleNamespace(
-        discovery=SimpleNamespace(
-            call=AsyncMock(
-                side_effect=[
-                    {"status": "success"},
-                    {
-                        "settings": {"enabled": True},
-                        "settings_schema": {"type": "object"},
-                    },
-                ]
-            )
+        plugins=SimpleNamespace(
+            async_update_plugin_settings=AsyncMock(return_value={"status": "success"}),
+            async_get_plugin_settings=AsyncMock(
+                return_value={
+                    "settings": {"enabled": True},
+                    "settings_schema": {"type": "object"},
+                }
+            ),
         )
     )
     hass.data[DOMAIN] = {
@@ -141,9 +139,13 @@ async def test_scoped_settings_save_and_followup_keep_scope(hass, scope, server)
         AsyncMock(return_value={"entry"}),
     ):
         response = await settings_action(hass, call)
-    calls = api.discovery.call.await_args_list
-    assert calls[0].kwargs["json_data"] == {"settings": {"enabled": True}, **options}
-    assert calls[1].kwargs["query"] == options
+    name, payload = api.plugins.async_update_plugin_settings.await_args.args
+    assert name == "profile"
+    assert payload.model_dump(exclude_unset=True) == {
+        "settings": {"enabled": True},
+        **options,
+    }
+    api.plugins.async_get_plugin_settings.assert_awaited_once_with("profile", **options)
     assert response["managers"][0]["scope"] == scope
 
 

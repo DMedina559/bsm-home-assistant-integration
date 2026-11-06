@@ -1,4 +1,4 @@
-import{b as u}from"./shared-7NSZLO6S.js";import{g as i,h as r,j as c}from"./shared-3LOQBGQY.js";var l=class extends u{static title="Scheduler";static role="manager";static key="bsm_version";static properties={scheduleId:{state:!0},configuration:{state:!0},options:{state:!0}};constructor(){super(),this.resetForm()}resetForm(){this.scheduleId="",this.options="{}",this.configuration={task:"backup",server_name:"",enabled:!1,time:"03:00",timezone:"",weekdays:[0,1,2,3,4,5,6],catch_up:!0,stagger_minutes:15},this._baseline=this.formSnapshot()}formSnapshot(){return JSON.stringify([this.scheduleId,this.configuration,this.options])}loadEntry(s){if(this.formSnapshot()!==this._baseline&&!window.confirm("Discard unsaved schedule changes?"))return;this.scheduleId=s.schedule_id;let{options:t,...n}=s.configuration;this.configuration={...n},this.options=JSON.stringify(t||{},null,2),this._baseline=this.formSnapshot()}selectedChanged(){super.selectedChanged(),this.resetForm()}change(s,t){this.configuration={...this.configuration,[s]:t}}async action(s,...t){let n=this._generation,e=await super.action(s,...t);return e&&n===this._generation&&["save_schedule","delete_schedule","control_schedule"].includes(s)&&await this.read("list_schedules"),e}async save(){try{let s=JSON.parse(this.options),{timezone:t,...n}=this.configuration;await this.action("save_schedule",{schedule_id:this.scheduleId,configuration:{...n,...t.trim()?{timezone:t.trim()}:{},options:s}},"Schedule saved.")&&(this._baseline=this.formSnapshot())}catch(s){this.error=s.message}}render(){let s=this.busy||this.loading||!this.available,t=this.configuration,n=this.result?.task_types?.length?this.result.task_types:["backup","verify"];return this.frame(i`${this.readNotice()}${this.readButton("Refresh schedules","list_schedules")}
+import{b as h}from"./shared-IUOMJOKQ.js";import{g as i,h as r,j as c}from"./shared-GLIQ3H42.js";var l=class extends h{static title="Scheduler";static role="manager";static key="bsm_version";static properties={scheduleId:{state:!0},configuration:{state:!0},options:{state:!0}};constructor(){super(),this.resetForm()}resetForm(){this.scheduleId="",this.options="{}",this.configuration={task:"backup",server_name:"",enabled:!1,time:"03:00",timezone:"",weekdays:[0,1,2,3,4,5,6],catch_up:!0,stagger_minutes:15},this._baseline=this.formSnapshot()}formSnapshot(){return JSON.stringify([this.scheduleId,this.configuration,this.options])}loadEntry(s){if(this.formSnapshot()!==this._baseline&&!window.confirm("Discard unsaved schedule changes?"))return;this.scheduleId=s.schedule_id;let{options:t,...n}=s.configuration;this.configuration={...n},this.options=JSON.stringify(t||{},null,2),this._baseline=this.formSnapshot()}selectedChanged(){super.selectedChanged(),this.resetForm()}change(s,t){this.configuration={...this.configuration,[s]:t}}async action(s,...t){let n=this._generation,e=await super.action(s,...t);return e&&n===this._generation&&["save_schedule","delete_schedule","control_schedule"].includes(s)&&await this.read("list_schedules"),e}async save(){try{let s=JSON.parse(this.options),{timezone:t,...n}=this.configuration;await this.action("save_schedule",{schedule_id:this.scheduleId,configuration:{...n,...t.trim()?{timezone:t.trim()}:{},options:s}},"Schedule saved.")&&(this._baseline=this.formSnapshot())}catch(s){this.error=s.message}}render(){let s=this.busy||this.loading||!this.available,t=this.configuration,n=this.result?.task_types?.length?this.result.task_types:["backup","verify"];return this.frame(i`${this.readNotice()}${this.readButton("Refresh schedules","list_schedules")}
         <p class="muted">
           Leave timezone blank for the application default. Leave timezone blank
           for the application default. Schedules run on the BSM host. Use an
@@ -25,14 +25,14 @@ import{b as u}from"./shared-7NSZLO6S.js";import{g as i,h as r,j as c}from"./shar
                       ${e.blocked_reason?i`<small>${e.blocked_reason}</small>`:""}
                       ${e.retry_exhausted?i`<p class="error">Automatic retries exhausted.</p>`:""}
                       <div class="actions">
-                        ${[["run_now","Run now"],[e.configuration.enabled?"pause":"resume",e.configuration.enabled?"Pause":"Resume"],...["failed","interrupted","deferred"].includes(e.last_status)?[["retry","Retry now"]]:[]].map(([a,o])=>i`<button ?disabled=${s||["run_now","retry"].includes(a)&&!e.available} @click=${()=>this.action("control_schedule",{schedule_id:e.schedule_id,action:a,...e.revision?{revision:e.revision}:{}},"Schedule action accepted.",{confirm:a==="run_now"||a==="retry"?`${o} for ${e.schedule_id}?`:null})}>${o}</button>`)}
+                        ${[["run_now","Run now"],[e.configuration.enabled?"pause":"resume",e.configuration.enabled?"Pause":"Resume"],...["failed","interrupted","deferred"].includes(e.last_status)?[["retry","Retry now"]]:[]].map(([a,o])=>i`<button ?disabled=${s||this.actionDenied("control_schedule")||["run_now","retry"].includes(a)&&!e.available} @click=${()=>this.action("control_schedule",{schedule_id:e.schedule_id,action:a,...e.revision?{revision:e.revision}:{}},"Schedule action accepted.",{confirm:a==="run_now"||a==="retry"?`${o} for ${e.schedule_id}?`:null})}>${o}</button>`)}
                         <button
                           ?disabled=${s}
                           @click=${()=>this.loadEntry(e)}
                         >
                           Edit</button
                         ><button
-                          ?disabled=${s}
+                          ?disabled=${s||this.actionDenied("delete_schedule")}
                           @click=${()=>this.action("delete_schedule",{schedule_id:e.schedule_id},"Schedule deleted.",{confirm:`Delete ${e.schedule_id}?`})}
                         >
                           Delete
@@ -57,7 +57,7 @@ import{b as u}from"./shared-7NSZLO6S.js";import{g as i,h as r,j as c}from"./shar
             ${this.input("Stagger (minutes)",t.stagger_minutes,e=>this.change("stagger_minutes",Number(e)),"number")}
           </div>
           <div class="row">
-            ${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((e,a)=>i`<label class="row"><input style="width:auto" type="checkbox" aria-label=${e} .checked=${t.weekdays.includes(a)} @change=${o=>this.change("weekdays",o.target.checked?[...t.weekdays,a].sort():t.weekdays.filter(h=>h!==a))} />${e}</label>`)}
+            ${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((e,a)=>i`<label class="row"><input style="width:auto" type="checkbox" aria-label=${e} .checked=${t.weekdays.includes(a)} @change=${o=>this.change("weekdays",o.target.checked?[...t.weekdays,a].sort():t.weekdays.filter(u=>u!==a))} />${e}</label>`)}
           </div>
           <div class="row">
             ${[["enabled","Enabled"],["catch_up","Catch up after downtime"]].map(([e,a])=>i`<label class="row"
@@ -78,7 +78,7 @@ import{b as u}from"./shared-7NSZLO6S.js";import{g as i,h as r,j as c}from"./shar
           </label>
         </fieldset>
         <button
-          ?disabled=${s||!this.scheduleId||!t.server_name||!t.weekdays.length}
+          ?disabled=${s||this.actionDenied("save_schedule")||!this.scheduleId||!t.server_name||!t.weekdays.length}
           @click=${this.save}
         >
           Save schedule

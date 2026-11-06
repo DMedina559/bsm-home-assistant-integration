@@ -1525,3 +1525,51 @@ test("scheduler protects drafts and forwards control revisions", async ({
     revision: "current",
   });
 });
+
+test("scoped capabilities disable denied actions and recover after grants change", async ({
+  page,
+}) => {
+  await mount(page, "bsm-command-card", { entity: "sensor.server" });
+  await page.getByLabel("Command", { exact: true }).fill("say permission test");
+  await page.evaluate(() =>
+    window.push("sensor.server", {
+      bsm_access: { known: true, actions: { send_command: "denied" } },
+    }),
+  );
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeDisabled();
+  await page.evaluate(() =>
+    window.push("sensor.server", {
+      bsm_access: { known: true, actions: { send_command: "allowed" } },
+    }),
+  );
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeEnabled();
+});
+
+test("plugin cards show runtime status permissions and all settings scopes", async ({
+  page,
+}) => {
+  await mount(page, "bsm-plugins-card", { entity: "sensor.manager" });
+  await page.evaluate(() =>
+    window.push("sensor.manager", {
+      plugins_data: {
+        profile: {
+          enabled: true,
+          status: "LOADED",
+          permissions: ["settings:read"],
+          has_settings: true,
+          has_global_settings: true,
+          has_server_settings: true,
+        },
+      },
+    }),
+  );
+  await expect(page.getByText(/Enabled · LOADED/)).toBeVisible();
+  await expect(page.getByText("Permissions: settings:read")).toBeVisible();
+  await expect(
+    page.getByText("Settings: Plugin · Global · Server"),
+  ).toBeVisible();
+});

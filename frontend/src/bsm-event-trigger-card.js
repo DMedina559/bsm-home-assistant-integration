@@ -90,7 +90,7 @@ class EventCard extends InspectorCard {
             @input=${(e) => (this.payload = e.target.value)}
           ></textarea></label
         ><button
-          ?disabled=${this.busy || this.loading || !this.available || !this.eventName.trim()}
+          ?disabled=${this.busy || this.loading || !this.available || this.actionDenied("trigger_plugin_event") || !this.eventName.trim()}
           @click=${this.send}
         >
           Trigger event

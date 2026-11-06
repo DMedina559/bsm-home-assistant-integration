@@ -7,19 +7,19 @@ from unittest.mock import AsyncMock
 import pytest
 from bsm_api_client import AuthError, CannotConnectError
 from bsm_api_client.models import (
-    AddonListResponse,
-    AppInfoResponse,
-    BackupFilesResponse,
-    ContentListResponse,
+    GetAllKnownPlayersResponse,
     GetAllowlistResponse,
+    GetAllServerSettingsResponse,
+    GetBedrockProcessInfoResponse,
     GetPermissionsResponse,
+    GetPluginStatusesResponse,
     GetPropertiesResponse,
     GetServerBansResponse,
+    GetSystemAndAppInfoResponse,
     ListAvailableAddonsResponse,
-    PlayerListResponse,
-    PluginStatusesResponse,
-    ServerProcessInfoResponse,
-    ServerSettingsResponse,
+    ListAvailableWorldsResponse,
+    ListBackupFilesResponse,
+    ListInstalledAddonsResponse,
     ServerSummary,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -33,10 +33,10 @@ from custom_components.bedrock_server_manager.coordinator import (
 
 def server_api(api):
     responses = {
-        "async_get_server_process_info": ServerProcessInfoResponse(
+        "async_get_server_process_info": GetBedrockProcessInfoResponse(
             status="success", process_info=None, epoch="one", revision=1
         ),
-        "async_get_server_settings": ServerSettingsResponse(
+        "async_get_server_settings": GetAllServerSettingsResponse(
             status="success", settings={"settings": {"target_version": "LATEST"}}
         ),
         "async_get_server_allowlist": GetAllowlistResponse(
@@ -58,12 +58,12 @@ def server_api(api):
     for method, response in responses.items():
         setattr(api.servers, method, AsyncMock(return_value=response))
     api.content.async_get_server_addons = AsyncMock(
-        return_value=AddonListResponse(
+        return_value=ListInstalledAddonsResponse(
             status="success", addons={"behavior_packs": [], "resource_packs": []}
         )
     )
     api.content.async_list_server_backups = AsyncMock(
-        return_value=BackupFilesResponse(backups=["backup.zip"])
+        return_value=ListBackupFilesResponse(backups=["backup.zip"])
     )
     return api
 
@@ -84,19 +84,23 @@ async def test_server_contracts_are_json_compatible(hass, api):
 @pytest.mark.asyncio
 async def test_manager_handles_available_addons_contract(hass, api):
     api.application.async_get_info = AsyncMock(
-        return_value=AppInfoResponse(status="success", info={"app_version": "4"})
+        return_value=GetSystemAndAppInfoResponse(
+            app_version="4", os_type="linux", splash_text="Test"
+        )
     )
     api.players.async_get_players = AsyncMock(
-        return_value=PlayerListResponse(status="success", players=[])
+        return_value=GetAllKnownPlayersResponse(status="success", players=[])
     )
     api.content.async_get_content_worlds = AsyncMock(
-        return_value=ContentListResponse(status="success", files=["world.mcworld"])
+        return_value=ListAvailableWorldsResponse(
+            status="success", files=["world.mcworld"]
+        )
     )
     api.content.async_get_content_addons = AsyncMock(
         return_value=ListAvailableAddonsResponse(files=["pack.mcaddon"])
     )
     api.plugins.async_get_plugin_statuses = AsyncMock(
-        return_value=PluginStatusesResponse(status="success", plugins={})
+        return_value=GetPluginStatusesResponse(status="success", plugins={})
     )
     coordinator = ManagerDataCoordinator(hass, api, 600)
     data = await coordinator._async_update_data()
@@ -357,22 +361,34 @@ async def test_unavailable_players_do_not_make_server_status_unavailable(hass, a
 
 
 @pytest.mark.asyncio
-async def test_manager_preserves_new_plugin_scope_flags_via_discovery(hass, api):
-    """Avoid rejecting current plugin metadata in older installed SDK models."""
+async def test_manager_preserves_new_plugin_scope_flags_via_typed_sdk(hass, api):
+    """Keep scope and runtime metadata from the released plugin model."""
     api.application.async_get_info = AsyncMock(
-        return_value=AppInfoResponse(status="success", info={"app_version": "4"})
+        return_value=GetSystemAndAppInfoResponse(
+            app_version="4", os_type="linux", splash_text="Test"
+        )
     )
     api.players.async_get_players = AsyncMock(
-        return_value=PlayerListResponse(status="success", players=[])
+        return_value=GetAllKnownPlayersResponse(status="success", players=[])
     )
     api.content.async_get_content_worlds = AsyncMock(
-        return_value=ContentListResponse(status="success", files=[])
+        return_value=ListAvailableWorldsResponse(status="success", files=[])
     )
     api.content.async_get_content_addons = AsyncMock(
         return_value=ListAvailableAddonsResponse(files=[])
     )
     api.plugins.async_get_plugin_statuses = AsyncMock(
-        side_effect=AssertionError("Do not parse scope flags with the old model")
+        return_value=GetPluginStatusesResponse(
+            plugins={
+                "profiles": {
+                    "enabled": True,
+                    "has_global_settings": True,
+                    "has_server_settings": True,
+                    "permissions": ["plugins:read"],
+                    "status": "LOADED",
+                }
+            }
+        )
     )
     api.discovery = SimpleNamespace(
         discover=AsyncMock(return_value={}),
@@ -393,4 +409,4 @@ async def test_manager_preserves_new_plugin_scope_flags_via_discovery(hass, api)
     data = await coordinator._async_update_data()
     assert data["plugins_status"]["profiles"]["has_global_settings"] is True
     assert data["plugins_status"]["profiles"]["has_server_settings"] is True
-    api.plugins.async_get_plugin_statuses.assert_not_awaited()
+    api.plugins.async_get_plugin_statuses.assert_awaited_once()

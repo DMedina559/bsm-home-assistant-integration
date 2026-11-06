@@ -288,7 +288,7 @@ class SettingsCard extends BsmCard {
           >
             Check for updates</button
           ><button
-            ?disabled=${this.loading || this.busy || this.saving || !this.available || !this.draft.dirty || this.draft.conflicts.length || Object.keys(this.fieldErrors || {}).length}
+            ?disabled=${this.loading || this.busy || this.saving || !this.available || this.actionDenied(this.config.scope === "server" ? "set_server_setting" : "set_global_setting") || !this.draft.dirty || this.draft.conflicts.length || Object.keys(this.fieldErrors || {}).length}
             @click=${this.save}
           >
             Save settings

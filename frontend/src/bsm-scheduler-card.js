@@ -123,14 +123,14 @@ class SchedulerCard extends InspectorCard {
                       ${entry.blocked_reason ? html`<small>${entry.blocked_reason}</small>` : ""}
                       ${entry.retry_exhausted ? html`<p class="error">Automatic retries exhausted.</p>` : ""}
                       <div class="actions">
-                        ${[["run_now", "Run now"], [entry.configuration.enabled ? "pause" : "resume", entry.configuration.enabled ? "Pause" : "Resume"], ...(["failed", "interrupted", "deferred"].includes(entry.last_status) ? [["retry", "Retry now"]] : [])].map(([action, label]) => html`<button ?disabled=${disabled || (["run_now", "retry"].includes(action) && !entry.available)} @click=${() => this.action("control_schedule", { schedule_id: entry.schedule_id, action, ...(entry.revision ? { revision: entry.revision } : {}) }, "Schedule action accepted.", { confirm: action === "run_now" || action === "retry" ? `${label} for ${entry.schedule_id}?` : null })}>${label}</button>`)}
+                        ${[["run_now", "Run now"], [entry.configuration.enabled ? "pause" : "resume", entry.configuration.enabled ? "Pause" : "Resume"], ...(["failed", "interrupted", "deferred"].includes(entry.last_status) ? [["retry", "Retry now"]] : [])].map(([action, label]) => html`<button ?disabled=${disabled || this.actionDenied("control_schedule") || (["run_now", "retry"].includes(action) && !entry.available)} @click=${() => this.action("control_schedule", { schedule_id: entry.schedule_id, action, ...(entry.revision ? { revision: entry.revision } : {}) }, "Schedule action accepted.", { confirm: action === "run_now" || action === "retry" ? `${label} for ${entry.schedule_id}?` : null })}>${label}</button>`)}
                         <button
                           ?disabled=${disabled}
                           @click=${() => this.loadEntry(entry)}
                         >
                           Edit</button
                         ><button
-                          ?disabled=${disabled}
+                          ?disabled=${disabled || this.actionDenied("delete_schedule")}
                           @click=${() => this.action("delete_schedule", { schedule_id: entry.schedule_id }, "Schedule deleted.", { confirm: `Delete ${entry.schedule_id}?` })}
                         >
                           Delete
@@ -185,7 +185,7 @@ class SchedulerCard extends InspectorCard {
           </label>
         </fieldset>
         <button
-          ?disabled=${disabled || !this.scheduleId || !c.server_name || !c.weekdays.length}
+          ?disabled=${disabled || this.actionDenied("save_schedule") || !this.scheduleId || !c.server_name || !c.weekdays.length}
           @click=${this.save}
         >
           Save schedule

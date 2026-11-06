@@ -48,6 +48,8 @@ TO_REDACT_CONFIG = {
     "_jwt_token",
     "api_key",
     "recovery_key",
+    "trusted_device_token",
+    "otp",
     "plugin_settings",
     "custom",
     "secret",
@@ -74,7 +76,13 @@ def _redact_diagnostics(data: Dict[str, Any], entry: ConfigEntry) -> Dict[str, A
     url = entry.data.get("base_url")
     credentials = {
         str(entry.data.get(key))
-        for key in (CONF_USERNAME, CONF_PASSWORD)
+        for key in (
+            CONF_USERNAME,
+            CONF_PASSWORD,
+            "token",
+            "jwt_token",
+            "trusted_device_token",
+        )
         if entry.data.get(key)
     }
 

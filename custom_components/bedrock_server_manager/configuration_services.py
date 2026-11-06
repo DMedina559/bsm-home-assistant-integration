@@ -17,6 +17,7 @@ from .service_schemas import TARGETING_SCHEMA_FIELDS
 from .targets import resolve_manager_targets, resolve_server_targets
 
 SCHEMAS: dict[str, dict[Any, Any]] = {
+    "get_capabilities": {vol.Optional("server_name"): cv.string},
     "get_application_settings": {},
     "get_server_settings": {},
     "set_server_setting": {
@@ -106,6 +107,13 @@ async def _execute(
 ) -> Any:
     """Keep dynamic calls authenticated and leave validation to the SDK contract."""
     values = call.data
+    if call.service == "get_capabilities":
+        from .capabilities import AccessCapabilities
+
+        access = getattr(api, "ha_access", None) or AccessCapabilities()
+        await api.discovery.discover(force=True)
+        await access.refresh(api)
+        return access.snapshot(values.get("server_name"), detailed=True)
     if call.service == "get_application_settings":
         return await api.application.async_get_all_settings()
     if call.service == "get_server_settings":

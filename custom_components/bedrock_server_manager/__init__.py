@@ -12,13 +12,12 @@ from bsm_api_client import (
     CannotConnectError,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import services
+from .auth import create_api_client
 from .card_api import async_register_card_api
 from .const import (
     CONF_BASE_URL,
@@ -79,17 +78,8 @@ async def _async_setup_entry(  # noqa: C901
 
     # --- API Client Setup ---
     url = entry.data[CONF_BASE_URL]
-    username = entry.data[CONF_USERNAME]
-    password = entry.data[CONF_PASSWORD]
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
-
-    api_client = BedrockServerManagerApi(
-        base_url=url,
-        username=username,
-        password=password,
-        verify_ssl=verify_ssl,
-        session=async_get_clientsession(hass, verify_ssl=verify_ssl),
-    )
+    api_client: BedrockServerManagerApi = create_api_client(hass, dict(entry.data))
     runtime = EntryRuntime()
     api_client = cast(BedrockServerManagerApi, runtime.transport(api_client))
     hass.data[DOMAIN][entry.entry_id]["runtime"] = runtime

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from bsm_api_client import APIError, CannotConnectError
-from bsm_api_client.models import ActionResponse
+from bsm_api_client.models import BaseApiResponse
 from homeassistant.core import ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from pydantic import BaseModel, ValidationError
@@ -158,7 +158,7 @@ async def test_log_rotation_preserves_status_for_card_recovery(hass, api):
 @pytest.mark.asyncio
 async def test_saved_plugin_settings_survive_failed_followup_read(hass, api):
     api.plugins.async_update_plugin_settings = AsyncMock(
-        return_value=ActionResponse(status="success", message="Saved")
+        return_value=BaseApiResponse(status="success", message="Saved")
     )
     api.plugins.async_get_plugin_settings = AsyncMock(
         side_effect=CannotConnectError("offline")
@@ -309,7 +309,7 @@ async def test_malformed_json_setting_is_not_logged(hass, api, caplog):
     )
 
     api.application.async_set_setting = AsyncMock(
-        return_value=ActionResponse(status="success", message="Saved")
+        return_value=BaseApiResponse(status="success", message="Saved")
     )
     await _async_handle_set_global_setting(
         api, "custom", '{"credential":"sensitive",}', "host"

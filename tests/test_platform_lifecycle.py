@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from bsm_api_client.models import (
-    AppInfoResponse,
-    ContentListResponse,
+    GetAllKnownPlayersResponse,
     GetApplicationHealthResponse,
     GetApplicationMetricsResponse,
+    GetPluginStatusesResponse,
+    GetSystemAndAppInfoResponse,
     ListAvailableAddonsResponse,
-    PlayerListResponse,
-    PluginStatusesResponse,
+    ListAvailableWorldsResponse,
     TaskAcceptedResponse,
 )
 from homeassistant import loader
@@ -63,8 +63,8 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
     )
     server_api(api)
     api.application.async_get_info = AsyncMock(
-        return_value=AppInfoResponse(
-            status="success", info={"app_version": "4", "os_type": "linux"}
+        return_value=GetSystemAndAppInfoResponse(
+            app_version="4", os_type="linux", splash_text="Test"
         )
     )
     api.application.async_get_application_health = AsyncMock(
@@ -87,16 +87,16 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         )
     )
     api.players.async_get_players = AsyncMock(
-        return_value=PlayerListResponse(status="success", players=[])
+        return_value=GetAllKnownPlayersResponse(status="success", players=[])
     )
     api.content.async_get_content_worlds = AsyncMock(
-        return_value=ContentListResponse(status="success", files=[])
+        return_value=ListAvailableWorldsResponse(status="success", files=[])
     )
     api.content.async_get_content_addons = AsyncMock(
         return_value=ListAvailableAddonsResponse(status="success", files=[])
     )
     api.plugins.async_get_plugin_statuses = AsyncMock(
-        return_value=PluginStatusesResponse(status="success", plugins={})
+        return_value=GetPluginStatusesResponse(status="success", plugins={})
     )
     api.servers.async_update_server = AsyncMock(
         return_value=TaskAcceptedResponse(task_id="update-task", message="Queued")
@@ -106,9 +106,9 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         return_value=TaskAcceptedResponse(task_id="backup-task", message="Queued")
     )
     with patch(
-        f"custom_components.{DOMAIN}.BedrockServerManagerApi", return_value=api
+        f"custom_components.{DOMAIN}.auth.BsmApiClient", return_value=api
     ), patch(
-        f"custom_components.{DOMAIN}.async_get_clientsession", return_value=Mock()
+        f"custom_components.{DOMAIN}.auth.async_get_clientsession", return_value=Mock()
     ), patch(
         f"custom_components.{DOMAIN}.BsmFrontendRegistration.async_register",
         AsyncMock(),
