@@ -1428,7 +1428,7 @@ test("scheduler saves IANA timezone and verification settings", async ({
 }) => {
   await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
   await page.getByLabel("Schedule ID", { exact: true }).fill("verify-nightly");
-  await page.getByLabel("Task", { exact: true }).selectOption("verify");
+  await page.getByLabel("Task", { exact: true }).selectOption("backup:verify");
   await page.getByLabel("Server name", { exact: true }).fill("Alpha");
   await page.getByLabel("Time", { exact: true }).fill("03:30");
   await page
@@ -1441,7 +1441,7 @@ test("scheduler saves IANA timezone and verification settings", async ({
     window.requests.find((r) => r.service === "save_schedule"),
   );
   expect(request.service_data.configuration).toMatchObject({
-    task: "verify",
+    task: "backup:verify",
     timezone: "America/Los_Angeles",
     time: "03:30",
     server_name: "Alpha",
@@ -1590,7 +1590,9 @@ test("scheduler discovers built-in and plugin tasks on open and refresh", async 
     "server:restart",
   ]);
   await task.selectOption("plugin:cleanup");
-  await expect(page.getByText("Clean plugin files.")).toBeVisible();
+  await expect(
+    page.locator("p").filter({ hasText: "Clean plugin files." }),
+  ).toBeVisible();
   await expect(page.getByText("Provided by: cleanup_plugin")).toBeVisible();
   await page.getByLabel("Task options", { exact: true }).fill('{"age": 7}');
   await page.getByLabel("Schedule ID", { exact: true }).fill("plugin-job");
