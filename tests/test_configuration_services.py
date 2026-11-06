@@ -162,3 +162,46 @@ def test_service_translations_cover_all_declared_actions_and_fields():
             definition.get("fields", {}).keys()
             <= strings["services"][name].get("fields", {}).keys()
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_running", [True, False])
+async def test_flattened_status_survives_sdk_and_ha_action(hass, is_running):
+    """Use the released SDK transport to keep the HTTP status contract intact."""
+    import httpx
+    from bsm_api_client import BedrockServerManagerApi
+    from bsm_api_client.openapi import generated_schema
+
+    payload = {"status": "success", "is_running": is_running}
+
+    def respond(request):
+        if request.url.path == "/api/openapi.json":
+            return httpx.Response(200, json=generated_schema())
+        assert request.url.path == "/api/server/alpha/status"
+        return httpx.Response(200, json=payload)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        async with BedrockServerManagerApi(
+            "http://host", jwt_token="synthetic-test-token", http_client=http
+        ) as api:
+            typed = await api.servers.async_get_server_running_status("alpha")
+            assert typed.is_running is is_running
+            assert "running" not in typed.model_dump()
+            hass.data[DOMAIN] = {
+                "entry": {"api": api, "manager_identifier": (DOMAIN, "http://host")}
+            }
+            call = ServiceCall(
+                hass,
+                DOMAIN,
+                "call_operation",
+                {
+                    "operation_id": "get_server_status",
+                    "path_params": {"server_name": "alpha"},
+                },
+            )
+            with patch(
+                "custom_components.bedrock_server_manager.configuration_services.resolve_manager_targets",
+                AsyncMock(return_value=["entry"]),
+            ):
+                response = await configuration_action(hass, call)
+            assert response["results"][0]["result"] == payload

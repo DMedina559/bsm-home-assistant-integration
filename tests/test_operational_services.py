@@ -370,7 +370,12 @@ async def test_backend_version_change_invalidates_capability_cache(hass, api):
 
     api.discovery = SimpleNamespace(discover=AsyncMock(return_value={}))
     api.application.async_get_info = AsyncMock(
-        return_value={"info": {"app_version": "4.0.0b2"}}
+        return_value={
+            "app_version": "4.0.0b2",
+            "os_type": "linux",
+            "splash_text": "Test",
+            "timezone": "UTC",
+        }
     )
     api.players.async_get_players = AsyncMock(return_value={"players": []})
     api.content.async_get_content_worlds = AsyncMock(return_value={"files": []})
@@ -378,7 +383,12 @@ async def test_backend_version_change_invalidates_capability_cache(hass, api):
     api.plugins.async_get_plugin_statuses = AsyncMock(return_value={"plugins": {}})
     coordinator = ManagerDataCoordinator(hass, api, 60)
     await coordinator.async_refresh()
-    api.application.async_get_info.return_value = {"info": {"app_version": "4.0.0b3"}}
+    api.application.async_get_info.return_value = {
+        "app_version": "4.0.0b3",
+        "os_type": "linux",
+        "splash_text": "Test",
+        "timezone": "UTC",
+    }
     await coordinator.async_refresh()
     assert coordinator._discovered is False
     await coordinator.async_refresh()

@@ -85,7 +85,10 @@ async def test_server_contracts_are_json_compatible(hass, api):
 async def test_manager_handles_available_addons_contract(hass, api):
     api.application.async_get_info = AsyncMock(
         return_value=GetSystemAndAppInfoResponse(
-            app_version="4", os_type="linux", splash_text="Test"
+            app_version="4.1.0b1",
+            os_type="linux",
+            splash_text="Test",
+            timezone="America/Los_Angeles",
         )
     )
     api.players.async_get_players = AsyncMock(
@@ -106,6 +109,12 @@ async def test_manager_handles_available_addons_contract(hass, api):
     data = await coordinator._async_update_data()
     assert data["available_addons"] == ["pack.mcaddon"]
     assert data["available_worlds"] == ["world.mcworld"]
+
+    assert data["info"]["app_version"] == "4.1.0b1"
+    assert data["info"]["os_type"] == "linux"
+    assert data["info"]["splash_text"] == "Test"
+    assert data["info"]["timezone"] == "America/Los_Angeles"
+    assert "info" not in data["info"]
 
 
 @pytest.mark.asyncio

@@ -528,7 +528,7 @@ class ManagerDataCoordinator(BsmCoordinator):
             },
             {
                 "application_settings": "settings",
-                "info": "info",
+                "info": "",
                 "global_players": "players",
                 "available_worlds": "files",
                 "available_addons": "files",

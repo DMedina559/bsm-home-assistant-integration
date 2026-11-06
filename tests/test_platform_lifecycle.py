@@ -121,6 +121,12 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         await hass.config_entries.async_add(entry)
         await hass.async_block_till_done()
         assert entry.state is ConfigEntryState.LOADED
+        manager_device = dr.async_get(hass).async_get_device_by_identifier(
+            (DOMAIN, "http://host"), entry.entry_id
+        )
+        assert manager_device.sw_version == "4"
+        assert manager_device.model == "Linux"
+
         registry = er.async_get(hass)
         owned = [
             entity
