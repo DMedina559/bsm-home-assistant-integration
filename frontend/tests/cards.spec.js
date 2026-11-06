@@ -1567,7 +1567,10 @@ test("plugin cards show runtime status permissions and all settings scopes", asy
       },
     }),
   );
-  await expect(page.getByText(/Enabled · LOADED/)).toBeVisible();
+  const plugin = page.locator("section.tile").filter({
+    has: page.getByText("profile", { exact: true }),
+  });
+  await expect(plugin.locator("small")).toHaveText(/Enabled\s*·\s*LOADED/);
   await expect(page.getByText("Permissions: settings:read")).toBeVisible();
   await expect(
     page.getByText("Settings: Plugin · Global · Server"),
