@@ -299,6 +299,35 @@ window.hass = {
       for (const part of parts.slice(0, -1)) value = value[part] ||= {};
       value[parts.at(-1)] = request.service_data.value;
     }
+    if (request.service === "list_schedules")
+      return {
+        response: {
+          results: [
+            {
+              manager_url: "http://bsm",
+              result: window.schedulerResult || {
+                schedules: [],
+                task_types: [
+                  "backup:create",
+                  "backup:verify",
+                  "server:restart",
+                  "plugin:cleanup",
+                ],
+                task_definitions: {
+                  "plugin:cleanup": {
+                    owner: "cleanup_plugin",
+                    description: "Clean plugin files.",
+                    options_schema: {
+                      type: "object",
+                      properties: { age: { type: "integer" } },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      };
     if (request.service === "get_task")
       return {
         response: {
