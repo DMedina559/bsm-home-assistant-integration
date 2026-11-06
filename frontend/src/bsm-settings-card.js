@@ -4,7 +4,7 @@ import {
   settingGroups,
   settingGroupHelp,
 } from "./settings-fields.js";
-import { label, schemaValue } from "./model.js";
+import { copy, label, schemaValue } from "./model.js";
 function flatten(value, prefix = "") {
   return Object.fromEntries(
     Object.entries(value || {}).flatMap(([key, item]) => {
@@ -175,8 +175,8 @@ class SettingsCard extends BsmCard {
         { key, success, message: success ? "Saved" : this.error },
       ];
       if (!success) break;
-      this.draft.base[key] = structuredClone(value);
-      this.draft.live[key] = structuredClone(value);
+      this.draft.base[key] = copy(value);
+      this.draft.live[key] = copy(value);
       delete this.draft.changes[key];
     }
     if (generation !== this._generation) return;

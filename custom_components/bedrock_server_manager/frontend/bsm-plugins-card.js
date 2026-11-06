@@ -1,4 +1,4 @@
-import{g as s,j as n,k as i}from"./shared-GLIQ3H42.js";var a=class extends i{static title="Plugins";static role="manager";static key="plugin_statuses";render(){let l=this.state?.attributes.plugins_data||{};return this.frame(s`${Object.entries(l).map(([t,e])=>s`<section class="tile">
+import{h as s,k as n,l as i}from"./shared-C27S2ORL.js";var a=class extends i{static title="Plugins";static role="manager";static key="plugin_statuses";render(){let l=this.state?.attributes.plugins_data||{};return this.frame(s`${Object.entries(l).map(([t,e])=>s`<section class="tile">
             <div class="heading">
               <strong>${e.name||t}</strong
               ><small
