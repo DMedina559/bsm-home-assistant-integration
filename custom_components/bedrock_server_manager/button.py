@@ -306,6 +306,13 @@ class MinecraftServerButton(
         # Specific buttons might have different availability logic if needed.
         return (
             super().available
+            and self.coordinator.allows_operation(
+                {
+                    "trigger_server_backup_all": "create_backup",
+                    "export_server_world": "export_world",
+                    "prune_server_backups": "prune_backups",
+                }.get(self.entity_description.key, self.entity_description.key)
+            )
             and self.coordinator.last_update_success
             and bool(self.coordinator.data)
         )
@@ -379,6 +386,13 @@ class MinecraftManagerButton(
             description.name,
             self._manager_host_port_id,
             self._attr_unique_id,
+        )
+
+    @property
+    def available(self) -> bool:
+        return super().available and (
+            self._manager_coordinator is None
+            or self._manager_coordinator.allows_operation(self.entity_description.key)
         )
 
     async def async_press(self) -> None:

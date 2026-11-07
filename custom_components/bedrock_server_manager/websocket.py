@@ -6,7 +6,11 @@ from collections.abc import Callable
 from typing import Any
 
 from bsm_api_client import BedrockServerManagerApi, WebSocketClient
-from bsm_api_client.models import MetricsSample, ServerProcessInfoResponse, TaskSnapshot
+from bsm_api_client.models import (
+    GetBedrockProcessInfoResponse,
+    MetricsSample,
+    TaskSnapshot,
+)
 from homeassistant.core import HomeAssistant
 from pydantic import ValidationError
 
@@ -186,7 +190,7 @@ class BsmWebSocketManager:
             if name in self.server_names and "process_info" in data:
                 self.update_server_process_info_callback(
                     name,
-                    ServerProcessInfoResponse.model_validate(data).model_dump(
+                    GetBedrockProcessInfoResponse.model_validate(data).model_dump(
                         mode="json"
                     ),
                 )

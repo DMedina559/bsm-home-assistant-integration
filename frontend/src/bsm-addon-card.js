@@ -1,3 +1,4 @@
+import { copy } from "./model.js";
 import { BsmCard, html, register } from "./base.js";
 class AddonCard extends BsmCard {
   static title = "Installed addons";
@@ -63,8 +64,8 @@ class AddonCard extends BsmCard {
       const key = `${this.type}_packs`;
       const submitted = this.draft.value[key];
       delete this.draft.changes[key];
-      this.draft.base[key] = structuredClone(submitted);
-      this.draft.live[key] = structuredClone(submitted);
+      this.draft.base[key] = copy(submitted);
+      this.draft.live[key] = copy(submitted);
       this.requestUpdate();
     }
   }
@@ -95,7 +96,7 @@ class AddonCard extends BsmCard {
               ${pack.subpacks?.length ? this.selectInput(`Subpack for ${pack.name}`, pack.active_subpack || "", [{ value: "", label: "Default" }, ...pack.subpacks.map((s) => ({ value: s.folder_name, label: s.name || s.folder_name }))], (v) => this.action("update_addon_subpack", { pack_uuid: pack.uuid, pack_type: this.type, subpack_name: v })) : ""}
             </section>`,
         )}${this.available && !this.packs.length ? html`<p class="muted">No ${this.type} packs installed.</p>` : ""}<button
-          ?disabled=${this.busy || !this.available || !this.draft.dirty || this.draft.conflicts.length > 0}
+          ?disabled=${this.busy || !this.available || this.actionDenied("reorder_addons") || !this.draft.dirty || this.draft.conflicts.length > 0}
           @click=${this.save}
         >
           Save addon order

@@ -111,7 +111,7 @@ class PermissionsCard extends BsmCard {
             Stage player</button
           ><button
             class="primary"
-            ?disabled=${!this.available || this.busy || !this.draft.dirty || this.draft.conflicts.length > 0}
+            ?disabled=${!this.available || this.busy || this.actionDenied("set_permissions") || !this.draft.dirty || this.draft.conflicts.length > 0}
             @click=${this.save}
           >
             Save permissions

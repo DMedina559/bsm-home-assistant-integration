@@ -24,10 +24,10 @@ This Home Assistant integration connects to your self-hosted [Bedrock Server Man
 ## Prerequisites
 
 *   Home Assistant 2026.10 or newer (Python 3.14).
-*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) 4.0.0b5 or newer, with metrics, health, task and revisioned WebSocket contracts.
-*   `bsm-api-client` 1.7.0b4 or newer (installed automatically by Home Assistant).
+*   A running instance of the [Bedrock Server Manager (BSM)](https://github.com/dmedina559/bedrock-server-manager) 4.1.0b1 or newer, with metrics, health, task and revisioned WebSocket contracts.
+*   `bsm-api-client` 1.8.0b1 (installed automatically by Home Assistant).
 *   The BSM API must be accessible over the network from your Home Assistant instance (know its Host/IP address and Port).
-*   API Credentials (Username and Password) configured for your BSM instance.
+*   A BSM username/password or integration token with access to the servers you want to monitor.
 *   [HACS](https://hacs.xyz/) (Home Assistant Community Store) installed in Home Assistant for the recommended installation method.
 
 ## Installation
@@ -66,13 +66,38 @@ Once installed and Home Assistant is restarted, configure the integration via th
 3.  Search for "Bedrock Server Manager" and select it.
 4.  **Step 1: Connect to Manager**
     *   **Base URL:** The full BSM address, including scheme, port and any proxy path, for example `http://192.168.1.10:11325`.
-    *   **API Username & Password:** Credentials for the BSM API.
+    *   **Authentication method:** Choose username/password or an integration/bearer token. Integration tokens (`bsm_it_...`) are recommended for unattended use.
+    *   **Username & Password:** Fill these only for password authentication. If BSM requests MFA, a separate step accepts an authenticator or unused recovery code. One-time codes are never saved. You can explicitly remember Home Assistant as a device; when that credential expires, Home Assistant requests reauthentication.
+    *   **Token:** Paste a token created in BSM's account settings. Grant only the permissions and server access you need. Passkey accounts can sign in to BSM in a browser and create a token for Home Assistant; Home Assistant does not perform WebAuthn sign-in.
+    *   **Verify SSL:** Keep enabled for HTTPS unless your local certificate setup requires otherwise.
     *   Click **Submit**.
 5.  **Step 2: Select Initial Servers**
     *   A list of Minecraft server instances discovered on your BSM will be shown.
     *   Use the multi-select listbox to choose which servers you want Home Assistant to initially monitor. You can change this selection later via the **CONFIGURE** option on the integration card.
     *   Click **Submit**.
 6.  The integration will set up a device for the BSM instance and child devices for each selected Minecraft server.
+
+## HTTP capabilities and restricted tokens
+
+The integration reads the live HTTP operation metadata (`x-bsm-access`), effective account/token permissions, and per-server grants. It does not assume an administrator's restricted token has administrator access, and it does not probe permissions by attempting mutations.
+
+Grant `servers:read` and access to the servers you want to select. Add `account:read` for capability introspection. Each feature requires its advertised HTTP permissions: read-only tokens can monitor their permitted resources while control, settings, backups, plugins, metrics, and diagnostics remain independently restricted. WebSocket subscriptions keep the backend's own topic authorization.
+
+Sensor attributes include `bsm_access`, with effective permissions and HA action states. Dashboard buttons and native controls disable known denied or unsupported actions; forbidden resources are not repeatedly fetched. Unknown access remains distinguishable from granted access. Backend checks still enforce every request, including recent-authentication, ownership, and other contextual requirements.
+
+Use the response-capable action `bedrock_server_manager.get_capabilities` to refresh and inspect the detailed report, optionally for a `server_name`. Its operation and action states are:
+
+| State | Meaning |
+| --- | --- |
+| `allowed` | Advertised permission requirements are satisfied. |
+| `denied` | A required scope or per-server grant is missing, or integration tokens are unsupported. |
+| `conditional` | Permissions are satisfied, but contextual checks or a specific server still need verification. |
+| `unsupported` | The connected backend does not advertise the operation. |
+| `unknown` | Access metadata or effective grants could not be retrieved. |
+
+Capabilities refresh with manager polling, reconnect reconciliation, and `get_capabilities`. If a token lacks `account:read`, introspection stays unknown and backend responses remain authoritative. Expired sessions and MFA policy challenges start Home Assistant reauthentication; an ordinary scope denial does not. Updating credentials preserves selected servers and entity identifiers, clears superseded secrets, and reloads the existing entry.
+
+Plugin cards display runtime status, declared permissions, and plugin/global/server settings scopes. Scoped settings use the typed API client 1.8 contracts.
 
 ## Dashboard cards
 

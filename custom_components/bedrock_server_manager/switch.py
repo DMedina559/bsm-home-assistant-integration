@@ -213,6 +213,8 @@ class MinecraftServerSwitch(
         return (
             super().available
             and self.coordinator.data is not None
+            and self.coordinator.allows_operation("start_server")
+            and self.coordinator.allows_operation("stop_server")
             and "process_info" not in self.coordinator.unavailable_resources
         )
 
@@ -360,6 +362,7 @@ class MinecraftServerSettingSwitch(
         return (
             super().available
             and self.coordinator.data is not None
+            and self.coordinator.allows_operation("set_server_setting")
             and "server_settings" not in self.coordinator.unavailable_resources
         )
 
@@ -435,6 +438,7 @@ class PluginEnabledSwitch(CoordinatorEntity[ManagerDataCoordinator], SwitchEntit
     def available(self) -> bool:
         return (
             super().available
+            and self.coordinator.allows_operation("set_plugin_status")
             and "plugins_status" not in self.coordinator.unavailable_resources
             and self.plugin_name
             in ((self.coordinator.data or {}).get("plugins_status") or {})

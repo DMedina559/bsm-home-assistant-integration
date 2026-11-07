@@ -56,7 +56,7 @@ class PropertiesCard extends BsmCard {
         </div>
         ${this.available && !Object.keys(this.draft.value).length ? html`<p>No properties are available.</p>` : ""}<button
           class="primary"
-          ?disabled=${!this.available || this.busy || !this.draft.dirty || this.draft.conflicts.length > 0}
+          ?disabled=${!this.available || this.busy || this.actionDenied("update_properties") || !this.draft.dirty || this.draft.conflicts.length > 0}
           @click=${this.save}
         >
           Save properties

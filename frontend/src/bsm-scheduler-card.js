@@ -18,7 +18,7 @@ class SchedulerCard extends InspectorCard {
     this.scheduleId = "";
     this.options = "{}";
     this.configuration = {
-      task: "backup",
+      task: "",
       server_name: "",
       enabled: false,
       time: "03:00",
@@ -47,6 +47,41 @@ class SchedulerCard extends InspectorCard {
   selectedChanged() {
     super.selectedChanged();
     this.resetForm();
+    this._catalogRequested = false;
+    this.syncState();
+  }
+  reconnected() {
+    super.reconnected();
+    this._catalogRequested = false;
+    this.syncState();
+  }
+  syncState() {
+    if (this.available && !this._catalogRequested) {
+      this._catalogRequested = true;
+      this.read("list_schedules");
+    }
+  }
+  get taskTypes() {
+    return [
+      ...new Set([
+        ...(this.result?.task_types || []),
+        ...Object.keys(this.result?.task_definitions || {}),
+      ]),
+    ].sort();
+  }
+  async read(service, data = {}, apply = true) {
+    const result = await super.read(service, data, apply);
+    if (
+      result &&
+      apply &&
+      service === "list_schedules" &&
+      !this.configuration.task
+    ) {
+      const pristine = this.formSnapshot() === this._baseline;
+      this.change("task", this.taskTypes[0] || "");
+      if (pristine) this._baseline = this.formSnapshot();
+    }
+    return result;
   }
   change(key, value) {
     this.configuration = { ...this.configuration, [key]: value };
@@ -86,16 +121,21 @@ class SchedulerCard extends InspectorCard {
   render() {
     const disabled = this.busy || this.loading || !this.available,
       c = this.configuration;
-    const tasks = this.result?.task_types?.length
-      ? this.result.task_types
-      : ["backup", "verify"];
+    const tasks = this.taskTypes;
+    const definition = this.result?.task_definitions?.[c.task];
+    const taskOptions = [
+      { value: "", label: "Select task" },
+      ...(c.task && !tasks.includes(c.task)
+        ? [{ value: c.task, label: `${c.task} (unavailable)` }]
+        : []),
+      ...tasks,
+    ];
     return this.frame(
       html`${this.readNotice()}${this.readButton("Refresh schedules", "list_schedules")}
         <p class="muted">
-          Leave timezone blank for the application default. Leave timezone blank
-          for the application default. Schedules run on the BSM host. Use an
-          IANA timezone such as America/Los_Angeles; daylight saving changes
-          apply automatically.
+          Leave timezone blank for the application default. Schedules run on the
+          BSM host. Use an IANA timezone such as America/Los_Angeles; daylight
+          saving changes apply automatically.
         </p>
         ${
           this.result
@@ -123,14 +163,14 @@ class SchedulerCard extends InspectorCard {
                       ${entry.blocked_reason ? html`<small>${entry.blocked_reason}</small>` : ""}
                       ${entry.retry_exhausted ? html`<p class="error">Automatic retries exhausted.</p>` : ""}
                       <div class="actions">
-                        ${[["run_now", "Run now"], [entry.configuration.enabled ? "pause" : "resume", entry.configuration.enabled ? "Pause" : "Resume"], ...(["failed", "interrupted", "deferred"].includes(entry.last_status) ? [["retry", "Retry now"]] : [])].map(([action, label]) => html`<button ?disabled=${disabled || (["run_now", "retry"].includes(action) && !entry.available)} @click=${() => this.action("control_schedule", { schedule_id: entry.schedule_id, action, ...(entry.revision ? { revision: entry.revision } : {}) }, "Schedule action accepted.", { confirm: action === "run_now" || action === "retry" ? `${label} for ${entry.schedule_id}?` : null })}>${label}</button>`)}
+                        ${[["run_now", "Run now"], [entry.configuration.enabled ? "pause" : "resume", entry.configuration.enabled ? "Pause" : "Resume"], ...(["failed", "interrupted", "deferred"].includes(entry.last_status) ? [["retry", "Retry now"]] : [])].map(([action, label]) => html`<button ?disabled=${disabled || this.actionDenied("control_schedule") || (["run_now", "retry"].includes(action) && !entry.available)} @click=${() => this.action("control_schedule", { schedule_id: entry.schedule_id, action, ...(entry.revision ? { revision: entry.revision } : {}) }, "Schedule action accepted.", { confirm: action === "run_now" || action === "retry" ? `${label} for ${entry.schedule_id}?` : null })}>${label}</button>`)}
                         <button
                           ?disabled=${disabled}
                           @click=${() => this.loadEntry(entry)}
                         >
                           Edit</button
                         ><button
-                          ?disabled=${disabled}
+                          ?disabled=${disabled || this.actionDenied("delete_schedule")}
                           @click=${() => this.action("delete_schedule", { schedule_id: entry.schedule_id }, "Schedule deleted.", { confirm: `Delete ${entry.schedule_id}?` })}
                         >
                           Delete
@@ -142,9 +182,26 @@ class SchedulerCard extends InspectorCard {
             : ""
         }
         <h3>Schedule configuration</h3>
+        ${!this.result ? html`<p>Load the manager's registered tasks before creating a schedule.</p>` : !tasks.length ? html`<p>No scheduler tasks are currently available on this manager.</p>` : ""}
+        ${c.task && !tasks.includes(c.task) ? html`<p class="error">This task is not currently registered. Select an available task before saving.</p>` : ""}
+        ${
+          definition
+            ? html`<p>
+                  ${definition.description || c.task}${definition.owner ? html`<small>Provided by: ${definition.owner}</small>` : ""}
+                </p>
+                ${
+                  definition.options_schema
+                    ? html`<details>
+                        <summary>Task options schema</summary>
+                        ${outcomeValue(definition.options_schema)}
+                      </details>`
+                    : ""
+                }`
+            : ""
+        }
         <fieldset ?disabled=${disabled}>
           <div class="grid">
-            ${this.input("Schedule ID", this.scheduleId, (v) => (this.scheduleId = v))}${this.selectInput("Task", c.task, tasks, (v) => this.change("task", v))}${this.input("Server name", c.server_name, (v) => this.change("server_name", v))}${this.input("Time", c.time, (v) => this.change("time", v), "time")}
+            ${this.input("Schedule ID", this.scheduleId, (v) => (this.scheduleId = v))}${this.selectInput("Task", c.task, taskOptions, (v) => this.change("task", v))}${this.input("Server name", c.server_name, (v) => this.change("server_name", v))}${this.input("Time", c.time, (v) => this.change("time", v), "time")}
             <label
               >Timezone<input
                 aria-label="Timezone"
@@ -185,7 +242,7 @@ class SchedulerCard extends InspectorCard {
           </label>
         </fieldset>
         <button
-          ?disabled=${disabled || !this.scheduleId || !c.server_name || !c.weekdays.length}
+          ?disabled=${disabled || this.actionDenied("save_schedule") || !tasks.includes(c.task) || !this.scheduleId || !c.server_name || !c.weekdays.length}
           @click=${this.save}
         >
           Save schedule

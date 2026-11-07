@@ -1,6 +1,6 @@
 import { BsmCard, html, register } from "./base.js";
 import { responseValue } from "./inspector.js";
-import { schemaValue, label } from "./model.js";
+import { copy, schemaValue, label } from "./model.js";
 function resolve(schema, root) {
   if (schema?.$ref?.startsWith("#/"))
     return (
@@ -170,7 +170,7 @@ class PluginSettingsCard extends BsmCard {
       const converted = schemaValue(value, schema);
       if (!parts.length) this.draft.set(top, converted);
       else {
-        const next = structuredClone(this.draft.value[top] || {});
+        const next = copy(this.draft.value[top] || {});
         let target = next;
         for (const part of parts.slice(0, -1)) target = target[part] ||= {};
         target[parts.at(-1)] = converted;
@@ -337,7 +337,7 @@ class PluginSettingsCard extends BsmCard {
                     Check for updates</button
                   ><button
                     class="primary"
-                    ?disabled=${!this.available || this.loading || this.busy || !this.draft.dirty || this.draft.conflicts.length > 0 || Boolean(this.error)}
+                    ?disabled=${!this.available || this.loading || this.busy || this.actionDenied("update_plugin_settings") || !this.draft.dirty || this.draft.conflicts.length > 0 || Boolean(this.error)}
                     @click=${this.save}
                   >
                     Save settings

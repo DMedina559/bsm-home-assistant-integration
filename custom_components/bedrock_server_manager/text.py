@@ -74,6 +74,7 @@ class TargetVersionText(CoordinatorEntity[MinecraftBedrockCoordinator], TextEnti
     def available(self) -> bool:
         return (
             super().available
+            and self.coordinator.allows_operation("set_server_setting")
             and "server_settings" not in self.coordinator.unavailable_resources
             and self.native_value is not None
         )

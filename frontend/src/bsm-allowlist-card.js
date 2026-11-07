@@ -59,7 +59,7 @@ class AllowlistCard extends BsmCard {
             @change=${(e) => (this.ignoreLimit = e.target.checked)}
           />Ignore player limit</label
         ><button
-          ?disabled=${!this.available || this.busy || !this.player.trim()}
+          ?disabled=${!this.available || this.busy || this.actionDenied("add_to_allowlist") || !this.player.trim()}
           @click=${this.add}
         >
           Add player

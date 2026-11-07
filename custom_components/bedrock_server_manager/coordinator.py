@@ -11,9 +11,12 @@ from bsm_api_client import AuthError, BedrockServerManagerApi
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from pydantic import BaseModel
 
+from .auth import needs_reauthentication
+from .capabilities import RESOURCE_OPERATIONS
 from .const import DOMAIN
 from .state import ResourceState
 
@@ -135,6 +138,30 @@ class BsmCoordinator(DataUpdateCoordinator):
         capabilities = getattr(self.api, "capabilities", None)
         return capabilities is None or capabilities.has(operation_id)
 
+    def allows_operation(self, operation: str) -> bool:
+        access = getattr(self.api, "ha_access", None)
+        return access is None or access.operation(
+            operation, getattr(self, "server_name", None)
+        )["state"] not in {"denied", "unsupported"}
+
+    async def _refresh_access(self) -> None:
+        access = getattr(self.api, "ha_access", None)
+        if access is not None:
+            try:
+                await access.refresh(self.api)
+            except AuthError as error:
+                raise ConfigEntryAuthFailed(
+                    "The BSM login needs to be renewed"
+                ) from error
+
+    def capability_attributes(self) -> dict[str, Any]:
+        access = getattr(self.api, "ha_access", None)
+        return (
+            {"bsm_access": access.snapshot(getattr(self, "server_name", None))}
+            if access is not None
+            else {}
+        )
+
     def resource_metadata(self, resource: str | None) -> dict[str, Any]:
         """Describe unsupported, unavailable and retained data independently."""
         updated = self.resource_updated_at.get(resource or "")
@@ -166,12 +193,41 @@ class BsmCoordinator(DataUpdateCoordinator):
             "bsm_last_error": self.resource_errors.get(resource or ""),
         }
 
+    def _permission_filtered_calls(
+        self, calls: Mapping[str, Awaitable[Any]]
+    ) -> dict[str, Awaitable[Any]]:
+        """Avoid HTTP requests already known to be forbidden by current grants."""
+        access = getattr(self.api, "ha_access", None)
+        if access is not None:
+            calls = dict(calls)
+            for resource, call in calls.items():
+                operation = RESOURCE_OPERATIONS.get(resource)
+                if (
+                    operation
+                    and access.operation(operation, getattr(self, "server_name", None))[
+                        "state"
+                    ]
+                    == "denied"
+                ):
+                    if hasattr(call, "close"):
+                        call.close()
+
+                    async def denied():
+                        raise AuthError(
+                            "The credential does not grant this resource",
+                            status_code=403,
+                        )
+
+                    calls[resource] = denied()
+        return dict(calls)
+
     async def _fetch(
         self,
         calls: Mapping[str, Awaitable[Any]],
         fields: dict[str, str],
         critical: str | None = None,
     ) -> dict:
+        calls = self._permission_filtered_calls(calls)
         generation = self.state.generation
         push_generation = self._push_generation.copy()
         try:
@@ -184,7 +240,7 @@ class BsmCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("Timed out communicating with BSM") from error
         # Expired credentials trigger reauthentication; forbidden resources do not.
         for key, result in zip(calls, results):
-            if isinstance(result, AuthError) and result.status_code != 403:
+            if isinstance(result, AuthError) and needs_reauthentication(result):
                 self._record_error(key, result)
                 raise ConfigEntryAuthFailed(str(result)) from result
         data = {**self.defaults, **(self.data or {})}
@@ -443,12 +499,13 @@ class ManagerDataCoordinator(BsmCoordinator):
                 await discovery.discover(force=True)
                 self._discovered = True
             except AuthError as error:
-                if error.status_code != 403:
+                if needs_reauthentication(error):
                     raise ConfigEntryAuthFailed(str(error)) from error
             except Exception:
                 _LOGGER.debug(
                     "Runtime API discovery unavailable; using shipped contracts"
                 )
+        await self._refresh_access()
         if not self.supports("get_settings"):
             self.unsupported_resources.add("application_settings")
         else:
@@ -468,15 +525,11 @@ class ManagerDataCoordinator(BsmCoordinator):
                 "global_players": self.api.players.async_get_players(),
                 "available_worlds": self.api.content.async_get_content_worlds(),
                 "available_addons": self.api.content.async_get_content_addons(),
-                "plugins_status": (
-                    self.api.discovery.call("list_plugins", authenticated=True)
-                    if hasattr(getattr(self.api, "discovery", None), "call")
-                    else self.api.plugins.async_get_plugin_statuses()
-                ),
+                "plugins_status": self.api.plugins.async_get_plugin_statuses(),
             },
             {
                 "application_settings": "settings",
-                "info": "info",
+                "info": "",
                 "global_players": "players",
                 "available_worlds": "files",
                 "available_addons": "files",
@@ -486,7 +539,31 @@ class ManagerDataCoordinator(BsmCoordinator):
         new_version = data.get("info", {}).get("app_version")
         if old_version and new_version and old_version != new_version:
             self._discovered = False
+        self._sync_manager_metadata(data)
         return data
+
+    def _sync_manager_metadata(self, data: dict) -> None:
+        """Recover device and diagnostic metadata when the info resource recovers."""
+        if self.config_entry is None or "info" in self.unavailable_resources:
+            return
+        info = data.get("info") or {}
+        version, os_type = info.get("app_version"), info.get("os_type")
+        if not version or not os_type:
+            return
+        runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        if runtime is None:
+            return
+        runtime.update(manager_app_version=version, manager_os_type=os_type.lower())
+        device_id = runtime.get("manager_device_id")
+        if device_id is None:
+            return
+        registry = dr.async_get(self.hass)
+        device = registry.async_get(device_id)
+        model = os_type.capitalize()
+        if isinstance(device, dr.DeviceEntry) and (
+            device.sw_version != version or device.model != model
+        ):
+            registry.async_update_device(device_id, sw_version=version, model=model)
 
 
 class ApplicationMonitorCoordinator(BsmCoordinator):

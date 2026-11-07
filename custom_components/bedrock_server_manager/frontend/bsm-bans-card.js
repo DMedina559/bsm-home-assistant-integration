@@ -1,4 +1,4 @@
-import{g as s,j as i,k as r}from"./shared-3LOQBGQY.js";var a=class extends r{static key="server_bans_count";static title="Server bans";static properties={player:{state:!0},xuid:{state:!0},reason:{state:!0}};constructor(){super(),this.player="",this.xuid="",this.reason=""}selectedChanged(){this.player="",this.xuid="",this.reason=""}render(){return this.frame(s`<div class="scroll">
+import{h as s,k as i,l as r}from"./shared-C27S2ORL.js";var a=class extends r{static key="server_bans_count";static title="Server bans";static properties={player:{state:!0},xuid:{state:!0},reason:{state:!0}};constructor(){super(),this.player="",this.xuid="",this.reason=""}selectedChanged(){this.player="",this.xuid="",this.reason=""}render(){return this.frame(s`<div class="scroll">
           <table>
             <thead>
               <tr>
@@ -23,7 +23,7 @@ import{g as s,j as i,k as r}from"./shared-3LOQBGQY.js";var a=class extends r{sta
           ${this.input("Player name",this.player,t=>this.player=t)}${this.input("XUID",this.xuid,t=>this.xuid=t)}${this.input("Reason",this.reason,t=>this.reason=t)}
         </div>
         <button
-          ?disabled=${this.busy||!this.available||!this.player.trim()||!/^\d{16,19}$/.test(this.xuid)}
+          ?disabled=${this.busy||!this.available||this.actionDenied("add_server_ban")||!this.player.trim()||!/^\d{16,19}$/.test(this.xuid)}
           @click=${()=>this.action("add_server_ban",{player_name:this.player.trim(),xuid:this.xuid,reason:this.reason},"Ban saved.",{confirm:`Ban ${this.player}?`})}
         >
           Ban player

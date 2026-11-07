@@ -2,7 +2,18 @@
 export const DOMAIN = "bedrock_server_manager";
 export const unavailable = (state) =>
   !state || ["unavailable", "unknown"].includes(state.state);
-export const copy = (value) => structuredClone(value);
+// Home Assistant can be served over HTTP, where structuredClone is unavailable.
+// Card state comes from JSON, so arrays, objects and primitives suffice here.
+export function copy(value) {
+  if (typeof globalThis.structuredClone === "function")
+    return globalThis.structuredClone(value);
+  if (Array.isArray(value)) return value.map(copy);
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, copy(item)]),
+    );
+  return value;
+}
 export const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export const label = (key) =>
   key.replace(/[_-]/g, " ").replace(/^./, (c) => c.toUpperCase());

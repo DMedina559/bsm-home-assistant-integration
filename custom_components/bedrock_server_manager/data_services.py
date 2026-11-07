@@ -36,28 +36,14 @@ UPDATE_SETTINGS_SCHEMA = GET_SETTINGS_SCHEMA.extend({vol.Required("settings"): d
 
 
 async def _read_settings(api, plugin_name, options):
-    """Use discovery for scoped fields absent from the installed SDK models."""
-    if options["scope"] == "plugin":
-        return await api.plugins.async_get_plugin_settings(plugin_name)
-    return await api.discovery.call(
-        "get_plugin_settings",
-        authenticated=True,
-        path_params={"plugin_name": plugin_name},
-        query=options,
-    )
+    """Use the released SDK's typed, scoped settings contract."""
+    return await api.plugins.async_get_plugin_settings(plugin_name, **options)
 
 
 async def _write_settings(api, plugin_name, options, settings):
-    """Forward scope explicitly rather than dropping fields in old SDK models."""
-    if options["scope"] == "plugin":
-        return await api.plugins.async_update_plugin_settings(
-            plugin_name, PluginSettingsPayload(settings=settings)
-        )
-    return await api.discovery.call(
-        "update_plugin_settings",
-        authenticated=True,
-        path_params={"plugin_name": plugin_name},
-        json_data={**options, "settings": settings},
+    """Validate plugin, global and server settings with the current request model."""
+    return await api.plugins.async_update_plugin_settings(
+        plugin_name, PluginSettingsPayload(settings=settings, **options)
     )
 
 

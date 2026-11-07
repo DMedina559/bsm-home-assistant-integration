@@ -262,7 +262,7 @@ async def test_completed_destructive_task_does_not_confirm_incomplete_work(api, 
 
 @pytest.mark.asyncio
 async def test_partial_scan_preserves_results_and_requires_refresh(api):
-    from bsm_api_client.models import AddPlayersResponse
+    from bsm_api_client.models import ScanAndUpdatePlayerDbResponse
 
     from custom_components.bedrock_server_manager.action_common import (
         OperationOutcomeError,
@@ -276,7 +276,7 @@ async def test_partial_scan_preserves_results_and_requires_refresh(api):
     )
 
     api.players.async_scan_players = AsyncMock(
-        return_value=AddPlayersResponse(
+        return_value=ScanAndUpdatePlayerDbResponse(
             status="partial",
             message="One log unavailable",
             details={

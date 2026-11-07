@@ -79,7 +79,7 @@ class ContentCard extends BsmCard {
             this.file = "";
           },
         )}${this.selectInput("File", this.file || "", [{ value: "", label: "Select file" }, ...files], (v) => (this.file = v))}${source && unavailable(source) ? html`<p class="error">The content source is unavailable.</p>` : ""}<button
-          ?disabled=${!this.available || this.busy || !this.file || unavailable(source)}
+          ?disabled=${!this.available || this.busy || this.actionDenied(`install_${type}`) || !this.file || unavailable(source)}
           @click=${() => this.action(`install_${type}`, { filename: this.file }, "Request accepted.", { confirm: type === "world" ? "Installing a world replaces this server’s current world. Continue?" : null })}
         >
           Install ${type}
@@ -92,7 +92,7 @@ class ContentCard extends BsmCard {
                 <small
                   >The file must be inside a Home Assistant allowed path.</small
                 >${this.input("File path", this.uploadPath || "", (v) => (this.uploadPath = v))}<button
-                  ?disabled=${!this.available || this.busy || !this.uploadPath}
+                  ?disabled=${!this.available || this.busy || this.actionDenied("upload_content") || !this.uploadPath}
                   @click=${() => this.action("upload_content", { file_path: this.uploadPath }, "Content uploaded.")}
                 >
                   Upload content

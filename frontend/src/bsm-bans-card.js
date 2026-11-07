@@ -65,7 +65,7 @@ class BansCard extends BsmCard {
           ${this.input("Player name", this.player, (v) => (this.player = v))}${this.input("XUID", this.xuid, (v) => (this.xuid = v))}${this.input("Reason", this.reason, (v) => (this.reason = v))}
         </div>
         <button
-          ?disabled=${this.busy || !this.available || !this.player.trim() || !/^\d{16,19}$/.test(this.xuid)}
+          ?disabled=${this.busy || !this.available || this.actionDenied("add_server_ban") || !this.player.trim() || !/^\d{16,19}$/.test(this.xuid)}
           @click=${() => this.action("add_server_ban", { player_name: this.player.trim(), xuid: this.xuid, reason: this.reason }, "Ban saved.", { confirm: `Ban ${this.player}?` })}
         >
           Ban player

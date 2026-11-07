@@ -436,6 +436,7 @@ class MinecraftServerSensor(
             server_name=self._server_name,
             metadata=self.coordinator.resource_metadata(self.resource),
         )
+        attrs.update(self.coordinator.capability_attributes())
         if not self.available:
             return bounded_attributes(attrs)
         key = self.entity_description.key
@@ -608,6 +609,7 @@ class ManagerInfoSensor(CoordinatorEntity[ManagerDataCoordinator], SensorEntity)
             self._manager_host_port_id,
             metadata=self.coordinator.resource_metadata(resource),
         )
+        attrs.update(self.coordinator.capability_attributes())
         if not self.available:
             return bounded_attributes(attrs)
         attrs["bsm_settings_revision"] = self.coordinator.resource_revisions.get(

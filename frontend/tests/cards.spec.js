@@ -1428,7 +1428,7 @@ test("scheduler saves IANA timezone and verification settings", async ({
 }) => {
   await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
   await page.getByLabel("Schedule ID", { exact: true }).fill("verify-nightly");
-  await page.getByLabel("Task", { exact: true }).selectOption("verify");
+  await page.getByLabel("Task", { exact: true }).selectOption("backup:verify");
   await page.getByLabel("Server name", { exact: true }).fill("Alpha");
   await page.getByLabel("Time", { exact: true }).fill("03:30");
   await page
@@ -1441,7 +1441,7 @@ test("scheduler saves IANA timezone and verification settings", async ({
     window.requests.find((r) => r.service === "save_schedule"),
   );
   expect(request.service_data.configuration).toMatchObject({
-    task: "verify",
+    task: "backup:verify",
     timezone: "America/Los_Angeles",
     time: "03:30",
     server_name: "Alpha",
@@ -1524,4 +1524,100 @@ test("scheduler protects drafts and forwards control revisions", async ({
     action: "pause",
     revision: "current",
   });
+});
+
+test("scoped capabilities disable denied actions and recover after grants change", async ({
+  page,
+}) => {
+  await mount(page, "bsm-command-card", { entity: "sensor.server" });
+  await page.getByLabel("Command", { exact: true }).fill("say permission test");
+  await page.evaluate(() =>
+    window.push("sensor.server", {
+      bsm_access: { known: true, actions: { send_command: "denied" } },
+    }),
+  );
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeDisabled();
+  await page.evaluate(() =>
+    window.push("sensor.server", {
+      bsm_access: { known: true, actions: { send_command: "allowed" } },
+    }),
+  );
+  await expect(
+    page.getByRole("button", { name: "Send command" }),
+  ).toBeEnabled();
+});
+
+test("plugin cards show runtime status permissions and all settings scopes", async ({
+  page,
+}) => {
+  await mount(page, "bsm-plugins-card", { entity: "sensor.manager" });
+  await page.evaluate(() =>
+    window.push("sensor.manager", {
+      plugins_data: {
+        profile: {
+          enabled: true,
+          status: "LOADED",
+          permissions: ["settings:read"],
+          has_settings: true,
+          has_global_settings: true,
+          has_server_settings: true,
+        },
+      },
+    }),
+  );
+  const plugin = page.locator("section.tile").filter({
+    has: page.getByText("profile", { exact: true }),
+  });
+  await expect(plugin.locator("small")).toHaveText(/Enabled\s*·\s*LOADED/);
+  await expect(page.getByText("Permissions: settings:read")).toBeVisible();
+  await expect(
+    page.getByText("Settings: Plugin · Global · Server"),
+  ).toBeVisible();
+});
+
+test("scheduler discovers built-in and plugin tasks on open and refresh", async ({
+  page,
+}) => {
+  await mount(page, "bsm-scheduler-card", { entity: "sensor.version" });
+  const task = page.getByLabel("Task", { exact: true });
+  await expect(task.locator("option")).toHaveText([
+    "Select task",
+    "backup:create",
+    "backup:verify",
+    "plugin:cleanup",
+    "server:restart",
+  ]);
+  await task.selectOption("plugin:cleanup");
+  await expect(
+    page.locator("p").filter({ hasText: "Clean plugin files." }),
+  ).toBeVisible();
+  await expect(page.getByText("Provided by: cleanup_plugin")).toBeVisible();
+  await page.getByLabel("Task options", { exact: true }).fill('{"age": 7}');
+  await page.getByLabel("Schedule ID", { exact: true }).fill("plugin-job");
+  await page.getByLabel("Server name", { exact: true }).fill("Alpha");
+  await page
+    .getByRole("button", { name: "Save schedule", exact: true })
+    .click();
+  const request = await page.evaluate(() =>
+    window.requests.find((r) => r.service === "save_schedule"),
+  );
+  expect(request.service_data.configuration.task).toBe("plugin:cleanup");
+  expect(request.service_data.configuration.options).toEqual({ age: 7 });
+  await page.evaluate(() => {
+    window.schedulerResult = { task_types: ["server:start"], schedules: [] };
+  });
+  await page
+    .getByRole("button", { name: "Refresh schedules", exact: true })
+    .click();
+  await expect(task).toHaveValue("plugin:cleanup");
+  await expect(task.locator("option")).toHaveText([
+    "Select task",
+    "plugin:cleanup (unavailable)",
+    "server:start",
+  ]);
+  await expect(
+    page.getByRole("button", { name: "Save schedule", exact: true }),
+  ).toBeDisabled();
 });

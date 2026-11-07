@@ -4,7 +4,7 @@ import {
   settingGroups,
   settingGroupHelp,
 } from "./settings-fields.js";
-import { label, schemaValue } from "./model.js";
+import { copy, label, schemaValue } from "./model.js";
 function flatten(value, prefix = "") {
   return Object.fromEntries(
     Object.entries(value || {}).flatMap(([key, item]) => {
@@ -175,8 +175,8 @@ class SettingsCard extends BsmCard {
         { key, success, message: success ? "Saved" : this.error },
       ];
       if (!success) break;
-      this.draft.base[key] = structuredClone(value);
-      this.draft.live[key] = structuredClone(value);
+      this.draft.base[key] = copy(value);
+      this.draft.live[key] = copy(value);
       delete this.draft.changes[key];
     }
     if (generation !== this._generation) return;
@@ -288,7 +288,7 @@ class SettingsCard extends BsmCard {
           >
             Check for updates</button
           ><button
-            ?disabled=${this.loading || this.busy || this.saving || !this.available || !this.draft.dirty || this.draft.conflicts.length || Object.keys(this.fieldErrors || {}).length}
+            ?disabled=${this.loading || this.busy || this.saving || !this.available || this.actionDenied(this.config.scope === "server" ? "set_server_setting" : "set_global_setting") || !this.draft.dirty || this.draft.conflicts.length || Object.keys(this.fieldErrors || {}).length}
             @click=${this.save}
           >
             Save settings

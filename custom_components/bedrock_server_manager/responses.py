@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from bsm_api_client import APIError, CannotConnectError
+from bsm_api_client import APIError, AuthError, CannotConnectError
 from pydantic import BaseModel, Field, ValidationError
 
 from .coordinator import json_data
@@ -66,6 +66,10 @@ def action_error(error: Exception) -> dict[str, Any]:
         if error.committed:
             message += ". The change was saved, but follow-up work failed. Refresh before trying again."
         details = _safe_details(error.api_details)
+        if isinstance(error, AuthError):
+            from .auth import auth_error_key
+
+            details["authentication"] = auth_error_key(error)
         if error.api_errors:
             details["validation"] = _safe_details(error.api_errors)
     elif isinstance(error, (OSError, TimeoutError)):

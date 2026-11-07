@@ -77,7 +77,8 @@ class EntryRuntime:
 class OwnedTransport:
     """Forward SDK calls while registering their enclosing HA action task."""
 
-    def __init__(self, source: Any, runtime: EntryRuntime) -> None:
+    def __init__(self, source: Any, runtime: EntryRuntime, access: Any = None) -> None:
+        self.access = access or getattr(source, "ha_access", None)
         self.source = source
         self.runtime = runtime
 
@@ -94,13 +95,26 @@ class OwnedTransport:
             "tasks",
             "discovery",
             "account",
+            "scheduler",
+            "backups",
+            "diagnostics",
+            "events",
             "users",
         }:
-            return OwnedTransport(value, self.runtime)
+            return OwnedTransport(value, self.runtime, self.access)
         if inspect.iscoroutinefunction(value):
 
             async def owned(*args: Any, **kwargs: Any) -> Any:
                 self.runtime.own_task()
+                if self.access is not None and name == "call" and args:
+                    from bsm_api_client import AuthError
+
+                    server = (kwargs.get("path_params") or {}).get("server_name")
+                    if self.access.operation(args[0], server)["state"] == "denied":
+                        raise AuthError(
+                            "The BSM credential does not grant this action",
+                            status_code=403,
+                        )
                 return await value(*args, **kwargs)
 
             return owned

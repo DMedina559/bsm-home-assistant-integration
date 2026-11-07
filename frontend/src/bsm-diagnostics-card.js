@@ -1,3 +1,4 @@
+import { copy } from "./model.js";
 import { html, register } from "./base.js";
 import { InspectorCard } from "./inspector.js";
 import { outcomeValue } from "./task-outcome.js";
@@ -70,7 +71,7 @@ class DiagnosticsCard extends InspectorCard {
           ><button
             ?disabled=${!snapshot || this.loading}
             @click=${() => {
-              this.baseline = structuredClone(snapshot);
+              this.baseline = copy(snapshot);
               this.comparison = null;
               this.feedback =
                 "Baseline captured. Collect another snapshot to compare.";

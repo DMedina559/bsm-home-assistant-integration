@@ -1,4 +1,4 @@
-import{g as e,j as l,k as s}from"./shared-3LOQBGQY.js";var i=class extends s{static title="Server allowlist";static key="allowlist_count";static properties={player:{state:!0},ignoreLimit:{state:!0}};constructor(){super(),this.player="",this.ignoreLimit=!1}selectedChanged(){this.player=""}async add(){this.player.trim()&&await this.action("add_to_allowlist",{players:[this.player.trim()],ignores_player_limit:this.ignoreLimit},"Player added.")&&(this.player="")}render(){let a=this.state?.attributes.allowed_players||[];return this.frame(e`<div class="scroll">
+import{h as e,k as l,l as s}from"./shared-C27S2ORL.js";var i=class extends s{static title="Server allowlist";static key="allowlist_count";static properties={player:{state:!0},ignoreLimit:{state:!0}};constructor(){super(),this.player="",this.ignoreLimit=!1}selectedChanged(){this.player=""}async add(){this.player.trim()&&await this.action("add_to_allowlist",{players:[this.player.trim()],ignores_player_limit:this.ignoreLimit},"Player added.")&&(this.player="")}render(){let a=this.state?.attributes.allowed_players||[];return this.frame(e`<div class="scroll">
           <table>
             <thead>
               <tr>
@@ -26,7 +26,7 @@ import{g as e,j as l,k as s}from"./shared-3LOQBGQY.js";var i=class extends s{sta
             @change=${t=>this.ignoreLimit=t.target.checked}
           />Ignore player limit</label
         ><button
-          ?disabled=${!this.available||this.busy||!this.player.trim()}
+          ?disabled=${!this.available||this.busy||this.actionDenied("add_to_allowlist")||!this.player.trim()}
           @click=${this.add}
         >
           Add player

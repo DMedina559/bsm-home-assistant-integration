@@ -16,6 +16,7 @@ MAX_NODES = 2048
 FRESHNESS_KEYS = {"bsm_resource_state", "bsm_updated_at", "bsm_last_error"}
 VOLATILE_ATTRIBUTES = frozenset(
     {
+        "bsm_access",
         "bsm_updated_at",
         "bsm_last_error",
         "bsm_truncated_attributes",
