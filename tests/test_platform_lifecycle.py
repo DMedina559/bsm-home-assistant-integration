@@ -17,7 +17,7 @@ from bsm_api_client.models import (
     TaskAcceptedResponse,
 )
 from homeassistant import loader
-from homeassistant.config_entries import ConfigEntries, ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -44,7 +44,6 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         top_level_files={p.name for p in component.iterdir()},
     )
     hass.data[loader.DATA_INTEGRATIONS] = {DOMAIN: integration}
-    hass.config_entries = ConfigEntries(hass, {})
     await ar.async_load(hass, load_empty=True)
     dr.async_setup(hass)
     await dr.async_load(hass, load_empty=True)

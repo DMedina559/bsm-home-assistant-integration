@@ -5,12 +5,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from homeassistant.config_entries import ConfigEntries
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import frame
 
 
 @pytest_asyncio.fixture
 async def hass(tmp_path):
     instance = HomeAssistant(str(tmp_path))
+    frame.async_setup(instance)
+    instance.config_entries = ConfigEntries(instance, {})
+    await instance.config_entries.async_initialize()
     yield instance
     await instance.async_stop(force=True)
 
