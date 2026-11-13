@@ -36,13 +36,11 @@ from .const import (
     FIELD_AUTOSTART,
     FIELD_AUTOUPDATE,
     FIELD_BACKUP_FILE,
-    FIELD_BACKUP_TYPE,
     FIELD_COMMAND,
     FIELD_CONFIRM_DELETE,
     FIELD_DIRECTORY,
     FIELD_EVENT_NAME,
     FIELD_EVENT_PAYLOAD,
-    FIELD_FILE_TO_BACKUP,
     FIELD_FILENAME,
     FIELD_IGNORE_PLAYER_LIMIT,
     FIELD_KEEP,
@@ -607,18 +605,12 @@ async def async_handle_prune_downloads_service(
 async def async_handle_trigger_backup_service(
     service: ServiceCall, hass: HomeAssistant
 ):
-    if service.data[FIELD_BACKUP_TYPE] == "config" and not service.data.get(
-        FIELD_FILE_TO_BACKUP
-    ):
-        raise ServiceValidationError(
-            f"'{FIELD_FILE_TO_BACKUP}' is required when '{FIELD_BACKUP_TYPE}' is 'config'."
-        )
     return await _execute_targeted_service(
         service,
         hass,
         _async_handle_trigger_backup,
-        service.data[FIELD_BACKUP_TYPE],
-        service.data.get(FIELD_FILE_TO_BACKUP),
+        service.data.get("mode"),
+        service.data.get("components"),
     )
 
 

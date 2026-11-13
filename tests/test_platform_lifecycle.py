@@ -163,11 +163,14 @@ async def test_real_entry_registers_entities_actions_live_updates_and_unloads(
         result = await hass.services.async_call(
             DOMAIN,
             "trigger_backup",
-            {"entity_id": status.entity_id, "backup_type": "all"},
+            {"entity_id": status.entity_id, "mode": "full"},
             blocking=True,
             return_response=True,
         )
         assert result["results"][0]["result"]["task_id"] == "backup-task"
+        backup_args = api.content.async_trigger_server_backup.await_args.args
+        assert backup_args[0] == "test"
+        assert backup_args[1].model_dump(exclude_none=True) == {"mode": "full"}
         updated = await hass.services.async_call(
             DOMAIN,
             "update_server",

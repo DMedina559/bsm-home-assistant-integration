@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 from bsm_api_client import (
     BedrockServerManagerApi,
 )
-from bsm_api_client.models import BackupActionPayload
+from bsm_api_client.models import SnapshotCreatePayload
 from homeassistant.components.button import (
     ButtonDeviceClass,
     ButtonEntity,
@@ -308,7 +308,7 @@ class MinecraftServerButton(
             super().available
             and self.coordinator.allows_operation(
                 {
-                    "trigger_server_backup_all": "create_backup",
+                    "trigger_server_backup_all": "create_server_snapshot",
                     "export_server_world": "export_world",
                     "prune_server_backups": "prune_backups",
                 }.get(self.entity_description.key, self.entity_description.key)
@@ -324,7 +324,7 @@ class MinecraftServerButton(
             "restart_server": lambda: api.servers.async_restart_server(name),
             "update_server": lambda: api.servers.async_update_server(name),
             "trigger_server_backup_all": lambda: api.content.async_trigger_server_backup(
-                name, BackupActionPayload(backup_type="all")
+                name, SnapshotCreatePayload(mode="full")
             ),
             "export_server_world": lambda: api.content.async_export_server_world(name),
             "prune_server_backups": lambda: api.content.async_prune_server_backups(

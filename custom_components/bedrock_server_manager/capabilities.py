@@ -10,7 +10,7 @@ from bsm_api_client import APIError, AuthError
 # their existing routing table so permission checks do not duplicate scope names.
 SERVICE_OPERATIONS = {
     "send_command": "send_command",
-    "trigger_backup": "create_backup",
+    "trigger_backup": "create_server_snapshot",
     "restore_backup": "restore_backup",
     "prune_download_cache": "prune_downloads",
     "scan_players": "scan_players",

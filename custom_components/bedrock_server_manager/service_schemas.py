@@ -10,13 +10,11 @@ from .const import (
     FIELD_AUTOSTART,
     FIELD_AUTOUPDATE,
     FIELD_BACKUP_FILE,
-    FIELD_BACKUP_TYPE,
     FIELD_COMMAND,
     FIELD_CONFIRM_DELETE,
     FIELD_DIRECTORY,
     FIELD_EVENT_NAME,
     FIELD_EVENT_PAYLOAD,
-    FIELD_FILE_TO_BACKUP,
     FIELD_FILENAME,
     FIELD_IGNORE_PLAYER_LIMIT,
     FIELD_KEEP,
@@ -62,8 +60,8 @@ PRUNE_DOWNLOADS_SERVICE_SCHEMA = vol.Schema(
 )
 TRIGGER_BACKUP_SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(FIELD_BACKUP_TYPE): vol.In(["all", "world", "config"]),
-        vol.Optional(FIELD_FILE_TO_BACKUP): cv.string,
+        vol.Optional("mode"): vol.In(["world", "selected", "full"]),
+        vol.Optional("components"): vol.All(cv.ensure_list, [cv.string]),
         **TARGETING_SCHEMA_FIELDS,
     }
 )

@@ -26,14 +26,14 @@ def operation(*permissions, server=False, checks=None, tokens="supported"):
 
 def access():
     result = AccessCapabilities(integration_token=True)
-    result.permissions = {"servers:read", "servers:control", "plugins:read"}
-    result.server_permission_names = {"servers:read", "servers:control"}
+    result.permissions = {"servers:read", "servers:lifecycle", "plugins:read"}
+    result.server_permission_names = {"servers:read", "servers:lifecycle"}
     result.server_permissions = {
-        "alpha": {"servers:read", "servers:control"},
+        "alpha": {"servers:read", "servers:lifecycle"},
         "beta": {"servers:read"},
     }
     result.operations = {
-        "start_server": operation("servers:control", server=True),
+        "start_server": operation("servers:lifecycle", server=True),
         "get_server_process_info": operation("servers:read", server=True),
         "list_plugins": operation("plugins:read"),
         "set_properties": operation("properties:manage", server=True),
@@ -51,7 +51,7 @@ def test_scope_and_server_grants_are_intersected():
     assert grants.operation("start_server", "beta") == {
         **grants.operation("start_server", "alpha"),
         "state": "denied",
-        "missing_permissions": ["servers:control"],
+        "missing_permissions": ["servers:lifecycle"],
     }
     assert grants.operation("start_server", "removed")["state"] == "denied"
     assert grants.operation("set_properties", "alpha")["missing_permissions"] == [
@@ -105,7 +105,7 @@ async def test_live_discovery_uses_effective_account_grants_and_updates_after_re
                         "permissions": ["servers:read"],
                         "policy_revision": "new",
                     },
-                    {"server_permissions": ["servers:read", "servers:control"]},
+                    {"server_permissions": ["servers:read", "servers:lifecycle"]},
                     [{"name": "alpha", "permissions": ["servers:read"]}],
                 ]
             ),
@@ -179,7 +179,7 @@ def test_capability_summary_contains_no_credentials():
     result = access().snapshot("beta", detailed=True)
     assert result["actions"]["start_server"]["state"] == "denied"
     assert result["actions"]["start_server"]["missing_permissions"] == [
-        "servers:control"
+        "servers:lifecycle"
     ]
     assert result["server_permissions"] == ["servers:read"]
     assert "token" not in result
