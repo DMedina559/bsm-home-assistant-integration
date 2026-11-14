@@ -34,6 +34,7 @@ repos:
     rev: 7.3.0
     hooks:
       - id: flake8
+        args: [--jobs=1]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.20.1
@@ -42,5 +43,5 @@ repos:
         additional_dependencies:
           - types-requests
           - types-PyYAML
-          - homeassistant==2026.10.1
-          - "bsm-api-client @ git+https://github.com/DMedina559/bsm-api-client.git@0e6a335d556320c5f582e88041e77629e0b6fe5e#subdirectory=packages/bsm-api-client"
+          - homeassistant==2026.11.0
+          - "bsm-api-client @ https://github.com/DMedina559/bsm-api-client/archive/960834f2e03c0ff3bec64fc96e9d1acb7e95e4b9.zip#subdirectory=packages/bsm-api-client"

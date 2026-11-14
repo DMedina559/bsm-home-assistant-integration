@@ -5,10 +5,10 @@ from typing import Optional
 
 from bsm_api_client import BedrockServerManagerApi
 from bsm_api_client.models import (
-    BackupActionPayload,
     FileNamePayload,
     PruneDownloadsPayload,
     RestoreActionPayload,
+    SnapshotCreatePayload,
 )
 
 from .action_common import _base_api_call_handler
@@ -28,12 +28,10 @@ async def _async_handle_prune_downloads(
 async def _async_handle_trigger_backup(
     api: BedrockServerManagerApi,
     server: str,
-    backup_type: str,
-    file_to_backup: Optional[str],
+    mode: str | None,
+    components: list[str] | None,
 ):
-    payload = BackupActionPayload(
-        backup_type=backup_type, file_to_backup=file_to_backup
-    )
+    payload = SnapshotCreatePayload(mode=mode, components=components)
     return await _base_api_call_handler(
         api.content.async_trigger_server_backup(server, payload),
         "Trigger backup",

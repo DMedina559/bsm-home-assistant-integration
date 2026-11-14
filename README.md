@@ -177,7 +177,7 @@ Entity IDs are typically `platform.server_name_entity_key` (e.g., `sensor.server
 *   **Buttons (Per Server Device):**
     *   **Restart:** Restarts the server.
     *   **Update:** Initiates server update process.
-    *   **Backup:** Triggers a backup using global component defaults (`backup_type: all`).
+    *   **Backup:** Creates a full portable server backup (`mode: full`).
     *   **Export World:** Exports the server's current world.
     *   **Prune Backups:** Prunes old backups for this server.
 *   **Buttons (Manager Device):**
@@ -193,9 +193,9 @@ All services use the domain `bedrock_server_manager`.
 *   **`prune_download_cache`**: Prunes global download cache.
     *   Target: Manager device or one of its entities.
     *   Data: `directory` (string, required), `keep` (integer, optional).
-*   **`trigger_backup`**: Triggers a specific backup type.
+*   **`trigger_backup`**: Creates a portable server snapshot.
     *   Target: Server device(s)/entity(s).
-    *   Data: `backup_type` (string, required: `all`, `world`, `config`), `file_to_backup` (string, optional, required for `config` type).
+    *   Data: `mode` (optional: `world`, `selected`, `full`) and `components` (optional component IDs for selected mode). Omit both to use the manager defaults.
 *   **`restore_backup`**: Restores a specific backup. **CAUTION: Overwrites data.**
     *   Target: Server device(s)/entity(s).
     *   Data: `restore_type` (string, required: `world`, `properties`, `allowlist`, `permissions`), `backup_file` (string, required: filename relative to server's backup folder).

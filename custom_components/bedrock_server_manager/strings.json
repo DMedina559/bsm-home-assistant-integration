@@ -254,15 +254,15 @@
     },
     "trigger_backup": {
       "name": "Trigger Server Backup",
-      "description": "Triggers a specific backup operation (world, config file, or all) for the target server(s).",
+      "description": "Create a portable backup using the manager defaults or an explicit mode.",
       "fields": {
-        "backup_type": {
-          "name": "Backup Type",
-          "description": "Type of backup to perform."
+        "mode": {
+          "name": "Backup Mode",
+          "description": "world, selected, or full. Omit to use the manager defaults."
         },
-        "file_to_backup": {
-          "name": "File to Backup (for config type)",
-          "description": "Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
+        "components": {
+          "name": "Components",
+          "description": "Component IDs to include in selected mode."
         }
       }
     },

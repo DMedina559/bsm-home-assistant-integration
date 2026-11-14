@@ -121,31 +121,26 @@ prune_download_cache:
 
 trigger_backup:
   name: Trigger Server Backup
-  description: Triggers a specific backup operation (world, config file, or all) for the target server(s).
+  description: Create a portable backup. Omit mode to use the manager defaults.
   target:
     entity:
       domain: sensor
       integration: bedrock_server_manager
   fields:
-    backup_type:
-      name: Backup Type
-      description: Type of backup to perform.
-      required: true
-      example: "all"
+    mode:
+      name: Backup Mode
+      description: World only, selected components, or the full server directory.
+      required: false
       selector:
         select:
-          options:
-            - "all"
-            - "world"
-            - "config"
+          options: ["world", "selected", "full"]
           mode: dropdown
-    file_to_backup:
-      name: File to Backup (for config type)
-      description: "Required only if 'Backup Type' is 'config'. Relative path of the config file within the server directory (e.g., 'server.properties', 'permissions.json')."
+    components:
+      name: Components
+      description: Component IDs to include when mode is selected.
       required: false
-      example: "permissions.json"
       selector:
-        text: {}
+        object: {}
 
 restore_backup:
   name: Restore Server Backup
