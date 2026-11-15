@@ -1,0 +1,114 @@
+name: Sync BSM API Client SDK
+
+on:
+  repository_dispatch:
+    types: [bsm-client-updated]
+  workflow_dispatch:
+    inputs:
+      client_sha:
+        description: Exact bsm-api-client commit SHA to pin
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  sync-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Resolve sync token
+        id: auth
+        uses: DMedina559/.github/actions/get-sync-token@main
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          repositories: bsm-home-assistant-integration
+          fallback-token: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Validate sync token
+        if: steps.auth.outputs.token == ''
+        run: |
+          echo "Configure SYNC_APP_ID + SYNC_APP_PRIVATE_KEY (recommended) or CROSS_REPO_TOKEN." >&2
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: dev
+          token: ${{ steps.auth.outputs.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Update bsm-api-client commit pin
+        id: update
+        env:
+          CLIENT_SHA: ${{ inputs.client_sha || github.event.client_payload.client_sha }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          sha = os.environ["CLIENT_SHA"].strip()
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit(f"Expected 40-char commit SHA, got: {sha!r}")
+
+          pattern = re.compile(
+              r"(https://github\.com/DMedina559/bsm-api-client/archive/)[0-9a-f]{40}(\.zip#subdirectory=packages/bsm-api-client)"
+          )
+          for rel in (
+              "custom_components/bedrock_server_manager/manifest.json",
+              "requirements-test.txt",
+          ):
+              path = Path(rel)
+              updated, count = pattern.subn(rf"\g<1>{sha}\g<2>", path.read_text(encoding="utf-8"))
+              if count != 1:
+                  raise SystemExit(f"Expected 1 bsm-api-client pin in {rel}, found {count}")
+              path.write_text(updated, encoding="utf-8")
+          PY
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "SDK pin already at $CLIENT_SHA; skipping tests and PR."
+          fi
+
+      - name: Install dependencies and run lint + tests
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m black --check --workers 1 custom_components tests
+          python -m isort --check-only custom_components tests
+          python -m flake8 --jobs 1 custom_components tests
+          python -m mypy custom_components/bedrock_server_manager
+          python -m pytest tests
+
+      - name: Create or update Pull Request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.auth.outputs.token }}
+          base: dev
+          branch: chore/sync-bsm-api-client
+          delete-branch: true
+          title: 'build(deps): update bsm-api-client SDK pin'
+          commit-message: 'build(deps): update bsm-api-client SDK pin'
+          body: |
+            Automated SDK pin update after `DMedina559/bsm-api-client` passed `Build and Test` on `dev`.
+
+            - Pinned `bsm-api-client` commit: `${{ inputs.client_sha || github.event.client_payload.client_sha }}`
+            - Lint, type checks, and `pytest` passed before opening/updating this PR.
+          labels: |
+            dependencies
+            chore

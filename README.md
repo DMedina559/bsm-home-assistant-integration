@@ -15,7 +15,7 @@
     <img alt="Pre-Release" src="https://img.shields.io/github/v/release/dmedina559/bsm-home-assistant-integration?include_prereleases&label=Pre-Release&color=red">
   </a>
   <a href="https://github.com/dmedina559/bsm-home-assistant-integration/actions">
-    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/dmedina559/bsm-home-assistant-integration/hasstest.yaml?label=Tests&event=push">
+    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/dmedina559/bsm-home-assistant-integration/ha-validation.yml?label=Tests&event=push">
   </a>
 </p>
 

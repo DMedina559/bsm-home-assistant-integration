@@ -1,17 +1,39 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    target-branch: "dev"
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
     schedule:
-      interval: "daily"
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    target-branch: "dev"
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: 'ci(deps)'
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
     schedule:
-      interval: "daily"
-  - package-ecosystem: "npm"
-    directory: "/"
-    target-branch: "dev"
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+    commit-message:
+      prefix: 'build(deps)'
+
+  - package-ecosystem: npm
+    directory: /
+    target-branch: dev
     schedule:
-      interval: "daily"
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+    commit-message:
+      prefix: 'build(deps)'
