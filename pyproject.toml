@@ -1,3 +1,21 @@
+[dependency-groups]
+test = [
+    "bsm-api-client @ https://github.com/DMedina559/bsm-api-client/archive/960834f2e03c0ff3bec64fc96e9d1acb7e95e4b9.zip#subdirectory=packages/bsm-api-client",
+    "homeassistant==2026.11.2",
+    "pytest>=9.2.0,<10",
+    "pytest-asyncio>=1.4.1.post1,<2",
+]
+lint = [
+    "black==26.10.1",
+    "isort==9.0.2",
+    "flake8==7.5.0",
+    "mypy==2.4.1",
+    "Flake8-pyproject==1.2.4",
+    "types-requests",
+    "types-PyYAML",
+]
+dev = [{ include-group = "test" }, { include-group = "lint" }]
+
 [tool.black]
 
 [tool.isort]
@@ -11,3 +29,10 @@ plugins = ["pydantic.mypy"]
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.flake8]
+max-line-length = 88
+ignore = ["E501", "W503", "F541", "E704"]
+max-complexity = 10
+count = true
+statistics = true

@@ -269,10 +269,10 @@ Selected servers expose editable target versions and native uptime measurements.
 
 ## Development
 
-Use Python 3.14 and install `requirements-test.txt`. The test workflow and type-checking hook install the reviewed SDK source revision in `requirements-test.txt`, matching the backend `dev` contracts.
+Use Python 3.14 with pip 25.1 or newer. The `dev` dependency group in `pyproject.toml` installs the test and lint tools and the SDK revision used by the integration.
 
 ```sh
-python -m pip install -r requirements-test.txt ../bsm-api-client/packages/bsm-api-client
+python -m pip install --group dev
 python -m pytest tests
 python -m mypy custom_components/bedrock_server_manager
 python -m black --check --workers 1 custom_components tests
