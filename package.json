@@ -14,7 +14,7 @@
     "lit": "^3.3.1",
     "@bedrock-server-manager/api-client": "0.1.0",
     "@bedrock-server-manager/runtime": "0.1.0",
-    "@bedrock-server-manager/storage": "0.1.0"
+    "@bedrock-server-manager/storage": "1.4.0"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",
